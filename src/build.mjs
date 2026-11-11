@@ -31,15 +31,19 @@ export function patchHtml(html) {
   return stripped.replace("</body>", `${bootLoader(scripts)}</body>`);
 }
 
-export function build(root, config) {
+/** Build the web preview. With quiet: true nothing is printed (needed when stdout carries a protocol). */
+export function build(root, config, { quiet = false } = {}) {
   const appDir = path.join(root, config.out, "app");
   fs.rmSync(appDir, { recursive: true, force: true });
   const result = spawnSync("npx", ["expo", "export", "--platform", "web", "--output-dir", appDir], {
     cwd: root,
-    stdio: "inherit",
+    stdio: quiet ? ["ignore", "pipe", "pipe"] : "inherit",
     env: { ...process.env, IMITOR: "1", CI: "1", EXPO_NO_TELEMETRY: "1" },
   });
-  if (result.status !== 0) throw new Error("expo export failed (see output above)");
+  if (result.status !== 0) {
+    const tail = quiet ? `${result.stdout || ""}${result.stderr || ""}`.replace(/\x1b\[[0-9;]*m/g, "").trim().split("\n").slice(-25).join("\n") : "";
+    throw new Error(quiet ? `expo export failed:\n${tail}` : "expo export failed (see output above)");
+  }
 
   if (Object.values(config.shims).includes("sqljs")) {
     const dist = path.dirname(require.resolve("sql.js/dist/sql-wasm.js"));
