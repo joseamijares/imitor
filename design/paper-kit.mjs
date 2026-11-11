@@ -1,7 +1,7 @@
 // Imitor design kit: the tokens and components used to draw the app screens in Paper. THEME=signal (dark) and THEME=signal-light.
 // Kept as the reference for building the same interface in code. `w`, `shot` and `call` come from a local Paper MCP client that is not in this repo.
 import { w, shot, call } from "./lib.mjs";
-import { echo, bare, wordmark as wm } from "./logo/logos.mjs";
+import { echo, tile } from "./logo/logos.mjs";
 export { w, shot, call };
 
 const THEMES = {
@@ -54,10 +54,10 @@ export const icons = {
 export const icon = (name, color = c.t2, size = 16) =>
   `<div style="width:${size}px;height:${size}px;flex-shrink:0;display:flex;color:${color}">${P(icons[name], `style="width:${size}px;height:${size}px"`)}</div>`;
 
-/** The Imitor mark (Echo): a solid slab with its dashed copy hovering above. */
-export const mark = (size = 22) => bare(echo(c.t1, c.logoAcc, c.logoShade), size);
-/** The custom wordmark at a given height in px. */
-export const wordmark = (h = 15) => wm(h, c.t1, c.logoAcc);
+/** The Imitor logo (Echo): the app icon, a dark tile holding a solid slab with its dashed copy hovering above. Same in both themes. */
+export const mark = (size = 22) => tile(echo(undefined, undefined, undefined, size), size);
+/** The wordmark: "Imitor" set in Geist 600, tight tracking. h is the cap height in px. */
+export const wordmark = (h = 15) => `<div style="font-family:'Geist';font-size:${Math.round(h * 1.08)}px;line-height:${Math.round(h * 1.3)}px;font-weight:600;letter-spacing:-0.03em;color:${c.t1};white-space:nowrap;flex-shrink:0">Imitor</div>`;
 /** Switch, 30x18. */
 export const toggle = (on) => `<div style="width:30px;height:18px;border-radius:9px;background:${on ? c.accBg : c.line2};display:flex;align-items:center;padding:2px;justify-content:${on ? "flex-end" : "flex-start"};flex-shrink:0"><div style="width:14px;height:14px;border-radius:7px;background:${on ? c.knob : c.t3}"></div></div>`;
 /** Text input / select look. */

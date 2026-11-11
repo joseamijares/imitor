@@ -11,7 +11,8 @@ export const twin = (ink = L, acc = Y) => `<circle cx="43" cy="33" r="10" fill="
 
 // 2. Echo: a solid slab in isometric view with its dashed copy floating above.
 const iso = (dy, body) => `<g transform="translate(60 ${dy}) matrix(0.866 0.5 -0.866 0.5 0 0)">${body}</g>`;
-export const echo = (ink = L, acc = Y, shade = "#8E8E88") => iso(84, `<rect x="-30" y="-30" width="60" height="60" rx="13" fill="${shade}"/>`) + iso(75, `<rect x="-30" y="-30" width="60" height="60" rx="13" fill="${ink}"/>`) + iso(75, `<rect x="-11" y="19" width="22" height="4.5" rx="2.25" fill="${shade}"/>`) + iso(44, `<rect x="-30" y="-30" width="60" height="60" rx="13" stroke="${acc}" stroke-width="3.6" stroke-dasharray="7.5 6.2" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`);
+// px is the rendered size of the whole icon; the dashed line is drawn in screen pixels, so it must scale with it.
+export const echo = (ink = L, acc = Y, shade = "#8E8E88", px = 120) => iso(84, `<rect x="-30" y="-30" width="60" height="60" rx="13" fill="${shade}"/>`) + iso(75, `<rect x="-30" y="-30" width="60" height="60" rx="13" fill="${ink}"/>`) + iso(75, `<rect x="-11" y="19" width="22" height="4.5" rx="2.25" fill="${shade}"/>`) + iso(44, `<rect x="-30" y="-30" width="60" height="60" rx="13" stroke="${acc}" stroke-width="${Math.max(1.2, px * 0.03).toFixed(2)}" stroke-dasharray="${(px * 0.0625).toFixed(2)} ${(px * 0.052).toFixed(2)}" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`);
 
 // 3. Matrix: a phone screen of dots; the lit ones spell i.
 export const matrix = (ink = L, acc = Y, dim = "#3D3D42") => { let s = `<rect x="23.5" y="9.5" width="73" height="101" rx="19" stroke="${ink}" stroke-width="5"/>`; for (let r = 0; r < 7; r++) for (let c2 = 0; c2 < 5; c2++) { const on = c2 === 2 && r !== 1; s += `<circle cx="${36 + c2 * 12}" cy="${24 + r * 12}" r="${on ? 4.6 : 3}" fill="${on ? acc : dim}"/>`; } return s; };

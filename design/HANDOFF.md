@@ -26,6 +26,10 @@ The same colours, type sizes, radii and spacing exist as design tokens inside th
 4. **Standard controls.** Buttons, segmented controls, switches, selects and tables behave as the platform's own.
 5. **The sample data is invented.** "fernwood", its pull requests, agents and keys are placeholders.
 
+## Logo
+
+The logo is the Echo app icon: a dark rounded tile holding a solid slab with its dashed yellow copy hovering above. It is the same on dark and light grounds, and there is no separate flat mark. The dashed line is 3% of the icon's width at every size, so render the icon at its final size (`design/logo/logos.mjs` generates it; `imitor-icon-120.svg`, `-32` and `-16` are pre-rendered). The wordmark is "Imitor" in Geist 600 with -0.03em tracking, in the primary text colour, set 0.4 × the icon's width to its right.
+
 ## Colour
 
 | Token | Dark | Light | Use |
@@ -133,7 +137,6 @@ Route names are a proposal; nothing is built.
 - Phone versions of every screen except a run and the runs list.
 - Settings sections Stand-ins, Devices, Flows and Notifications (listed in the sub-navigation, not drawn).
 - The run's Problems and Captures tabs as separate screens.
-- A 16px favicon variant of the mark. Use the app icon below 20px.
 
 ## Known inconsistencies in the sample data
 
