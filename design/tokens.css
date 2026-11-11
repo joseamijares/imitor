@@ -22,6 +22,7 @@
 
   --font-sans: "Geist", system-ui, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, monospace;
+  --font-wordmark: "Instrument Serif", serif; /* The "Imitor" wordmark only, italic */
   --text-28: 28px; --leading-28: 34px; /* Onboarding title */
   --text-20: 20px; --leading-20: 26px; /* Large title */
   --text-16: 16px; --leading-16: 22px; /* Section title */
