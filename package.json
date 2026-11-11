@@ -1,0 +1,27 @@
+{
+  "name": "imitor",
+  "version": "0.0.1",
+  "description": "See a React Native / Expo app's UI without a simulator: web-rendered screens in device frames, screenshots, and a report page.",
+  "license": "MIT",
+  "repository": "github:joseamijares/imitor",
+  "bin": { "imitor": "bin/imitor.mjs" },
+  "main": "src/metro.cjs",
+  "exports": {
+    "./metro": "./src/metro.cjs",
+    "./package.json": "./package.json"
+  },
+  "files": ["bin", "src", "README.md", "LICENSE"],
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "sql.js": "^1.13.0"
+  },
+  "peerDependencies": {
+    "playwright": ">=1.40"
+  },
+  "peerDependenciesMeta": {
+    "playwright": { "optional": true }
+  }
+}
