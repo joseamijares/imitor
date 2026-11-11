@@ -19,7 +19,7 @@ Must feel wrong if: the shell competes with the app's own colours, or hides the 
 
 THESIS: A working review tool in the Linear register, where the app under preview is the only colourful thing on screen and every limit is listed beside it. Chosen by the user over the roll (category standard, alongside Linear, Apple and Mercury).
 
-OWN-WORLD: Ground #08090A, panel #111214, hairlines #1F2124 and #2A2D31, text #F7F8F8 / #A0A6AE / #7F858E, indigo #7C85F5 (fills #5E6AD2), orange #F2994A for stand-ins, green #4CB782 for genuine, red #EB5757 for failures. Geist for interface, Geist Mono for measurements, hashes and commands. Dense 28 to 32px rows, 6px radii, standard web controls. A light theme mirrors it on white.
+OWN-WORLD: Signal. Ground #0B0B0C, panel #141415, hairlines #222224 and #303033, text #F5F5F2 / #A8A8A3 / #85857F, chrome yellow #FFD60A for the brand, primary actions and everything imitated (always dashed), green #4CB782 for genuine, red #FF5C5C for failures. Geist for interface, Geist Mono for measurements, hashes and commands. Dense 28 to 32px rows, 6px radii, standard web controls. Signature: the device casts a dashed yellow ghost copy.
 
 STORY: The reviewer (or an agent) lands on the run, sees the app, reads what is genuine and what is a stand-in, changes device or text size, and leaves knowing what still needs a phone.
 

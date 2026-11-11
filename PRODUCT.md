@@ -46,7 +46,8 @@ It is an imitation and says so. Every shot and preview states what was rendered,
 - Name: Imitor (Latin, "I imitate"). Open source, MIT.
 - Voice: plain and honest about limits; never claims to be a simulator.
 - User-stated bar: top-tier craft in the company of Linear, Apple, ChatGPT and Anthropic.
-- Chosen direction (user, 11 Nov 2026): Linear-style. Near-black ground, cool greys, indigo accent, Geist and Geist Mono, dense rows, standard controls. Ships in light and dark.
+- Chosen identity (user, 11 Nov 2026): "Signal". Ink black (#0B0B0C) with chrome yellow (#FFD60A), Geist and Geist Mono, dense rows, standard controls. The brand colour is the imitation colour: anything imitated or stood-in is drawn dashed in yellow; genuine things are solid. Linear is a reference for density and craft only; an indigo Linear-like palette was rejected as too close a copy.
+- Logo: three proposals in `design/logo/` (ghost, ditto, half), awaiting a choice.
 - Standing visual preference (user, 11 Nov 2026): a technical product register like Linear, Apple and Mercury. No serif, paper-card or journal styling; the first "specimen under glass" direction was rejected for reading like a journal app.
 
 ## Evidence on Hand

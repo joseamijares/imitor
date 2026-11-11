@@ -1,16 +1,24 @@
-// Imitor design kit (Linear-style dark): the tokens and components used to draw the app screens in Paper.
+// Imitor design kit: the tokens and components used to draw the app screens in Paper. THEME=signal is the chosen identity.
 // Kept as the reference for building the same interface in code. `w`, `shot` and `call` come from a local Paper MCP client that is not in this repo.
 import { w, shot, call } from "./lib.mjs";
 export { w, shot, call };
 
-export const c = {
-  bg: "#08090A", panel: "#111214", raised: "#17181B", line: "#1F2124", line2: "#2A2D31",
-  t1: "#F7F8F8", t2: "#A0A6AE", t3: "#7F858E",
-  acc: "#7C85F5", accBg: "#5E6AD2", accTint: "#14162B", accLine: "#2E3260",
-  warn: "#F2994A", warnTint: "#2A1C0E", ok: "#4CB782", okTint: "#0F2219", bad: "#EB5757", badTint: "#2A1213",
+const THEMES = {
+  // Signal: ink black with chrome yellow. The brand colour is the imitation colour: anything imitated is drawn dashed in yellow.
+  signal: { bg: "#0B0B0C", side: "#0B0B0C", panel: "#141415", raised: "#1B1B1D", line: "#222224", line2: "#303033", t1: "#F5F5F2", t2: "#A8A8A3", t3: "#85857F",
+    acc: "#FFD60A", accBg: "#FFD60A", onAcc: "#0B0B0C", accTint: "#262105", accLine: "#5C4E0A", knob: "#0B0B0C",
+    warn: "#FFD60A", warnTint: "#262105", warnLine: "#5C4E0A", ok: "#4CB782", okTint: "#0F2219", okLine: "#1C4030", bad: "#FF5C5C", badTint: "#2A1213", badLine: "#4A2022",
+    inDevice: "#B58900", inDeviceText: "#7A5C00", stageBg: "background:#0B0B0C", devShadow: "0 40px 70px -20px rgba(0,0,0,0.8), 0 0 0 1px #303033", font: "Geist", mono: "Geist Mono" },
+  // Cobalt: pure white with cobalt blue, a drafting-table dot grid behind the device and crop marks around it.
+  cobalt: { bg: "#FFFFFF", side: "#F6F7FB", panel: "#F3F4F9", raised: "#EBEDF4", line: "#E4E6EE", line2: "#CFD3DF", t1: "#0E1116", t2: "#4A505C", t3: "#666D7A",
+    acc: "#2340F0", accBg: "#2340F0", onAcc: "#FFFFFF", accTint: "#EDF0FE", accLine: "#C5CDFB", knob: "#FFFFFF",
+    warn: "#2340F0", warnTint: "#EDF0FE", warnLine: "#C5CDFB", ok: "#178A52", okTint: "#E8F5EE", okLine: "#BCE0CC", bad: "#D92D20", badTint: "#FDECEA", badLine: "#F3BFB9",
+    inDevice: "#2340F0", inDeviceText: "#1B31B8", stageBg: "background-color:#FAFBFD;background-image:radial-gradient(circle, #C9CEDD 1px, rgba(201,206,221,0) 1.2px);background-size:22px 22px", devShadow: "0 30px 50px -24px rgba(14,17,22,0.35), 0 6px 14px -6px rgba(14,17,22,0.12)", font: "Hanken Grotesk", mono: "JetBrains Mono" },
 };
-export const F = "font-family:Geist;";
-export const M = "font-family:'Geist Mono';";
+export const c = THEMES[process.env.THEME];
+if (!c) throw new Error("set THEME=signal|cobalt");
+export const F = `font-family:'${c.font}';`;
+export const M = `font-family:'${c.mono}';`;
 // Type scale: 11 mono meta, 12 secondary, 13 body/UI, 14 emphasis, 16 section title, 20 page title, 28 onboarding title.
 
 const P = (d, o = "") => `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" ${o}>${d}</svg>`;
@@ -45,12 +53,12 @@ export const mark = (size = 18) =>
 
 /** Buttons. kind: primary | secondary | ghost. */
 export const btn = (label, kind = "secondary", iconName) => {
-  const s = { primary: `color:#FFFFFF;background:${c.accBg}`, secondary: `color:${c.t1};background:${c.panel};border:1px solid ${c.line2}`, ghost: `color:${c.t2}` }[kind];
-  return `<div style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:500;padding:${kind === "secondary" ? "5px 11px" : "6px 12px"};border-radius:6px;${s};flex-shrink:0">${iconName ? icon(iconName, kind === "primary" ? "#FFFFFF" : c.t2, 14) : ""}${label}</div>`;
+  const s = { primary: `color:${c.onAcc};background:${c.accBg}`, secondary: `color:${c.t1};background:${c.panel};border:1px solid ${c.line2}`, ghost: `color:${c.t2}` }[kind];
+  return `<div style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:500;padding:${kind === "secondary" ? "5px 11px" : "6px 12px"};border-radius:6px;${s};flex-shrink:0">${iconName ? icon(iconName, kind === "primary" ? c.onAcc : c.t2, 14) : ""}${label}</div>`;
 };
 /** Small status pill. tone: acc | ok | warn | bad | neutral. */
 export const pill = (label, tone = "neutral") => {
-  const t = { acc: [c.acc, c.accTint, c.accLine], ok: [c.ok, c.okTint, "#1C4030"], warn: [c.warn, c.warnTint, "#4A3216"], bad: [c.bad, c.badTint, "#4A2022"], neutral: [c.t2, c.panel, c.line2] }[tone];
+  const t = { acc: [c.acc, c.accTint, c.accLine], ok: [c.ok, c.okTint, c.okLine], warn: [c.warn, c.warnTint, c.warnLine], bad: [c.bad, c.badTint, c.badLine], neutral: [c.t2, c.panel, c.line2] }[tone];
   return `<div style="font-size:11px;font-weight:500;color:${t[0]};background:${t[1]};border:1px solid ${t[2]};padding:2px 7px;border-radius:10px;flex-shrink:0;white-space:nowrap">${label}</div>`;
 };
 /** Status dot icons used in lists: ok (green check), warn (dashed orange square = stand-in), bad (red), off (grey), run (indigo ring = in progress). */
@@ -73,7 +81,7 @@ export const thumb = (wd, ht, variant = 0, standIn = false) => {
   const r = Math.round(wd * 0.11), u = wd / 100;
   const bar = (wp, hh, col, mt) => `<div style="width:${wp}%;height:${Math.max(2, Math.round(hh * u))}px;border-radius:${Math.round(1.5 * u)}px;background:${col};margin-top:${Math.round(mt * u)}px;flex-shrink:0"></div>`;
   const blocks = [
-    bar(34, 5, "#1D2A1F", 14) + bar(52, 3, "#B9C2B5", 4) + `<div style="width:100%;height:${Math.round(38 * u)}px;border-radius:${Math.round(6 * u)}px;background:#FFFFFF;margin-top:${Math.round(8 * u)}px;flex-shrink:0"></div>` + (standIn ? `<div style="width:100%;height:${Math.round(24 * u)}px;border-radius:${Math.round(5 * u)}px;border:1px dashed #F2994A;margin-top:${Math.round(7 * u)}px;flex-shrink:0"></div>` : bar(100, 22, "#DDE6D6", 7)) + bar(100, 11, "#2F6B45", 8),
+    bar(34, 5, "#1D2A1F", 14) + bar(52, 3, "#B9C2B5", 4) + `<div style="width:100%;height:${Math.round(38 * u)}px;border-radius:${Math.round(6 * u)}px;background:#FFFFFF;margin-top:${Math.round(8 * u)}px;flex-shrink:0"></div>` + (standIn ? `<div style="width:100%;height:${Math.round(24 * u)}px;border-radius:${Math.round(5 * u)}px;border:1px dashed ${c.inDevice};margin-top:${Math.round(7 * u)}px;flex-shrink:0"></div>` : bar(100, 22, "#DDE6D6", 7)) + bar(100, 11, "#2F6B45", 8),
     `<div style="width:${Math.round(34 * u)}px;height:${Math.round(34 * u)}px;border-radius:50%;background:#9CC5A1;margin-top:${Math.round(34 * u)}px;align-self:center;flex-shrink:0"></div>` + `<div style="align-self:center;display:flex;flex-direction:column;align-items:center;width:100%">${bar(62, 6, "#1D2A1F", 12)}${bar(78, 3, "#B9C2B5", 6)}${bar(54, 3, "#B9C2B5", 3)}</div>` + `<div style="margin-top:auto;width:100%">${bar(100, 11, "#2F6B45", 0)}</div>`,
     bar(46, 5, "#1D2A1F", 14) + [0, 1, 2, 3].map(() => `<div style="width:100%;height:${Math.round(13 * u)}px;border-radius:${Math.round(4 * u)}px;background:#FFFFFF;margin-top:${Math.round(5 * u)}px;flex-shrink:0"></div>`).join("") + `<div style="margin-top:auto;width:100%">${bar(100, 11, "#2F6B45", 0)}</div>`,
     bar(40, 5, "#1D2A1F", 14) + bar(70, 3, "#B9C2B5", 4) + `<div style="width:100%;height:${Math.round(52 * u)}px;border-radius:${Math.round(6 * u)}px;background:#DDE6D6;margin-top:${Math.round(8 * u)}px;flex-shrink:0"></div>` + bar(100, 11, "#FFFFFF", 7) + bar(100, 11, "#FFFFFF", 4),
@@ -89,7 +97,7 @@ const NAV = [["runs", "Runs"], ["captures", "Captures"], ["problems", "Problems"
  */
 export function appShell(artboard, active, header) {
   const item = (k, label, extra = "") => `<div layer-name="Nav ${label}" style="display:flex;align-items:center;gap:9px;height:30px;padding:0 8px;border-radius:6px;${k === active ? `background:${c.line}` : ""}">${icon(k, k === active ? c.t1 : c.t2)}<div style="flex:1;font-size:13px;font-weight:${k === active ? 500 : 400};color:${k === active ? c.t1 : c.t2}">${label}</div>${extra}</div>`;
-  const side = w(artboard, `<div layer-name="Sidebar" style="${F}width:220px;flex-shrink:0;border-right:1px solid ${c.line};padding:12px 8px;display:flex;flex-direction:column;gap:1px">
+  const side = w(artboard, `<div layer-name="Sidebar" style="${F}width:220px;flex-shrink:0;background:${c.side};border-right:1px solid ${c.line};padding:12px 8px;display:flex;flex-direction:column;gap:1px">
     <div layer-name="Workspace" style="display:flex;align-items:center;gap:9px;height:32px;padding:0 8px;margin-bottom:10px">${mark(18)}<div style="flex:1;font-size:14px;font-weight:600;color:${c.t1};letter-spacing:-0.01em">Imitor</div>${icon("search", c.t3, 14)}</div>
     <div layer-name="Project" style="display:flex;align-items:center;gap:8px;height:30px;padding:0 8px;margin-bottom:8px;background:${c.panel};border:1px solid ${c.line};border-radius:6px"><div style="width:14px;height:14px;border-radius:4px;background:#2F6B45;flex-shrink:0"></div><div style="flex:1;font-size:13px;font-weight:500;color:${c.t1}">fernwood</div>${icon("down", c.t3, 12)}</div>
   </div>`);
