@@ -74,10 +74,15 @@ export async function shoot(root, config, baseUrl) {
           page.on("pageerror", (e) => errors.push(String(e.message).split("\n")[0]));
           page.on("console", (m) => m.type() === "error" && errors.push(m.text().split("\n")[0].slice(0, 300)));
           const where = `${flow.name} / ${device.name} / ${scheme}`;
+          const at = { flow: flow.name, device: device.name, scheme };
+          const steps = flow.steps || [];
+          let index = 0; // 1-based index of the step being run; 0 while opening the start route
+          let lastGoodShot = null;
           try {
             await page.goto(baseUrl + (flow.start || "/"));
             await settle(page, config.settleMs);
-            for (const step of flow.steps || []) {
+            for (const step of steps) {
+              index++;
               if (await doStep(page, step, baseUrl)) {
                 if (!step.wait) await settle(page, 150);
                 continue;
@@ -87,13 +92,15 @@ export async function shoot(root, config, baseUrl) {
               await page.screenshot({ path: path.join(outDir, file), fullPage: step.fullPage === true });
               const stubs = await visibleStandIns(page);
               shots.push({ file, flow: flow.name, shot: step.shot, device: device.name, platform: device.platform, width: device.width, height: device.height, scheme, route: new URL(page.url()).pathname, stubs });
+              lastGoodShot = file;
             }
           } catch (error) {
             const file = `screens/${flow.name}-FAILED-${device.name}-${scheme}.png`;
             await page.screenshot({ path: path.join(outDir, file) }).catch(() => {});
-            problems.push({ where, kind: "flow-failed", message: String(error.message).split("\n")[0], file });
+            const notReached = steps.slice(Math.max(0, index - 1)).filter((s) => s.shot).map((s) => s.shot);
+            problems.push({ where, kind: "flow-failed", message: String(error.message).split("\n")[0], file, ...at, step: index, stepConfig: steps[index - 1] ?? null, lastGoodShot, notReached });
           }
-          for (const message of [...new Set(errors)]) problems.push({ where, kind: "page-error", message });
+          for (const message of [...new Set(errors)]) problems.push({ where, kind: "page-error", message, ...at });
           await context.close();
         }
       }

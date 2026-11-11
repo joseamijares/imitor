@@ -108,6 +108,16 @@ npx imitor problems
 
 Screenshots and videos from these land in `preview/captures/`. Each call starts from a fresh, empty app state, so use a flow (or inline steps) to get past setup screens.
 
+## The app
+
+`npx imitor app` starts the local review interface, where a person looks over what agents and CI produced: runs and their shots, captures, problems, and which agents are connected.
+
+```bash
+npx imitor app            # http://127.0.0.1:4173 (or --port n)
+```
+
+It reads plain files from the output folder: `runs/` (the last 50 full runs), `captures/index.jsonl`, `activity.jsonl` (one line per MCP tool call) and `state.json`, which the CLI and the MCP server write as they work. It binds to 127.0.0.1 only, so it is reachable from this machine and nowhere else.
+
 ## Stand-ins
 
 | Value | Replaces | Behaviour |

@@ -6,6 +6,7 @@ import { loadConfig } from "./config.mjs";
 import { writeReport } from "./report.mjs";
 import { serve } from "./serve.mjs";
 import { shoot } from "./shoot.mjs";
+import { recordCaptures, recordRun, resolveBy } from "./store.mjs";
 
 // --key value and --flag pairs into an object.
 function flags(args) {
@@ -25,6 +26,7 @@ Usage (run in the app's folder):
   imitor build              only build the web preview into <out>/app
   imitor shoot              only run the flows from an existing build
   imitor serve              serve an existing build for manual clicking
+  imitor app [--port n]     open the review interface on this machine (runs, captures, problems, agents)
 
 For agents and scripts (each prints JSON):
   imitor describe           flows, devices and stand-ins configured for this app
@@ -34,7 +36,7 @@ For agents and scripts (each prints JSON):
   imitor problems           problems and stand-ins from the last full run
   imitor mcp                MCP server on stdio, exposing all of the above as tools
 
-Config: imitor.config.json   Output: preview/ (index.html, manifest.json, screens/, captures/)`;
+Config: imitor.config.json   Output: preview/ (index.html, manifest.json, screens/, captures/, runs/)`;
 
 export async function main(args) {
   const command = args[0] || "all";
@@ -43,18 +45,34 @@ export async function main(args) {
   if (command === "mcp") return (await import("./mcp.mjs")).runStdio(root);
   const print = (value) => console.log(JSON.stringify(value, null, 2));
   const opts = flags(args.slice(1));
+  if (command === "app") {
+    const port = opts.port === undefined ? 4173 : Number(opts.port);
+    if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error(`--port needs a number, got "${opts.port}"`);
+    const { startAppServer } = await import("./appserver.mjs");
+    const server = await startAppServer(root, { port }).catch((error) => {
+      throw error.code === "EADDRINUSE" ? new Error(`port ${port} is in use. Try: imitor app --port ${port + 1}`) : error;
+    });
+    return console.log(`Imitor app at ${server.url} (this machine only; Ctrl+C to stop)`);
+  }
   if (command === "describe") return print(describe(root));
   if (command === "problems") return print(readProblems(root));
-  if (command === "screenshot") return print(await screenshot(root, opts));
+  const out = () => path.join(root, loadConfig(root).out);
+  if (command === "screenshot") {
+    const result = await screenshot(root, opts);
+    recordCaptures(out(), root, "screenshot", { ...result, flow: opts.flow || null }, resolveBy({ root }));
+    return print(result);
+  }
   if (command === "flow" || command === "record") {
     if (!opts.flow) throw new Error(`${command} needs --flow <name>`);
     const result = command === "flow" ? await runFlow(root, opts) : await recordVideo(root, opts);
+    recordCaptures(out(), root, command, result, resolveBy({ root }));
     print(result);
     if (!result.passed) process.exitCode = 1;
     return;
   }
   const config = loadConfig(root);
   const appDir = path.join(root, config.out, "app");
+  const startedAt = new Date().toISOString();
 
   if (command === "build" || command === "all") build(root, config);
   if (command === "build") return;
@@ -68,7 +86,8 @@ export async function main(args) {
   }
   try {
     const result = await shoot(root, config, server.url);
-    writeReport(root, config, result);
+    const manifest = writeReport(root, config, result);
+    recordRun(path.join(root, config.out), { root, config, manifest, startedAt, by: resolveBy({ root }) });
     console.log(`imitor: ${result.shots.length} shots, ${result.problems.length} problems -> ${path.join(config.out, "index.html")}`);
     if (result.problems.some((p) => p.kind === "flow-failed")) process.exitCode = 1;
   } finally {
