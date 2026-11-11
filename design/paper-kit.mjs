@@ -1,6 +1,8 @@
 // Imitor design kit: the tokens and components used to draw the app screens in Paper. THEME=signal is the chosen identity.
 // Kept as the reference for building the same interface in code. `w`, `shot` and `call` come from a local Paper MCP client that is not in this repo.
 import { w, shot, call } from "./lib.mjs";
+import { echo, bare, wordmark } from "./logo/logos.mjs";
+export { wordmark };
 export { w, shot, call };
 
 const THEMES = {
@@ -47,9 +49,8 @@ export const icons = {
 export const icon = (name, color = c.t2, size = 16) =>
   `<div style="width:${size}px;height:${size}px;flex-shrink:0;display:flex;color:${color}">${P(icons[name], `style="width:${size}px;height:${size}px"`)}</div>`;
 
-/** The Imitor mark: a solid square with a dashed copy behind it. */
-export const mark = (size = 18) =>
-  `<svg width="${size}" height="${size}" viewBox="0 0 18 18" fill="none" style="flex-shrink:0"><rect x="1" y="1" width="11" height="11" rx="3" fill="${c.t1}"/><rect x="6" y="6" width="11" height="11" rx="3" stroke="${c.acc}" stroke-width="1.5" stroke-dasharray="2.5 2.2"/></svg>`;
+/** The Imitor mark (Echo): a solid slab with its dashed copy hovering above. */
+export const mark = (size = 22) => bare(echo(c.t1, c.acc), size);
 
 /** Buttons. kind: primary | secondary | ghost. */
 export const btn = (label, kind = "secondary", iconName) => {
@@ -98,7 +99,7 @@ const NAV = [["runs", "Runs"], ["captures", "Captures"], ["problems", "Problems"
 export function appShell(artboard, active, header) {
   const item = (k, label, extra = "") => `<div layer-name="Nav ${label}" style="display:flex;align-items:center;gap:9px;height:30px;padding:0 8px;border-radius:6px;${k === active ? `background:${c.line}` : ""}">${icon(k, k === active ? c.t1 : c.t2)}<div style="flex:1;font-size:13px;font-weight:${k === active ? 500 : 400};color:${k === active ? c.t1 : c.t2}">${label}</div>${extra}</div>`;
   const side = w(artboard, `<div layer-name="Sidebar" style="${F}width:220px;flex-shrink:0;background:${c.side};border-right:1px solid ${c.line};padding:12px 8px;display:flex;flex-direction:column;gap:1px">
-    <div layer-name="Workspace" style="display:flex;align-items:center;gap:9px;height:32px;padding:0 8px;margin-bottom:10px">${mark(18)}<div style="flex:1;font-size:14px;font-weight:600;color:${c.t1};letter-spacing:-0.01em">Imitor</div>${icon("search", c.t3, 14)}</div>
+    <div layer-name="Workspace" style="display:flex;align-items:center;gap:9px;height:32px;padding:0 8px;margin-bottom:10px">${mark(24)}<div style="flex:1;display:flex">${wordmark(15)}</div>${icon("search", c.t3, 14)}</div>
     <div layer-name="Project" style="display:flex;align-items:center;gap:8px;height:30px;padding:0 8px;margin-bottom:8px;background:${c.panel};border:1px solid ${c.line};border-radius:6px"><div style="width:14px;height:14px;border-radius:4px;background:#2F6B45;flex-shrink:0"></div><div style="flex:1;font-size:13px;font-weight:500;color:${c.t1}">fernwood</div>${icon("down", c.t3, 12)}</div>
   </div>`);
   w(side, NAV.map(([k, l]) => item(k, l, k === "problems" ? `<div style="${M}font-size:11px;color:${c.t3}">2</div>` : "")).join(""));
@@ -115,7 +116,7 @@ export function onboardShell(artboard, step, width = 560) {
   const names = ["Add Imitor", "Stand-ins", "First run"];
   const steps = names.map((n, i) => { const s = i + 1 < step ? "done" : i + 1 === step ? "now" : "next"; return `<div style="display:flex;align-items:center;gap:7px"><div style="width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;${M}font-size:11px;${s === "done" ? `background:${c.ok};color:${c.bg}` : s === "now" ? `background:${c.t1};color:${c.bg}` : `border:1px solid ${c.line2};color:${c.t3}`}">${s === "done" ? "✓" : i + 1}</div><div style="font-size:13px;font-weight:${s === "now" ? 500 : 400};color:${s === "next" ? c.t3 : c.t1}">${n}</div></div>${i < 2 ? `<div style="width:28px;height:1px;background:${c.line2}"></div>` : ""}`; }).join("");
   const col = w(artboard, `<div layer-name="Onboarding" style="${F}flex:1;display:flex;flex-direction:column"></div>`);
-  w(col, `<div layer-name="Top bar" style="display:flex;align-items:center;justify-content:space-between;height:56px;padding:0 24px;flex-shrink:0"><div style="display:flex;align-items:center;gap:9px;width:200px">${mark(18)}<div style="font-size:14px;font-weight:600;color:${c.t1};letter-spacing:-0.01em">Imitor</div></div><div layer-name="Steps" style="display:flex;align-items:center;gap:10px">${steps}</div><div style="width:200px;display:flex;justify-content:flex-end;font-size:13px;color:${c.t2}">Skip setup</div></div>`);
+  w(col, `<div layer-name="Top bar" style="display:flex;align-items:center;justify-content:space-between;height:56px;padding:0 24px;flex-shrink:0"><div style="display:flex;align-items:center;gap:9px;width:200px">${mark(24)}${wordmark(15)}</div><div layer-name="Steps" style="display:flex;align-items:center;gap:10px">${steps}</div><div style="width:200px;display:flex;justify-content:flex-end;font-size:13px;color:${c.t2}">Skip setup</div></div>`);
   const wrap = w(col, `<div layer-name="Centre" style="flex:1;display:flex;justify-content:center;padding-top:72px"></div>`);
   return w(wrap, `<div layer-name="Column" style="width:${width}px;display:flex;flex-direction:column"></div>`);
 }

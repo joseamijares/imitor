@@ -47,7 +47,7 @@ It is an imitation and says so. Every shot and preview states what was rendered,
 - Voice: plain and honest about limits; never claims to be a simulator.
 - User-stated bar: top-tier craft in the company of Linear, Apple, ChatGPT and Anthropic.
 - Chosen identity (user, 11 Nov 2026): "Signal". Ink black (#0B0B0C) with chrome yellow (#FFD60A), Geist and Geist Mono, dense rows, standard controls. The brand colour is the imitation colour: anything imitated or stood-in is drawn dashed in yellow; genuine things are solid. Linear is a reference for density and craft only; an indigo Linear-like palette was rejected as too close a copy.
-- Logo: three proposals in `design/logo/` (ghost, ditto, half), awaiting a choice.
+- Logo (user, 11 Nov 2026): "Echo", a solid slab in isometric view with its dashed yellow copy hovering above, plus a custom lowercase wordmark whose first i-dot is solid and second is a dashed ring. Files in `design/logo/`.
 - Standing visual preference (user, 11 Nov 2026): a technical product register like Linear, Apple and Mercury. No serif, paper-card or journal styling; the first "specimen under glass" direction was rejected for reading like a journal app.
 
 ## Evidence on Hand
