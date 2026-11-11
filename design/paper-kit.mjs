@@ -1,8 +1,7 @@
-// Imitor design kit: the tokens and components used to draw the app screens in Paper. THEME=signal is the chosen identity.
+// Imitor design kit: the tokens and components used to draw the app screens in Paper. THEME=signal (dark) and THEME=signal-light.
 // Kept as the reference for building the same interface in code. `w`, `shot` and `call` come from a local Paper MCP client that is not in this repo.
 import { w, shot, call } from "./lib.mjs";
-import { echo, bare, wordmark } from "./logo/logos.mjs";
-export { wordmark };
+import { echo, bare, wordmark as wm } from "./logo/logos.mjs";
 export { w, shot, call };
 
 const THEMES = {
@@ -10,13 +9,19 @@ const THEMES = {
   signal: { bg: "#0B0B0C", side: "#0B0B0C", panel: "#141415", raised: "#1B1B1D", line: "#222224", line2: "#303033", t1: "#F5F5F2", t2: "#A8A8A3", t3: "#85857F",
     acc: "#FFD60A", accBg: "#FFD60A", onAcc: "#0B0B0C", accTint: "#262105", accLine: "#5C4E0A", knob: "#0B0B0C",
     warn: "#FFD60A", warnTint: "#262105", warnLine: "#5C4E0A", ok: "#4CB782", okTint: "#0F2219", okLine: "#1C4030", bad: "#FF5C5C", badTint: "#2A1213", badLine: "#4A2022",
-    inDevice: "#B58900", inDeviceText: "#7A5C00", stageBg: "background:#0B0B0C", devShadow: "0 40px 70px -20px rgba(0,0,0,0.8), 0 0 0 1px #303033", font: "Geist", mono: "Geist Mono" },
+    inDevice: "#B58900", inDeviceText: "#7A5C00", ghost: "#FFD60A", logoAcc: "#FFD60A", logoShade: "#8E8E88", stageBg: "background:#0B0B0C", devShadow: "0 40px 70px -20px rgba(0,0,0,0.8), 0 0 0 1px #303033", font: "Geist", mono: "Geist Mono" },
+  // Signal light: white ground, ink text. Yellow stays a fill (buttons, switches); lines and text that mean "imitated" use a darker gold so they pass contrast.
+  "signal-light": { bg: "#FFFFFF", side: "#FAFAF8", panel: "#F4F4F1", raised: "#ECECE8", line: "#E6E6E1", line2: "#D2D2CC", t1: "#0B0B0C", t2: "#55554F", t3: "#6F6F68",
+    acc: "#8F6B00", accBg: "#FFD60A", onAcc: "#0B0B0C", accTint: "#FFF8D6", accLine: "#EAD27A", knob: "#0B0B0C",
+    warn: "#8F6B00", warnTint: "#FFF8D6", warnLine: "#EAD27A", ok: "#178A52", okTint: "#E8F5EE", okLine: "#BCE0CC", bad: "#D92D20", badTint: "#FDECEA", badLine: "#F3BFB9",
+    inDevice: "#B58900", inDeviceText: "#7A5C00", ghost: "#C9A400", logoAcc: "#D4AC00", logoShade: "#5A5A55", stageBg: "background:#F7F7F4", devShadow: "0 30px 50px -24px rgba(11,11,12,0.35), 0 6px 14px -6px rgba(11,11,12,0.12)", font: "Geist", mono: "Geist Mono" },
   // Cobalt: pure white with cobalt blue, a drafting-table dot grid behind the device and crop marks around it.
   cobalt: { bg: "#FFFFFF", side: "#F6F7FB", panel: "#F3F4F9", raised: "#EBEDF4", line: "#E4E6EE", line2: "#CFD3DF", t1: "#0E1116", t2: "#4A505C", t3: "#666D7A",
     acc: "#2340F0", accBg: "#2340F0", onAcc: "#FFFFFF", accTint: "#EDF0FE", accLine: "#C5CDFB", knob: "#FFFFFF",
     warn: "#2340F0", warnTint: "#EDF0FE", warnLine: "#C5CDFB", ok: "#178A52", okTint: "#E8F5EE", okLine: "#BCE0CC", bad: "#D92D20", badTint: "#FDECEA", badLine: "#F3BFB9",
     inDevice: "#2340F0", inDeviceText: "#1B31B8", stageBg: "background-color:#FAFBFD;background-image:radial-gradient(circle, #C9CEDD 1px, rgba(201,206,221,0) 1.2px);background-size:22px 22px", devShadow: "0 30px 50px -24px rgba(14,17,22,0.35), 0 6px 14px -6px rgba(14,17,22,0.12)", font: "Hanken Grotesk", mono: "JetBrains Mono" },
 };
+export { THEMES };
 export const c = THEMES[process.env.THEME];
 if (!c) throw new Error("set THEME=signal|cobalt");
 export const F = `font-family:'${c.font}';`;
@@ -50,7 +55,13 @@ export const icon = (name, color = c.t2, size = 16) =>
   `<div style="width:${size}px;height:${size}px;flex-shrink:0;display:flex;color:${color}">${P(icons[name], `style="width:${size}px;height:${size}px"`)}</div>`;
 
 /** The Imitor mark (Echo): a solid slab with its dashed copy hovering above. */
-export const mark = (size = 22) => bare(echo(c.t1, c.acc), size);
+export const mark = (size = 22) => bare(echo(c.t1, c.logoAcc, c.logoShade), size);
+/** The custom wordmark at a given height in px. */
+export const wordmark = (h = 15) => wm(h, c.t1, c.logoAcc);
+/** Switch, 30x18. */
+export const toggle = (on) => `<div style="width:30px;height:18px;border-radius:9px;background:${on ? c.accBg : c.line2};display:flex;align-items:center;padding:2px;justify-content:${on ? "flex-end" : "flex-start"};flex-shrink:0"><div style="width:14px;height:14px;border-radius:7px;background:${on ? c.knob : c.t3}"></div></div>`;
+/** Text input / select look. */
+export const field = (value, opts = {}) => `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;height:30px;padding:0 10px;background:${c.panel};border:1px solid ${c.line};border-radius:6px;font-size:13px;color:${opts.muted ? c.t3 : c.t1};width:${opts.width || 240}px;flex-shrink:0;${opts.mono ? M : ""}">${value}${opts.select ? icon("down", c.t3, 12) : ""}</div>`;
 
 /** Buttons. kind: primary | secondary | ghost. */
 export const btn = (label, kind = "secondary", iconName) => {
