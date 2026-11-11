@@ -17,4 +17,14 @@ Must feel wrong if: the shell competes with the app's own colours, or hides the 
 
 ## Direction contract
 
-UNDECIDED. The "specimen under glass" direction (seed:98c0f67ddef6ec34) was rejected by the user as too journal-like. The user took the category-standard path, alongside Linear, Apple and Mercury. Two options are in the Paper file awaiting a choice: A, Linear-style dark with a flows rail and a docked inspector; B, Apple-style light with floating cards and a step bar. Rewrite this contract once one is chosen.
+THESIS: A working review tool in the Linear register, where the app under preview is the only colourful thing on screen and every limit is listed beside it. Chosen by the user over the roll (category standard, alongside Linear, Apple and Mercury).
+
+OWN-WORLD: Ground #08090A, panel #111214, hairlines #1F2124 and #2A2D31, text #F7F8F8 / #A0A6AE / #7F858E, indigo #7C85F5 (fills #5E6AD2), orange #F2994A for stand-ins, green #4CB782 for genuine, red #EB5757 for failures. Geist for interface, Geist Mono for measurements, hashes and commands. Dense 28 to 32px rows, 6px radii, standard web controls. A light theme mirrors it on white.
+
+STORY: The reviewer (or an agent) lands on the run, sees the app, reads what is genuine and what is a stand-in, changes device or text size, and leaves knowing what still needs a phone.
+
+FIRST VIEWPORT: 48px top bar (breadcrumb, Live / Shots / Problems, Copy link, Open on phone). Left rail of flows and numbered steps. Centre stage with the device. Right inspector: Fidelity list, then Device, Appearance, Text size, Language, Reduce motion.
+
+FORM: category standard, user-pinned; the rolled direction (seed:98c0f67ddef6ec34) was rejected.
+
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance

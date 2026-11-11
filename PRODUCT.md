@@ -14,7 +14,9 @@ delegated: plain static HTML, CSS and a little JavaScript, no framework and no b
 
 Primary: a developer or founder reviewing a pull request on a React Native / Expo app. They open a link, on desktop or on their phone, to see how a mobile change looks without running a simulator or a build.
 
-Secondary: AI coding agents, which read the manifest and screenshots; and open-source developers evaluating Imitor from GitHub.
+Co-primary: AI coding agents. Many teams will never open the interface; their agents will drive Imitor directly to build a preview, run flows, take screenshots and record videos, then read the results. (User, 11 Nov 2026: "super agentic; some people probably won't use the app".)
+
+Secondary: open-source developers evaluating Imitor from GitHub.
 
 ## Product Purpose
 
@@ -34,7 +36,7 @@ It is an imitation and says so. Every shot and preview states what was rendered,
 ## Capabilities and Constraints
 
 - Works today: Metro plugin with stand-ins (SQLite via sql.js, Skia box, inert), scripted flows (tap, fill, shot), devices and light/dark, HTML report with problems and stand-in labels.
-- Planned, not built: live preview shell with device frame and controls (device, light/dark, text size, language), "pretend iOS / Android" mode, real Skia on web, seeded data states, Android widget renders, Apple surfaces on macOS.
+- Planned, not built: an agent interface (MCP server and CLI) so agents can build, run flows, take screenshots and record videos without the app; an app with onboarding, runs, captures, problems and agent connection screens; live preview shell with device frame and controls (device, light/dark, text size, language), "pretend iOS / Android" mode, real Skia on web, seeded data states, Android widget renders, Apple surfaces on macOS.
 - Known limits the interface must state: native navigation chrome, keyboard, exact fonts, entering animations, platform-specific code paths, widgets and notifications.
 - Terminology: "stand-in" (a replaced native module), "flow", "shot", "device", "scheme".
 - Undecided: hosted service versus self-hosted only; visual diffs between commits.
@@ -44,6 +46,7 @@ It is an imitation and says so. Every shot and preview states what was rendered,
 - Name: Imitor (Latin, "I imitate"). Open source, MIT.
 - Voice: plain and honest about limits; never claims to be a simulator.
 - User-stated bar: top-tier craft in the company of Linear, Apple, ChatGPT and Anthropic.
+- Chosen direction (user, 11 Nov 2026): Linear-style. Near-black ground, cool greys, indigo accent, Geist and Geist Mono, dense rows, standard controls. Ships in light and dark.
 - Standing visual preference (user, 11 Nov 2026): a technical product register like Linear, Apple and Mercury. No serif, paper-card or journal styling; the first "specimen under glass" direction was rejected for reading like a journal app.
 
 ## Evidence on Hand
