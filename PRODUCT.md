@@ -44,6 +44,7 @@ It is an imitation and says so. Every shot and preview states what was rendered,
 - Name: Imitor (Latin, "I imitate"). Open source, MIT.
 - Voice: plain and honest about limits; never claims to be a simulator.
 - User-stated bar: top-tier craft in the company of Linear, Apple, ChatGPT and Anthropic.
+- Standing visual preference (user, 11 Nov 2026): a technical product register like Linear, Apple and Mercury. No serif, paper-card or journal styling; the first "specimen under glass" direction was rejected for reading like a journal app.
 
 ## Evidence on Hand
 

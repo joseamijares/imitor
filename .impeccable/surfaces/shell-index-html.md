@@ -17,16 +17,4 @@ Must feel wrong if: the shell competes with the app's own colours, or hides the 
 
 ## Direction contract
 
-THESIS: The app is a specimen under glass and Imitor is the label beside it. Refuses the category default of a grey toolbar-and-iframe previewer where limits live in documentation.
-
-OWN-WORLD: Natural-history gallery. Deep green wall (#14201B) with raised panels (#1B2A24) and hairlines (#2C3D35); ivory (#F2ECDC) for text on the wall and for the one card-stock label; brass (#C9A45C) for selection and focus; vermilion (#D9482B) only for stand-ins and problems. Geist for interface, Geist Mono for measurements, Libre Caslon for the label title only. Standard web controls throughout.
-
-STORY: The reviewer sees the app first, lit against the wall; reads on the label what is genuine and what is a stand-in; changes device or text size and watches the app respond; leaves knowing what still needs a phone.
-
-FIRST VIEWPORT: Top bar (app, pull request, commit, Live / Shots / Problems tabs). Left rail: flows and steps. Centre: the device at true size on the wall, route and dimensions beneath it. Right: the ivory specimen label, then the controls (device, appearance, text size with live readout, language).
-
-Raises. From the type specimen: every control remaps the live app continuously and shows its value as a number. From the gate board: a problem stays lit until acknowledged. From the lexicon: the head names the span you are in (flow, step n of m). From the high-density site: density courage for the Shots grid.
-
-FORM: specimen vitrine and label, candidate 3 of 7 grounded directions. seed:98c0f67ddef6ec34
-
-FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
+UNDECIDED. The "specimen under glass" direction (seed:98c0f67ddef6ec34) was rejected by the user as too journal-like. The user took the category-standard path, alongside Linear, Apple and Mercury. Two options are in the Paper file awaiting a choice: A, Linear-style dark with a flows rail and a docked inspector; B, Apple-style light with floating cards and a step bar. Rewrite this contract once one is chosen.
