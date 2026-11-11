@@ -30,6 +30,10 @@ The same colours, type sizes, radii and spacing exist as design tokens inside th
 
 The logo is the Echo app icon: a dark rounded tile holding a solid slab with its dashed yellow copy hovering above. It is the same on dark and light grounds, and there is no separate flat mark. The dashed line is 3% of the icon's width at every size, so render the icon at its final size (`design/logo/logos.mjs` generates it; `imitor-icon-120.svg`, `-32` and `-16` are pre-rendered). The wordmark is "Imitor" in Instrument Serif Italic (400, -0.02em tracking), in the primary text colour, set 0.35 × the icon's width to its right, with a font size of about 0.85 × the icon's height. Instrument Serif is used for the wordmark only, never for interface text.
 
+## Agent logos
+
+Wherever an agent is named as the source of something (Runs, Agents, Captures, onboarding), show its logo in a neutral rounded tile: 16px in lists, 24px in the Connected list. Files and their sources are in `assets/agents/`. Claude uses its brand colour, GitHub Actions its blue, Cursor the text colour. People and agents without an official file (Codex today) get an initial in the same tile. The marks are their owners' trademarks; see `assets/agents/README.md`.
+
 ## Colour
 
 | Token | Dark | Light | Use |

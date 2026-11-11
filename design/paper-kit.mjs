@@ -2,6 +2,7 @@
 // Kept as the reference for building the same interface in code. `w`, `shot` and `call` come from a local Paper MCP client that is not in this repo.
 import { w, shot, call } from "./lib.mjs";
 import { echo, tile } from "./logo/logos.mjs";
+import { AGENT_GLYPHS } from "./agent-glyphs.mjs";
 export { w, shot, call };
 
 const THEMES = {
@@ -58,6 +59,17 @@ export const icon = (name, color = c.t2, size = 16) =>
 export const mark = (size = 22) => tile(echo(undefined, undefined, undefined, size), size);
 /** The wordmark: "Imitor" in Instrument Serif Italic. h is roughly the cap height in px. */
 export const wordmark = (h = 15) => `<div style="font-family:'Instrument Serif';font-style:italic;font-size:${Math.round(h * 1.36)}px;line-height:${Math.round(h * 1.5)}px;font-weight:400;letter-spacing:-0.02em;color:${c.t1};white-space:nowrap;flex-shrink:0">Imitor</div>`;
+const AGENT_KEY = { "Claude Code": "claude", Claude: "claude", Cursor: "cursor", "GitHub Actions": "githubactions" };
+/**
+ * Avatar for whoever started something. Known agents get their official glyph on a neutral tile
+ * (Claude in its brand colour, Cursor in the text colour, GitHub Actions in its blue); anyone else gets an initial.
+ */
+export const agentLogo = (name, size = 16) => {
+  const g = AGENT_GLYPHS[AGENT_KEY[name]]; const r = Math.round(size * 0.26); const inner = Math.round(size * 0.64);
+  const col = g ? (AGENT_KEY[name] === "cursor" ? c.t1 : g.hex) : c.t1;
+  const body = g ? `<svg width="${inner}" height="${inner}" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="${g.path}" fill="${col}"/></svg>` : `<div style="font-size:${Math.round(size * 0.62)}px;line-height:${size}px;font-weight:600;color:${c.t1}">${name[0]}</div>`;
+  return `<div layer-name="${g ? g.title + " logo" : "Avatar"}" style="width:${size}px;height:${size}px;border-radius:${r}px;background:${c.raised};box-shadow:inset 0 0 0 1px ${c.line2};display:flex;align-items:center;justify-content:center;flex-shrink:0">${body}</div>`;
+};
 /** Switch, 30x18. */
 export const toggle = (on) => `<div style="width:30px;height:18px;border-radius:9px;background:${on ? c.accBg : c.line2};display:flex;align-items:center;padding:2px;justify-content:${on ? "flex-end" : "flex-start"};flex-shrink:0"><div style="width:14px;height:14px;border-radius:7px;background:${on ? c.knob : c.t3}"></div></div>`;
 /** Text input / select look. */
