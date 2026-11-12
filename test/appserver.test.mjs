@@ -215,3 +215,46 @@ test("static: a placeholder page when src/app is not there yet", async (t) => {
   assert.equal(r.status, 200);
   assert.match(r.body, /not built yet/);
 });
+
+let hasPlaywright = true;
+try { (await import("node:module")).createRequire(import.meta.url)("playwright"); } catch { hasPlaywright = false; }
+
+test("live driver: the interface drives the preview in its frame (tap, fill, reset, stand-ins)", { skip: !hasPlaywright && "playwright is not installed" }, async (t) => {
+  const f = fixture();
+  fs.writeFileSync(path.join(f.out, "app", "index.html"), `<!doctype html><html><head><title>fernwood</title></head><body>
+    <div id="one"><h1>Welcome</h1><div role="button" onclick="one.hidden=true;two.hidden=false"><span>Continue</span></div></div>
+    <div id="two" hidden><input placeholder="Plant name" oninput="echo.textContent=this.value"><p id="echo"></p><div data-imitor-stub="skia" style="height:20px"></div></div>
+    <script>sessionStorage.setItem("app-data", "x"); sessionStorage.setItem("imitor-scheme", "dark")</script></body></html>`);
+  const appDir = path.join(f.root, "fake-app");
+  fs.mkdirSync(appDir);
+  fs.writeFileSync(path.join(appDir, "index.html"), `<!doctype html><iframe id="f"></iframe><script>
+    window.messages = [];
+    addEventListener("message", (e) => window.messages.push(e.data));
+    window.next = (kind, from) => new Promise((ok) => { const i = setInterval(() => { const m = window.messages.slice(from).find((x) => x.imitor === kind); if (m) { clearInterval(i); ok(m); } }, 20); });
+    window.ask = (msg, kind) => { const n = window.messages.length; document.getElementById("f").contentWindow.postMessage(msg, "*"); return window.next(kind, n); };
+  </script>`);
+  const server = await startAppServer(f.root, { port: 0, appDir });
+  t.after(() => server.close());
+  const { chromium } = (await import("node:module")).createRequire(import.meta.url)("playwright");
+  const browser = await chromium.launch();
+  t.after(() => browser.close());
+  const page = await browser.newPage();
+  await page.goto(server.url + "/live");
+  const ready = await page.evaluate((url) => { document.getElementById("f").src = url + "/"; return window.next("ready", 0); }, server.previewUrl);
+  assert.equal(ready.route, "/");
+  assert.equal(ready.media, null, "this build has no scheme override");
+  const frame = page.frames().find((x) => x !== page.mainFrame());
+
+  assert.deepEqual(await page.evaluate(() => window.ask({ imitor: "step", id: 1, step: { tap: "Continue" } }, "step-done")).then((r) => [r.id, r.ok]), [1, true]);
+  assert.equal(await frame.evaluate(() => document.getElementById("two").hidden), false);
+  const filled = await page.evaluate(() => window.ask({ imitor: "step", id: 2, step: { fill: { placeholder: "Plant name", value: "Fern" } } }, "step-done"));
+  assert.equal(filled.ok, true);
+  assert.deepEqual(filled.standIns, [{ kind: "skia", count: 1 }]);
+  assert.equal(await frame.evaluate(() => document.getElementById("echo").textContent), "Fern");
+  const bad = await page.evaluate(() => window.ask({ imitor: "step", id: 3, step: { swipe: "left" } }, "step-done"));
+  assert.equal(bad.ok, false);
+  assert.match(bad.error, /cannot be performed/);
+
+  await page.evaluate(() => window.ask({ imitor: "reset", id: 4 }, "reset-done"));
+  assert.deepEqual(await frame.evaluate(() => Object.keys(sessionStorage)), ["imitor-scheme"], "reset keeps only the imitor-* settings");
+});

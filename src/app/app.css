@@ -595,7 +595,7 @@ a.crumb-run:hover, .crumb-project:hover { color: var(--color-t-1); }
 .rail-note .mark { margin-top: 1px; }
 .rail-empty { padding: 8px; color: var(--color-t-3); }
 
-.live-stage { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; padding: 40px 24px 16px; background: var(--stage-bg); overflow: hidden; }
+.live-stage { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; padding: 40px 24px 16px; background: var(--stage-bg); overflow: hidden; }
 .stage-fit { flex-shrink: 0; }
 .stage-state { padding: 24px 0; }
 .device-wrap { position: relative; width: calc(var(--sw) + 20px); height: calc(var(--sh) + 20px); }
@@ -621,7 +621,7 @@ a.crumb-run:hover, .crumb-project:hover { color: var(--color-t-1); }
   border-radius: 0 0 calc(var(--radius) - 10px) calc(var(--radius) - 10px);
 }
 .screen iframe { position: absolute; top: 0; left: 0; border: 0; display: block; transform-origin: 0 0; background: #FFFFFF; }
-.stage-status { margin-top: 30px; max-width: min(560px, 100%); }
+.stage-status { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); width: max-content; max-width: min(560px, calc(100% - 48px)); z-index: 2; box-shadow: 0 12px 30px -12px rgba(0, 0, 0, 0.5); border-radius: var(--radius-block); }
 .stage-status:empty { display: none; }
 .replay {
   display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 10px; min-height: 32px; border: 1px solid var(--color-line); border-radius: var(--radius-block);
@@ -632,7 +632,6 @@ a.crumb-run:hover, .crumb-project:hover { color: var(--color-t-1); }
 .replay.is-error { border-color: var(--color-bad-line); background: var(--color-bad-tint); color: var(--color-t-1); }
 .replay.is-error .btn { height: 24px; padding: 0 8px; font-size: var(--text-12); }
 .stage-caption { margin-top: 26px; display: flex; gap: 8px; color: var(--color-t-3); }
-.stage-status:not(:empty) + .stage-caption { margin-top: 12px; }
 .stage-caption .dim { opacity: 0.6; }
 @media (prefers-reduced-motion: reduce) { .replay .bar span { transition: none; } }
 
@@ -735,3 +734,4 @@ a.crumb-run:hover, .crumb-project:hover { color: var(--color-t-1); }
 .onb-limits b { color: var(--color-t-1); font-weight: 500; }
 .onb-col.w720 .onb-foot { margin-top: 44px; }
 .t1 { color: var(--color-t-1); }
+.device-wrap.ios .statusbar .cam, .device-wrap.android .statusbar .island { display: none; }

@@ -292,7 +292,7 @@ function createLive(ctx, project, detail) {
     const d = st.device;
     const strip = STRIP[d.platform] ?? STRIP.ios;
     const r = stage.getBoundingClientRect();
-    const availH = r.height - 40 /* top */ - 64 /* caption and status */;
+    const availH = r.height - 40 /* top */ - 64 /* caption; the replay status floats over the stage */;
     const availW = r.width - 64 - 20 /* ghost offset */;
     const s = Math.max(0.3, Math.min(1, (availH - 2 * BEZEL) / (d.height + strip), (availW - 2 * BEZEL) / d.width));
     st.scale = Math.floor(s * 100) / 100;
@@ -324,7 +324,7 @@ function createLive(ctx, project, detail) {
     fit.innerHTML = String(html`<div class="device-wrap ${platform}">
       <div class="ghost" aria-hidden="true"></div>
       <div class="device">
-        <div class="statusbar" aria-hidden="true"><span class="time">9:41</span>${platform === "ios" ? html`<span class="island"></span>` : html`<span class="cam"></span>`}<span class="batt"><span></span></span></div>
+        <div class="statusbar" aria-hidden="true"><span class="time">9:41</span><span class="island"></span><span class="cam"></span><span class="batt"><span></span></span></div>
         <div class="screen"><iframe title="${project.name}, live" referrerpolicy="no-referrer"></iframe></div>
       </div>
     </div>`);
