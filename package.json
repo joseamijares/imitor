@@ -43,6 +43,7 @@
   },
   "scripts": {
     "test": "node --test test/*.test.mjs",
+    "test:cloud": "node --test cloud/test/*.test.mjs",
     "demo": "node demo/build.mjs",
     "site": "node site/build.mjs"
   },
