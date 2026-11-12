@@ -51,7 +51,6 @@ class SQLiteDatabase {
     this.options = {};
     this._name = name;
     this._tx = 0;
-    this._fk = false;
     this._timer = null;
     let saved = null;
     try {
@@ -103,19 +102,29 @@ class SQLiteDatabase {
       } catch {}
     }
     try {
-      store.setItem(KEY + this._name, toB64(this._db.export()));
+      store.setItem(KEY + this._name, toB64(this._export()));
     } catch {}
   }
 
+  /**
+   * The database file. sql.js before 1.16 exports by closing and reopening the connection, which turns
+   * foreign_keys back off (set by the app or by a seed): keep it as it was.
+   */
+  _export() {
+    const fk = this._db.exec("PRAGMA foreign_keys");
+    const on = !!(fk[0] && fk[0].values[0][0]);
+    const data = this._db.export();
+    if (on) this._db.run("PRAGMA foreign_keys = ON;");
+    return data;
+  }
+
   _touched(sql) {
-    if (/pragma\s+foreign_keys\s*=\s*(on|1)/i.test(sql)) this._fk = true;
     if (!WRITE.test(sql) || this._name === ":memory:" || this._timer) return;
     this._timer = setTimeout(() => {
       this._timer = null;
       if (this._tx > 0 || !this._db) return;
       try {
-        sessionStorage.setItem(KEY + this._name, toB64(this._db.export()));
-        if (this._fk) this._db.run("PRAGMA foreign_keys = ON;"); // export() resets it
+        sessionStorage.setItem(KEY + this._name, toB64(this._export()));
       } catch {}
     }, 0);
   }

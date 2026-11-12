@@ -31,6 +31,9 @@ function withImitor(config, options = {}) {
   if (process.env.IMITOR !== "1") return config;
   const projectRoot = options.projectRoot || config.projectRoot || process.cwd();
   const shims = { ...(loadConfig(projectRoot).shims || {}), ...(options.shims || {}) };
+  // imitor build loads sql.js and CanvasKit for the kinds in imitor.config.json only; set here, the app would never start.
+  const unbooted = Object.keys(options.shims || {}).filter((n) => ["sqljs", "canvaskit"].includes(shims[n]) && (loadConfig(projectRoot).shims || {})[n] !== shims[n]);
+  if (unbooted.length) throw new Error(`withImitor: set ${unbooted.map((n) => `"${n}": "${shims[n]}"`).join(", ")} in imitor.config.json "shims", not in withImitor's options: imitor build loads that library only for kinds listed there.`);
   const names = Object.keys(shims);
   const previous = config.resolver && config.resolver.resolveRequest;
   const anchor = path.join(projectRoot, "package.json");

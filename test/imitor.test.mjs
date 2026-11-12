@@ -103,6 +103,40 @@ test("expo-sqlite stand-in: sync API, params, transactions, reload persistence",
   assert.equal((await again.getFirstAsync("SELECT count(*) AS n FROM a")).n, 3);
 });
 
+test("expo-sqlite stand-in: foreign_keys turned on by a seed or the app stays on when the mirror exports", async () => {
+  const store = new Map();
+  globalThis.sessionStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v), removeItem: (k) => store.delete(k) };
+  const SQL = await require("sql.js/dist/sql-wasm.js")();
+  // sql.js before 1.16 (still in the ^1.13 range) closes and reopens the connection on export(), which turns
+  // foreign_keys off. Do the same here, whichever version is installed.
+  const real = SQL.Database.prototype.export;
+  SQL.Database.prototype.export = function () {
+    const data = real.call(this);
+    this.run("PRAGMA foreign_keys = OFF;");
+    return data;
+  };
+  const seed = "PRAGMA foreign_keys = ON; CREATE TABLE beds (id INTEGER PRIMARY KEY); CREATE TABLE plants (id INTEGER PRIMARY KEY, bed INTEGER REFERENCES beds(id)); INSERT INTO beds VALUES (1);";
+  globalThis.__imitor = { SQL, seed: { sql: [seed], database: "fernwood.db" } };
+  try {
+    const SQLite = require("../src/shims/expo-sqlite.js");
+    const db = SQLite.openDatabaseSync("fernwood.db"); // seeded, then exported to sessionStorage
+    assert.equal(db.getFirstSync("PRAGMA foreign_keys").foreign_keys, 1);
+    assert.throws(() => db.runSync("INSERT INTO plants (bed) VALUES (9)"), /FOREIGN KEY/);
+    db.runSync("INSERT INTO plants (bed) VALUES (1)");
+    await new Promise((done) => setTimeout(done, 10)); // the mirror exports again
+    assert.equal(db.getFirstSync("PRAGMA foreign_keys").foreign_keys, 1);
+    assert.throws(() => db.runSync("INSERT INTO plants (bed) VALUES (9)"), /FOREIGN KEY/);
+    // Left off, it stays off.
+    const plain = SQLite.openDatabaseSync("notes.db");
+    plain.execSync("CREATE TABLE n (id INTEGER PRIMARY KEY)");
+    await new Promise((done) => setTimeout(done, 10));
+    assert.equal(plain.getFirstSync("PRAGMA foreign_keys").foreign_keys, 0);
+  } finally {
+    SQL.Database.prototype.export = real;
+    delete globalThis.__imitor;
+  }
+});
+
 test("metro: stand-ins replace a module on web only, and a stand-in that imports what it replaces gets the real module", () => {
   const fs = require("node:fs");
   const os = require("node:os");
@@ -126,4 +160,14 @@ test("metro: stand-ins replace a module on web only, and a stand-in that imports
     if (before === undefined) delete process.env.IMITOR;
     else process.env.IMITOR = before;
   }
+});
+
+test("the playwright peer range starts at 1.45, the first with clock.install, in package.json and its lock", () => {
+  const fs = require("node:fs");
+  const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+  const lock = JSON.parse(fs.readFileSync(new URL("../package-lock.json", import.meta.url), "utf8"));
+  assert.equal(pkg.peerDependencies.playwright, ">=1.45");
+  assert.equal(lock.packages[""].peerDependencies.playwright, ">=1.45");
+  const state = fs.readFileSync(new URL("../src/state.mjs", import.meta.url), "utf8");
+  assert.match(state, /context\.clock\.install/); // the reason for the floor
 });

@@ -75,40 +75,34 @@ window.seen = { state: i.state, flow: i.flow, SQL: !!i.SQL, CanvasKit: globalThi
   return appDir;
 }
 
-test("a run's state prelude survives the parallel boot loader: state, seed, sql.js, CanvasKit and the clock all reach the app", browser, async () => {
+test("a run's state prelude survives the parallel boot loader: state, seed, sql.js, CanvasKit and the clock all reach the app", browser, async (t) => {
   const root = fernwood();
   const appDir = build(root);
   const config = JSON.parse(fs.readFileSync(path.join(root, "imitor.config.json"), "utf8"));
   const { chromium } = require("playwright");
   const server = await serve(appDir);
+  t.after(() => server.close()); // registered before the launch, so a failed launch still closes the server
   const b = await chromium.launch();
-  try {
-    const context = await b.newContext();
-    await prepareContext(context, { ...config.flows[1], clock: config.clock });
-    const page = await context.newPage();
-    await page.goto(server.url + "/");
-    await page.waitForFunction(() => window.seen, null, { timeout: 5000 });
-    assert.deepEqual(await page.evaluate(() => window.seen), { state: "signed-in", flow: "today", SQL: true, CanvasKit: "fake canvaskit", stored: "true", year: 2026, media: true });
-  } finally {
-    await b.close();
-    await server.close();
-  }
+  t.after(() => b.close());
+  const context = await b.newContext();
+  await prepareContext(context, { ...config.flows[1], clock: config.clock });
+  const page = await context.newPage();
+  await page.goto(server.url + "/");
+  await page.waitForFunction(() => window.seen, null, { timeout: 5000 });
+  assert.deepEqual(await page.evaluate(() => window.seen), { state: "signed-in", flow: "today", SQL: true, CanvasKit: "fake canvaskit", stored: "true", year: 2026, media: true });
 });
 
-test("the live preview's prelude survives the parallel boot loader too", browser, async () => {
+test("the live preview's prelude survives the parallel boot loader too", browser, async (t) => {
   const root = fernwood();
   const appDir = build(root);
   const { chromium } = require("playwright");
   const server = await serve(appDir, { html: withDriver(["http://127.0.0.1:1"], root) });
+  t.after(() => server.close()); // registered before the launch, so a failed launch still closes the server
   const b = await chromium.launch();
-  try {
-    const page = await b.newPage();
-    await page.goto(server.url + "/?imitor-flow=today");
-    await page.waitForFunction(() => window.seen, null, { timeout: 5000 });
-    const seen = await page.evaluate(() => window.seen);
-    assert.deepEqual({ ...seen, year: undefined }, { state: "signed-in", flow: "today", SQL: true, CanvasKit: "fake canvaskit", stored: "true", year: undefined, media: true });
-  } finally {
-    await b.close();
-    await server.close();
-  }
+  t.after(() => b.close());
+  const page = await b.newPage();
+  await page.goto(server.url + "/?imitor-flow=today");
+  await page.waitForFunction(() => window.seen, null, { timeout: 5000 });
+  const seen = await page.evaluate(() => window.seen);
+  assert.deepEqual({ ...seen, year: undefined }, { state: "signed-in", flow: "today", SQL: true, CanvasKit: "fake canvaskit", stored: "true", year: undefined, media: true });
 });

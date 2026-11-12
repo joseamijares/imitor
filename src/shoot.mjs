@@ -29,6 +29,16 @@ export async function settle(page, ms) {
   await page.waitForTimeout(ms);
 }
 
+/**
+ * Throw when the build's boot loader could not start the app (window.__imitorBootError, set in build.mjs): a library
+ * such as CanvasKit or sql.js, or an app script, failed to load. The page is then blank, so the flow fails here rather
+ * than taking a shot of it.
+ */
+export async function assertBooted(page) {
+  const error = await page.evaluate(() => window.__imitorBootError || null).catch(() => null);
+  if (error) throw new Error(`the app did not start: ${String(error).slice(0, 300)}`);
+}
+
 /** Perform one non-screenshot step. Returns false for a shot step (the caller handles those). */
 export async function doStep(page, step, baseUrl) {
   if (step.tap !== undefined) await locate(page, step.tap).click({ timeout: 10000 });
@@ -110,6 +120,7 @@ export async function shoot(root, config, baseUrl) {
           try {
             await page.goto(baseUrl + chain.start);
             await settle(page, config.settleMs);
+            await assertBooted(page);
             for (const b of chain.before) {
               pre = b;
               await doStep(page, b.step, baseUrl);
@@ -123,6 +134,7 @@ export async function shoot(root, config, baseUrl) {
                 continue;
               }
               await settle(page, config.settleMs);
+              await assertBooted(page); // a goto step reloads, and boots, again
               const file = `screens/${flow.name}-${step.shot}-${device.name}-${scheme}.png`;
               await page.screenshot({ path: path.join(outDir, file), fullPage: step.fullPage === true });
               const stubs = await visibleStandIns(page);
