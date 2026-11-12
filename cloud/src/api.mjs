@@ -104,8 +104,24 @@ const expired = (deps, run) => run.status !== "ready" && Date.parse(run.createdA
 
 /** Files of a run with no object of the declared size, from one listing of the run's prefix. */
 async function missingFiles(storage, run) {
+  return (await listMissing(storage, run)).missing;
+}
+
+async function listMissing(storage, run) {
   const found = new Map((await storage.list(runPrefix(run))).map((o) => [o.key, o.size]));
-  return run.files.filter((f) => found.get(f.key) !== f.size);
+  const missing = run.files.filter((f) => found.get(f.key) !== f.size);
+  return { missing, stale: missing.filter((f) => found.has(f.key)).map((f) => f.key) };
+}
+
+/**
+ * Files to upload again for a run pushed a second time. An object of the wrong size (an upload cut off) is deleted
+ * first: a store that refuses overwrites (the Blob adapter does, so a verified file cannot be replaced afterwards)
+ * would otherwise refuse the new upload.
+ */
+async function filesToUpload(storage, run) {
+  const { missing, stale } = await listMissing(storage, run);
+  if (stale.length) await storage.delete(stale);
+  return missing;
 }
 
 /** Files whose object is not exactly as declared: size, content type and SHA-256, a few HEADs at a time. */
@@ -155,7 +171,7 @@ async function createRun(request, deps, key) {
     return fail(409, `run ${clean.clientRunId} was already pushed to this project with different files; push it again under a new run`, { id: run.id });
   }
   if (run.status === "ready") return json(200, { id: run.id, status: run.status, uploads: [], complete: `/v1/runs/${run.id}/complete`, url: await runUrl(deps, run) });
-  return json(200, { id: run.id, status: run.status, uploads: await uploadsFor(storage, await missingFiles(storage, run)), complete: `/v1/runs/${run.id}/complete` });
+  return json(200, { id: run.id, status: run.status, uploads: await uploadsFor(storage, await filesToUpload(storage, run)), complete: `/v1/runs/${run.id}/complete` });
 }
 
 async function completeRun(deps, key, id) {

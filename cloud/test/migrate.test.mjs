@@ -34,9 +34,10 @@ test("each migration runs in a transaction of its own that takes a transaction-l
   const q = pool.queries;
   assert.ok(!q.some((x) => /pg_advisory_lock|pg_advisory_unlock/.test(x)), "no session-level lock, which a transaction-mode pooler would leak");
   assert.equal(q.at(-1), "release");
-  // Every transaction: begin, the lock, then the work, then commit.
-  const transactions = q.join("\n").split("begin\n").slice(1);
+  // Every transaction: begin, no statement timeout (the role's 10 s is for requests), the lock, the work, commit.
+  const transactions = q.join("\n").split("begin\n").slice(1).map((t) => t.split("\n").slice(1).join("\n"));
   assert.equal(transactions.length, files.length + 1, "one for schema_migrations, one per file");
+  for (const t of q.join("\n").split("begin\n").slice(1)) assert.equal(t.split("\n")[0], "set local statement_timeout = 0");
   for (const t of transactions) {
     const lines = t.split("\n");
     assert.match(lines[0], /^select pg_advisory_xact_lock\(\$1\)/);

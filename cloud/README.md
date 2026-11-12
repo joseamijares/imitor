@@ -22,11 +22,14 @@ deployment yet (see [Not verified yet](#not-verified-yet)).
   time and binds that Google account to the user; after that the account (Google's `sub`), not the address, decides.
   Everyone else sees "This Imitor Cloud is invite-only", and nothing is created for them. A person sees only the
   projects they are a member of; every route under `/p/<project>/` checks it, and run ids are not access control.
-- **Files go straight to storage.** The API answers with presigned PUT URLs for S3-compatible storage, valid for 15
-  minutes; the bytes never pass through the API. The server picks every storage key (`<projectId>/<runId>/<path>`);
-  a client never does. Each URL only takes the declared size, content type and SHA-256, and `complete` checks all
-  three again on every stored object before a run is ready. A URL cannot be revoked: one issued earlier can still
-  write its declared bytes until it expires, also after `complete` or after its run was pruned. `complete` re-verifies
+- **Files go straight to storage.** The API answers with presigned PUT URLs (S3-compatible storage or a private
+  Vercel Blob store), valid for 15 minutes; the bytes never pass through the API. The server picks every storage key
+  (`<projectId>/<runId>/<path>`); a client never does. On S3 each URL only takes the declared size, content type and
+  SHA-256; on Blob it takes at most the declared size, only the declared content type, and never overwrites an
+  existing object (Blob cannot pin a checksum, so a checked file must not be replaceable). `complete` checks size,
+  content type and SHA-256 again on every stored object before a run is ready. A URL cannot be revoked: on S3 one
+  issued earlier can still write its declared bytes until it expires, also after `complete` or after its run was
+  pruned. `complete` re-verifies
   whatever is stored when it runs; an object written for a run that is already gone belongs to no run, is never
   served, and stays in the bucket until removed by hand.
 - **Typed values stay on the machine.** `imitor push` blanks fill values (passwords, emails) before anything is sent,
@@ -76,7 +79,7 @@ For people (a session cookie):
 | `PUBLIC_URL` | The cloud's own address, e.g. `https://app.imitor.dev`. Its origin is what every form and request that changes something must come from, and Google's redirect URI is `PUBLIC_URL/auth/google/callback`. `https://` only, or `http://` on `localhost`, `127.0.0.1` or `[::1]` for local runs. The Node server defaults to its own address. |
 | `DATABASE_URL` | Postgres. Without it, everything is in memory (local runs only). The Node server applies `cloud/migrations/` when it starts; on Vercel, run them yourself (`npm run migrate --prefix cloud`). |
 | `S3_ENDPOINT` | e.g. `https://<account>.r2.cloudflarestorage.com` or `http://127.0.0.1:9000` (MinIO). Path-style when set; AWS virtual-hosted when not. |
-| `S3_BUCKET`, `S3_REGION` | `S3_REGION` defaults to `auto` (R2). Without `S3_BUCKET`, files are kept in memory. |
+| `S3_BUCKET`, `S3_REGION` | `S3_REGION` defaults to `auto` (R2). Without `S3_BUCKET` or `BLOB_READ_WRITE_TOKEN`, files are kept in memory. S3 wins when both are set. |
 | `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | |
 | `BLOB_READ_WRITE_TOKEN` | A private Vercel Blob store instead of S3, used when `S3_BUCKET` is not set. Vercel sets it when a Blob store is connected to the project. Uploads and downloads use Blob's presigned URLs; Blob keeps no SHA-256, so `complete` reads each file once and hashes it. |
 | `S3_CHECKSUMS` | `off` to stop signing `x-amz-checksum-sha256` into uploads, for a store that does not support it. Then storage keeps no SHA-256 to check, so the server refuses to start unless `IMITOR_ALLOW_UNVERIFIED_UPLOADS` is also set. |
@@ -158,18 +161,21 @@ The cloud runs in the same Vercel project as the public site, on a host of its o
 - **Database timeouts.** Each connection gives up connecting after 5 s, is closed after 10 s idle, and asks the server
   to cancel any statement after 10 s (`statement_timeout`, sent as a startup parameter; the client also stops waiting
   2 s later). A pooler (PgBouncer, which Neon's `-pooler` hosts are, or a URL with `pgbouncer=true`) refuses startup
-  parameters it does not track, so through one the parameter is left out: set the limit on the role once instead,
-  over the direct URL: `ALTER ROLE <role> SET statement_timeout = '10s';`. A database that cannot be reached, or a statement cancelled that way, is
-  answered with `503` and a plain message (`Retry-After: 30`), not a hung request.
-- **Before the first deploy**, apply the migrations from your machine:
-  `DATABASE_URL=... npm run migrate --prefix cloud`. Do the same before deploying a change that adds one. Each
-  migration runs in a transaction of its own that first takes a transaction-level advisory lock
-  (`pg_advisory_xact_lock`) and then checks whether it was applied, so two runners never apply a file twice and the
-  lock ends with the transaction: the pooled URL (a pooler in transaction mode) works as well as a direct one.
+  parameters it does not track, so through one the parameter is left out and the limit is set on the role instead
+  (`alter role current_user set statement_timeout = '10s'`, which the production build runs; see Migrations). A
+  database that cannot be reached, or a statement cancelled that way, is answered with `503` and a plain message (`Retry-After: 30`), not a hung request.
+- **Migrations** run in the production build, after the site (`cloud/scripts/deploy-migrate.mjs` in `buildCommand`),
+  over `DATABASE_URL_UNPOOLED` when it is set, else `DATABASE_URL`; preview builds skip them, and a failed migration
+  fails the build. (`DATABASE_URL=... npm run migrate --prefix cloud` does the same by hand.) Each migration runs in a
+  transaction of its own with no statement timeout, that first takes a transaction-level advisory lock
+  (`pg_advisory_xact_lock`) and then checks whether it was applied, so two builds never apply a file twice and the
+  lock ends with the transaction: the pooled URL works as well as a direct one. The schema changes before the new
+  deployment is promoted, and an Instant Rollback keeps the new schema, so **every migration must keep working with
+  the code before it**: add tables and columns (nullable or with a default); drop or rename only in a later release.
 - **Google.** Register `PUBLIC_URL/auth/google/callback` as the client's authorized redirect URI.
 - **Bucket CORS.** `imitor push` uploads with presigned PUTs from Node, which sends no `Origin`, so no CORS rule is
-  needed for the CLI (nor is any setting on a Blob store). The interface only loads files through redirects into `<img>` and `<video>`, which need none
-  either; allow `GET` from `PUBLIC_URL` if you want to be explicit.
+  needed for the CLI (nor is any setting on a Blob store). The interface only loads files through redirects into
+  `<img>` and `<video>`, which need none either; allow `GET` from `PUBLIC_URL` if you want to be explicit.
 - **Keep Standard Deployment Protection** on: it protects preview deployments (which the function refuses anyway) and
   leaves the production domains public, as the sign-in needs.
 - **Limits.** A function accepts at most 4.5 MB per request, so the upload body is capped at 4 MB (run.json,
@@ -207,7 +213,7 @@ Everything but Google lives in the Vercel project. In this order; nothing here n
 
 ### Not verified yet
 
-Nothing here has run on Vercel, against a real Google client or a real bucket. Before relying on it, check on a
+Nothing here has run on Vercel, against a real Google client or real storage (the Blob store exists but is empty). Before relying on it, check on a
 first deployment: that the rewrites reach `/api/cloud` with `?__imitor_path=` (the function also accepts the original
 URL if the runtime shows that instead), that `trailingSlash` answers `POST /v1/runs` with a 308 that `imitor push`
 follows (or no redirect at all), that `/` on the app host redirects to `/projects/` and `/projects/` shows the projects
@@ -218,7 +224,8 @@ and that sign-in completes against Google. After the first night, open the proje
 The Vercel Blob adapter is tested against a fake of the SDK only. On the first push, check that Blob accepts the
 presigned PUT with the headers the adapter hands out (they copy what Vercel's own client sends), that it stores the
 declared content type, and how long `complete` takes: it reads every file of the run once to hash it, so a run near
-the 300 MB limit may need a longer `maxDuration` than the 30 s in `vercel.json`.
+the 300 MB limit may need more than the 60 s `maxDuration` in `vercel.json` (then: record each verified file, so a retry
+does not hash it again).
 
 ## Security notes
 

@@ -117,6 +117,7 @@ test("pushing the same run again returns the same id, and only the files not yet
   assert.equal(again.status, 200);
   assert.equal(again.body.id, first.body.id);
   assert.deepEqual(again.body.uploads.map((u) => u.path).sort(), ["screens/first-run-01-welcome-iphone-16-light.png", "screens/first-run-02-plants-iphone-16-light.png"]);
+  assert.ok(!s.storage.objects.has(welcome), "the cut-off object is deleted before a new URL is signed, for a store that refuses overwrites");
   await putAll(s, again.body.uploads);
   assert.equal((await call(s, "POST", `/v1/runs/${first.body.id}/complete`)).status, 200);
 

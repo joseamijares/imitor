@@ -11,8 +11,9 @@
 
 import { createHash } from "node:crypto";
 import { mapLimit } from "../limit.mjs";
-import { encodeKey } from "./s3.mjs";
 
+/** The API version @vercel/blob 2.9.0 sends (BLOB_API_VERSION in its source; a test checks the installed SDK). */
+export const BLOB_API_VERSION = "13";
 const TOKEN_MS = 60 * 60 * 1000; // a signed token lasts an hour
 const MARGIN_MS = 60 * 1000; // and is replaced when less than a minute would be left after the longest URL it signs
 
@@ -42,7 +43,10 @@ export function blobStorage({ token, sdk = null, now = () => Date.now() }) {
       if (tokens.get(operation) !== held) return signedToken(operation, ms);
     }
     const until = now() + Math.max(TOKEN_MS, ms + 2 * MARGIN_MS);
-    const issuing = blob().then((b) => b.issueSignedToken({ operations: [operation], validUntil: until, token })).then((signed) => ({ signed, until }));
+    // Vercel may grant less than asked: the token's own validUntil is what counts.
+    const issuing = blob()
+      .then((b) => b.issueSignedToken({ operations: [operation], validUntil: until, token }))
+      .then((signed) => ({ signed, until: Math.min(until, Number(signed.validUntil) || until) }));
     tokens.set(operation, issuing);
     issuing.catch(() => tokens.get(operation) === issuing && tokens.delete(operation));
     return (await issuing).signed;
@@ -62,16 +66,18 @@ export function blobStorage({ token, sdk = null, now = () => Date.now() }) {
         maximumSizeInBytes: size,
         allowedContentTypes: [contentType],
         addRandomSuffix: false,
-        allowOverwrite: true,
+        // Never over an existing object: once complete has checked a file, its URL cannot replace it. The API deletes a
+        // cut-off upload before signing a new URL for it.
+        allowOverwrite: false,
       });
       // The headers Vercel's own client sends with a presigned upload; the URL carries the signed limits.
       const headers = {
         "x-vercel-blob-access": "private",
         "x-content-type": contentType,
         "x-add-random-suffix": "0",
-        "x-allow-overwrite": "1",
+        "x-allow-overwrite": "0",
         "x-vercel-blob-store-id": storeId,
-        "x-api-version": "13",
+        "x-api-version": BLOB_API_VERSION,
       };
       return { method: "PUT", url: presignedUrl, headers };
     },
@@ -111,8 +117,8 @@ export function blobStorage({ token, sdk = null, now = () => Date.now() }) {
       const b = await blob();
       const batches = [];
       for (let i = 0; i < keys.length; i += 100) batches.push(keys.slice(i, i + 100));
-      // Deleting a URL that has no object is not an error for Blob.
-      await mapLimit(batches, (batch) => b.del(batch.map((key) => `${origin}/${encodeKey(key)}`), { token }), 4);
+      // Pathnames, as del() takes them; deleting one that has no object is not an error for Blob.
+      await mapLimit(batches, (batch) => b.del(batch, { token }), 4);
     },
   };
 }

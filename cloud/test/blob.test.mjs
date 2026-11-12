@@ -3,7 +3,8 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
-import { blobFromEnv, blobStorage, storeIdOf } from "../src/storage/blob.mjs";
+import fs from "node:fs";
+import { BLOB_API_VERSION, blobFromEnv, blobStorage, storeIdOf } from "../src/storage/blob.mjs";
 
 const TOKEN = "vercel_blob_rw_AbC123xyz_s3cr3t";
 
@@ -64,8 +65,9 @@ test("uploads: one signed token for many files, each URL limited to one path, it
   assert.equal(a.url, "https://signed.example/put/prj/run/shots/a.png?by=d1");
   assert.equal(a.headers["x-content-type"], "image/png");
   assert.equal(a.headers["x-vercel-blob-access"], "private");
+  assert.equal(a.headers["x-allow-overwrite"], "0", "a checked file cannot be replaced through a URL that is still valid");
   const signed = calls.presigned[0].opts;
-  assert.deepEqual({ ...signed, validUntil: undefined }, { operation: "put", pathname: "prj/run/shots/a.png", access: "private", validUntil: undefined, maximumSizeInBytes: 10, allowedContentTypes: ["image/png"], addRandomSuffix: false, allowOverwrite: true });
+  assert.deepEqual({ ...signed, validUntil: undefined }, { operation: "put", pathname: "prj/run/shots/a.png", access: "private", validUntil: undefined, maximumSizeInBytes: 10, allowedContentTypes: ["image/png"], addRandomSuffix: false, allowOverwrite: false });
   assert.equal(signed.validUntil, clock + 900_000);
   // Near the token's end, a new one is issued rather than signing a URL that would outlive it.
   clock += 55 * 60 * 1000;
@@ -92,7 +94,7 @@ test("head reads the object and hashes it, so complete can compare the SHA-256; 
   assert.deepEqual(calls.got[0].opts, { access: "private", token: TOKEN, useCache: false });
 });
 
-test("list pages through every object under a prefix; delete sends the store's URLs in batches", async () => {
+test("list pages through every object under a prefix; delete sends pathnames in batches", async () => {
   const objects = new Map(["p/r/a", "p/r/b", "p/r/c", "p/other/d"].map((k) => [k, { bytes: Buffer.from(k), contentType: "image/png" }]));
   const { sdk, calls } = fakeSdk(objects);
   const storage = blobStorage({ token: TOKEN, sdk });
@@ -103,7 +105,7 @@ test("list pages through every object under a prefix; delete sends the store's U
   const keys = Array.from({ length: 150 }, (_, i) => `p/r/shot ${i}.png`);
   await storage.delete(keys);
   assert.deepEqual(calls.deleted.map((d) => d.urls.length).sort((x, y) => x - y), [50, 100]);
-  assert.ok(calls.deleted.flatMap((d) => d.urls).includes("https://abc123xyz.private.blob.vercel-storage.com/p/r/shot%200.png"));
+  assert.ok(calls.deleted.flatMap((d) => d.urls).includes("p/r/shot 0.png"));
   assert.equal(calls.deleted[0].opts.token, TOKEN);
 });
 
@@ -122,4 +124,22 @@ test("a failed token request is not kept: the next call asks again", async () =>
   await assert.rejects(storage.presignGet("k"), /Vercel is down/);
   assert.match(await storage.presignGet("k"), /by=d1/);
   assert.equal(calls.issued.length, 1);
+});
+
+test("a token that Vercel grants for less time than asked is replaced in time", async () => {
+  let clock = 0;
+  const { sdk, calls } = fakeSdk();
+  const issue = sdk.issueSignedToken;
+  sdk.issueSignedToken = async (opts) => ({ ...(await issue(opts)), validUntil: clock + 20 * 60 * 1000 });
+  const storage = blobStorage({ token: TOKEN, sdk, now: () => clock });
+  await storage.presignPut("k1", { size: 1, contentType: "image/png" });
+  clock += 5 * 60 * 1000; // 15 min left: not enough for a 15-minute URL plus the margin
+  await storage.presignPut("k2", { size: 1, contentType: "image/png" });
+  assert.equal(calls.issued.length, 2);
+});
+
+test("the API version sent with uploads is the one the installed @vercel/blob sends", () => {
+  const dist = new URL("../node_modules/@vercel/blob/dist/", import.meta.url);
+  const source = fs.readdirSync(dist).filter((f) => f.endsWith(".js")).map((f) => fs.readFileSync(new URL(f, dist), "utf8")).join("\n");
+  assert.match(source, new RegExp(`BLOB_API_VERSION = ${BLOB_API_VERSION};`));
 });
