@@ -113,6 +113,12 @@ export function madeMark(item) {
   const what = [item.state ? `the state "${item.state}" handed to the stand-ins` : "", item.seeded ? "seeded data" : ""].filter(Boolean).join(" and ");
   return html`<span class="made-mark" title="${`Started from ${what}. Invented data, not the real app’s.`}">${pill(label)}</span>`;
 }
+/** A marker for a shot whose flow filled values from environment variables: it may show a real account and its data. */
+export function secretsMark(item) {
+  const names = item && Array.isArray(item.secrets) ? item.secrets : [];
+  if (!names.length) return "";
+  return html`<span class="secrets-mark" title="${`Signed in with values from ${names.join(", ")}. This shot may show a real account and real data.`}">${pill("Uses secrets")}</span>`;
+}
 export const chip = (text, title) => html`<span class="chip"${title ? html` title="${title}"` : ""}>${text}</span>`;
 
 /** kind: primary | secondary | ghost. opts: { icon, attrs (trusted string), disabled, href, title } */

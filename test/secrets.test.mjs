@@ -227,7 +227,8 @@ test("no value a flow types reaches a file, a result, a log, the comment, the ex
   assert.equal(flowRun.passed, true, JSON.stringify(flowRun.steps));
   assert.deepEqual(flowRun.secrets, ["IMITOR_TEST_EMAIL", "IMITOR_TEST_PASSWORD"]);
   assert.deepEqual(flowRun.steps[1].target, { placeholder: "Password", value: { env: "IMITOR_TEST_PASSWORD" } });
-  recordCaptures(path.join(root, "preview"), root, "flow", flowRun, { name: "test", kind: "agent" });
+  const captured = recordCaptures(path.join(root, "preview"), root, "flow", flowRun, { name: "test", kind: "agent" });
+  assert.deepEqual(captured.map((c) => c.secrets), [["IMITOR_TEST_EMAIL", "IMITOR_TEST_PASSWORD"], ["IMITOR_TEST_EMAIL", "IMITOR_TEST_PASSWORD"]], "captures say which secrets their flow used");
   const filled = path.join(root, flowRun.shots.find((s) => s.shot === "filled").file);
   const literalRun = await runFlow(root, { flow: "literal" });
   assert.deepEqual(literalRun.steps[0].target, { placeholder: "Email", value: HIDDEN });

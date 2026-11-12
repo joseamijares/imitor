@@ -36,8 +36,9 @@ export function flowDetail(config, manifest) {
         let failedMarked = false;
         const steps = shotSteps.map(({ step, index }) => {
           const shot = manifest.shots.find((s) => here(s) && s.shot === step.shot);
-          // state and seeded: whether the shot shows invented data (a state label for the stand-ins, or a seed).
-          if (shot) return { index, name: step.shot, status: shot.stubs.length ? "stand-in" : "ok", shot: shot.file, route: shot.route, standIns: shot.stubs, state: shot.state ?? null, seeded: shot.seeded === true };
+          // state and seeded: whether the shot shows invented data (a state label for the stand-ins, or a seed). secrets: the
+          // environment variables its flow filled from, so it may show a real account.
+          if (shot) return { index, name: step.shot, status: shot.stubs.length ? "stand-in" : "ok", shot: shot.file, route: shot.route, standIns: shot.stubs, state: shot.state ?? null, seeded: shot.seeded === true, secrets: Array.isArray(shot.secrets) ? shot.secrets : [] };
           if (failure && !failedMarked && (failure.step == null || index >= failure.step)) {
             failedMarked = true;
             return { index, name: step.shot, status: "failed", shot: failure.file || null, route: null, standIns: [] };

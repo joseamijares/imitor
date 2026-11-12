@@ -212,7 +212,7 @@ test("captures: one line per screenshot, one per flow shot, one per video; newes
   assert.equal(captures[1].file, "/files/captures/first-run-iphone-16-light.webm");
   const first = captures.at(-1);
   assert.match(first.id, /^c_\d{8}T\d{6}_1$/);
-  assert.deepEqual(Object.keys(first), ["id", "kind", "file", "route", "flow", "device", "scheme", "by", "at", "seconds", "standIns", "state", "seeded"]);
+  assert.deepEqual(Object.keys(first), ["id", "kind", "file", "route", "flow", "device", "scheme", "by", "at", "seconds", "standIns", "state", "seeded", "secrets"]);
   assert.equal(first.file, "/files/captures/today-iphone-16-light.png");
   assert.deepEqual(first.standIns, ["skia"]);
   assert.equal(captures[2].flow, "first-run");

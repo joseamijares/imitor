@@ -171,3 +171,22 @@ test("--sha names the commit the comment reports, short, instead of the checkout
   assert.equal(data.commit, "80a2676");
   assert.match(formatComment(data).split("\n")[2], /· commit `80a2676`$/);
 });
+
+test("shots from a flow that fills from environment variables are marked, with the variable names, never values", () => {
+  const signedIn = {
+    shots: [shot("sign-in", "today", 4, { secrets: ["TEST_EMAIL", "TEST_PASSWORD"] }), shot("welcome", "first", 1)],
+    problems: [],
+  };
+  const data = buildComment(signedIn, { imageBase: BASE });
+  assert.equal(data.counts.shotsWithSecrets, 1);
+  const md = formatComment(data);
+  assert.match(md.split("\n")[2], / · signed in with secrets in 1 shot$/);
+  assert.match(md, /<sub>today<\/sub><br><sub>uses secrets: TEST_EMAIL, TEST_PASSWORD<\/sub>/);
+  assert.match(md, /<sub>first<\/sub><\/td>/);
+  const table = formatComment(buildComment(signedIn, {}));
+  assert.match(table, /\| Step \| Shot \| Stand-in \| Secrets \|/);
+  assert.match(table, /\| today \| `screens\/sign-in-today-iphone-16-light.png` \|  \| TEST\\_EMAIL, TEST\\_PASSWORD \|/, "Markdown escapes the underscores");
+  // a run without secrets has no column and nothing in the counts line
+  assert.equal(buildComment(run, {}).counts.shotsWithSecrets, 0);
+  assert.ok(!formatComment(buildComment(run, {})).includes("ecrets"));
+});

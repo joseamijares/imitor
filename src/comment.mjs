@@ -81,11 +81,13 @@ export function buildComment(manifest, opts = {}) {
     flow.shots.sort((a, b) => a.order - b.order || a.at - b.at);
     flow.more = Math.max(0, flow.shots.length - maxShots);
     flow.shots = flow.shots.slice(0, maxShots).map(({ order, at, ...s }) => ({
-      file: s.file, step: s.shot, stepIndex: s.step ?? null, standIns: s.stubs || [], state: s.state ?? null, seeded: s.seeded === true, url: opts.imageBase ? imageUrl(opts.imageBase, s.file) : null,
+      file: s.file, step: s.shot, stepIndex: s.step ?? null, standIns: s.stubs || [], state: s.state ?? null, seeded: s.seeded === true, secrets: Array.isArray(s.secrets) ? s.secrets : [], url: opts.imageBase ? imageUrl(opts.imageBase, s.file) : null,
     }));
   }
   // Shots that started from a state label or seeded data (flow "state" / "seed"): invented data, not the app's own.
   const invented = shots.filter((s) => s.state != null || s.seeded === true).length;
+  // Shots whose flow filled values from environment variables ("secrets"): they may show a real account and its data.
+  const withSecrets = shots.filter((s) => Array.isArray(s.secrets) && s.secrets.length).length;
   // Configured kinds that run the real library (sqljs, canvaskit): not stand-ins, so the counts say so instead.
   const genuine = Object.entries(manifest.shims || {}).filter(([, kind]) => fidelityOf(kind) === "genuine").map(([module, kind]) => ({ module, kind }));
   const failures = verdict.failedFlows.map((f) => ({ ...f, url: f.shot && opts.imageBase ? imageUrl(opts.imageBase, f.shot) : null }));
@@ -96,7 +98,7 @@ export function buildComment(manifest, opts = {}) {
     // passes the pull request's head), the same one the published shots are filed under.
     commit: opts.sha ? String(opts.sha).slice(0, 7) : manifest.commit || null,
     verdict: { passed: verdict.passed, reasons: verdict.reasons, failOn: verdict.failOn },
-    counts: { shots: verdict.shots, flows: flows.length, failedFlows: verdict.failedFlows.length, pageErrors: verdict.pageErrors.length, shotsWithStandIns: verdict.shotsWithStandIns, standIns: verdict.standIns, shotsWithInventedData: invented, genuine },
+    counts: { shots: verdict.shots, flows: flows.length, failedFlows: verdict.failedFlows.length, pageErrors: verdict.pageErrors.length, shotsWithStandIns: verdict.shotsWithStandIns, standIns: verdict.standIns, shotsWithInventedData: invented, shotsWithSecrets: withSecrets, genuine },
     showing: { device, scheme, maxShots, devices: present("device"), schemes: present("scheme") },
     failures,
     flows,
@@ -109,6 +111,9 @@ function thumb(url, alt, width = THUMB) {
   const u = escAttr(url);
   return `<a href="${u}"><img src="${u}" width="${width}" alt="${escHtml(alt)}"></a>`;
 }
+
+/** "TEST_EMAIL, TEST_PASSWORD" for a shot whose flow filled from environment variables, else "". */
+const secretsNote = (s) => (s.secrets || []).join(", ");
 
 /** "state signed-in, seeded data" for a shot that started from invented data, else "". */
 const inventedNote = (s) => [s.state != null ? `state ${s.state}` : "", s.seeded ? "seeded data" : ""].filter(Boolean).join(", ");
@@ -125,7 +130,8 @@ function flowSection(flow, data, cap) {
       rows.push("<tr>");
       for (const s of shown.slice(i, i + PER_ROW)) {
         const invented = inventedNote(s);
-        const note = (s.standIns.length ? `<br><sub>⚠︎ stand-in: ${escHtml(s.standIns.join(", "))}</sub>` : "") + (invented ? `<br><sub>invented data: ${escHtml(clip(invented, 60))}</sub>` : "");
+        const secrets = secretsNote(s);
+        const note = (s.standIns.length ? `<br><sub>⚠︎ stand-in: ${escHtml(s.standIns.join(", "))}</sub>` : "") + (invented ? `<br><sub>invented data: ${escHtml(clip(invented, 60))}</sub>` : "") + (secrets ? `<br><sub>uses secrets: ${escHtml(clip(secrets, 60))}</sub>` : "");
         rows.push(`<td valign="top">${thumb(s.url, `${clip(flow.name, 60)}: ${clip(s.step, 60)}`)}<br><sub>${escHtml(clip(s.step, 60))}</sub>${note}</td>`);
       }
       rows.push("</tr>");
@@ -134,8 +140,9 @@ function flowSection(flow, data, cap) {
     out.push(rows.join(""), "");
   } else {
     const withData = data.counts.shotsWithInventedData > 0;
-    out.push(`| Step | Shot | Stand-in |${withData ? " Invented data |" : ""}`, `| --- | --- | --- |${withData ? " --- |" : ""}`);
-    for (const s of shown) out.push(`| ${cell(clip(s.step, 60))} | ${codeCell(s.file)} | ${s.standIns.length ? cell(s.standIns.join(", ")) : ""} |${withData ? ` ${cell(clip(inventedNote(s), 60))} |` : ""}`);
+    const withSecrets = data.counts.shotsWithSecrets > 0;
+    out.push(`| Step | Shot | Stand-in |${withData ? " Invented data |" : ""}${withSecrets ? " Secrets |" : ""}`, `| --- | --- | --- |${withData ? " --- |" : ""}${withSecrets ? " --- |" : ""}`);
+    for (const s of shown) out.push(`| ${cell(clip(s.step, 60))} | ${codeCell(s.file)} | ${s.standIns.length ? cell(s.standIns.join(", ")) : ""} |${withData ? ` ${cell(clip(inventedNote(s), 60))} |` : ""}${withSecrets ? ` ${cell(clip(secretsNote(s), 60))} |` : ""}`);
     out.push("");
   }
   const notes = [];
@@ -158,6 +165,7 @@ function render(data, cap, flowLimit, failureLimit) {
     c.standIns.length ? `stand-ins in ${plural(c.shotsWithStandIns, "shot")} (${escMd(c.standIns.join(", "))})` : "no stand-ins",
   ];
   if (c.shotsWithInventedData) counts.push(`invented data in ${plural(c.shotsWithInventedData, "shot")}`);
+  if (c.shotsWithSecrets) counts.push(`signed in with secrets in ${plural(c.shotsWithSecrets, "shot")}`);
   // Code spans: module names like @scope/pkg must not mention anyone.
   if (c.genuine?.length) counts.push(`real on the web: ${c.genuine.map((g) => `\`${String(g.module).replace(/`/g, "")}\` (${escMd(g.kind)})`).join(", ")}`);
   if (data.commit) counts.push(`commit \`${String(data.commit).replace(/`/g, "")}\``);

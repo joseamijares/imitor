@@ -321,7 +321,8 @@ function createLive(ctx, project, detail) {
   function stateSection() {
     const f = st.setup?.flow ? flows.find((x) => x.name === st.setup.flow) : null;
     const errors = st.setup?.seedErrors || [];
-    if (!f || !(f.after || f.state || f.seeded || f.clock || errors.length)) return "";
+    const secrets = Array.isArray(f?.secrets) ? f.secrets : [];
+    if (!f || !(f.after || f.state || f.seeded || f.clock || secrets.length || errors.length)) return "";
     const when = f.clock ? new Date(f.clock).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }) + " UTC" : null;
     return html`<section class="insp-section">
       <div class="insp-head"><h2>Flow state</h2><span class="t3">${humanize(f.name)}</span></div>
@@ -329,9 +330,11 @@ function createLive(ctx, project, detail) {
         ${f.after ? html`<li>${statusMark("off", "Runs after")}<span class="what">Runs after ${humanize(f.after)}</span><span class="how t3">its steps first</span></li>` : ""}
         ${f.state ? html`<li>${statusMark("standin", "Invented")}<span class="what">State <span class="mono">${f.state}</span></span><span class="how warn">Invented</span></li>` : ""}
         ${f.seeded ? html`<li>${statusMark("standin", "Invented")}<span class="what">Seeded data</span><span class="how warn">Invented</span></li>` : ""}
+        ${secrets.length ? html`<li>${statusMark("off", "Secrets")}<span class="what">Fills from <span class="mono">${secrets.join(", ")}</span></span><span class="how t3">Not replayed here</span></li>` : ""}
         ${when ? html`<li>${statusMark("off", "Clock")}<span class="what">Clock from ${when}</span><span class="how t3">Date only</span></li>` : ""}
       </ul>
       ${f.state || f.seeded ? html`<p class="control-note">The stand-ins and seed supply this data. It is not the real app’s.</p>` : ""}
+      ${secrets.length ? html`<p class="control-note">This flow signs in with values from environment variables. The live preview never receives them, so a replay stops before those steps; runs and the command line perform them.</p>` : ""}
       ${when ? html`<p class="control-note">Here only <span class="mono">Date</span> is moved to the clock; timers and animations run as usual. Runs use Playwright’s clock.</p>` : ""}
       ${errors.length ? html`<p class="control-note warn">${plural(errors.length, "seed statement")} failed: ${errors.map((e, i) => html`${i ? "; " : ""}<span class="mono">${String(e.statement).slice(0, 80)}</span> (${e.error})`)}</p>` : ""}
     </section>`;
