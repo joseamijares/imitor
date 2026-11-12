@@ -13,7 +13,7 @@ How to publish `imitor` to npm. Only the owner publishes.
    npm pack --dry-run
    ```
 
-   Expect `bin/`, `src/` (with `src/app/`, `src/shims/`, `src/live-driver.js`, `src/standins.json`), `README.md`, `LICENSE` and `package.json`, about 46 files and 380 kB unpacked. Not `demo/`, `site/`, `design/`, `test/`, `.claude/`, `.impeccable/` or `action.yml`.
+   Expect `bin/`, `src/` (with `src/app/`, `src/shims/`, `src/live-driver.js`, `src/standins.json`), `README.md`, `LICENSE` and `package.json`, about 58 files and 520 kB unpacked (checked at 0.1.0). Not `demo/`, `site/`, `design/`, `test/`, `.claude/`, `.impeccable/` or `action.yml`.
 
 5. The tarball works when installed:
 
