@@ -245,7 +245,7 @@ Most of an app sits behind onboarding or sign-in, and screens that show today's 
 | `"after": "<flow>"` | Runs that flow's steps first (its shots are skipped), then this flow's. Chains may nest. The chain starts at the first flow's `start`; a later flow's own `start`, if it has one, is opened after the flows before it (a full reload, so in-memory state is lost). Unknown names and cycles are errors when the config loads. A top-level `after` does not apply to the flow it names, nor to the flows that one runs after. |
 | `"state": "<label>"` | A free-form label handed to the app's stand-ins before any app code runs, as `globalThis.__imitor.state` (a string, or `null`). |
 | `"seed"` | Data put in place before the app's first script runs: `storage` and `sql`, below. |
-| `"clock": "<ISO date-time>"` | Starts the page's clock at that instant, so screens that show today's date look the same whichever day the run happens. |
+| `"clock": "<ISO date-time>"` | Starts the page's clock at that instant, so screens that show today's date look the same whichever day the run happens. Give the zone, `Z` or an offset: `"2026-03-14T09:30:00Z"`, `"2026-03-02T15:00:00-06:00"`. |
 
 A run of a flow uses that flow's `state`, `seed` and `clock` (its own, else the top level's) for the whole chain; the flows named in `after` contribute only their start and steps.
 

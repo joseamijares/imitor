@@ -48,11 +48,24 @@ export function loadConfig(root) {
 const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 const quoted = (names) => names.map((n) => `"${n}"`).join(" -> ");
 
+/**
+ * An ISO 8601 date-time that names one instant: date, time (seconds and fractions optional) and "Z" or "±HH:MM". Without
+ * a zone it would depend on the machine's, and Date.parse would quietly roll a date like 2026-02-30 over to March.
+ */
+export function isClock(value) {
+  if (typeof value !== "string") return false;
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,9})?)?(?:Z|[+-](\d{2}):(\d{2}))$/.exec(value);
+  if (!m) return false;
+  const [year, month, day, hour, minute, second = 0, offH = 0, offM = 0] = m.slice(1).map((n) => (n === undefined ? undefined : Number(n)));
+  const days = new Date(Date.UTC(year, month, 0)).getUTCDate(); // days in that month (day 0 of the next one)
+  return month >= 1 && month <= 12 && day >= 1 && day <= days && hour <= 23 && minute <= 59 && second <= 59 && offH <= 23 && offM <= 59;
+}
+
 function checkSetup(value, where, root, shims) {
   const { after = null, state = null, seed = null, clock = null } = value;
   if (after !== null && typeof after !== "string") throw new Error(`${where}: "after" must be the name of a flow`);
   if (state !== null && typeof state !== "string") throw new Error(`${where}: "state" must be a string (a label your stand-ins read as globalThis.__imitor.state)`);
-  if (clock !== null && (typeof clock !== "string" || Number.isNaN(Date.parse(clock)))) throw new Error(`${where}: "clock" must be an ISO date-time such as "2026-03-14T09:30:00Z"; got ${JSON.stringify(clock)}`);
+  if (clock !== null && !isClock(clock)) throw new Error(`${where}: "clock" must be an ISO date-time with "Z" or an offset, such as "2026-03-14T09:30:00Z" or "2026-03-02T15:00:00-06:00"; got ${JSON.stringify(clock)}`);
   if (seed === null) return;
   if (typeof seed !== "object" || Array.isArray(seed)) throw new Error(`${where}: "seed" must be an object with "storage" and/or "sql"`);
   for (const k of Object.keys(seed)) if (!["storage", "sql", "database"].includes(k)) throw new Error(`${where}: unknown key "seed.${k}" (known: storage, sql, database)`);
