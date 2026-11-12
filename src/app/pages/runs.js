@@ -3,6 +3,7 @@ import { api, isStatic } from "../api.js";
 import { html, raw, icon, statusMark, chip, seg, who, button, skeletonRows, errorState } from "../components.js";
 import { ago, dayGroup, isMainBranch, plural } from "../format.js";
 import { pageHeader, noRuns } from "./common.js";
+import { withBase } from "../base.js";
 
 const FILTERS = [{ value: "all", label: "All" }, { value: "prs", label: "Pull requests" }, { value: "main", label: "Main" }];
 const STATUS_LABEL = { passed: "Passed", "stand-ins": "Passed with stand-ins", failed: "Failed", running: "In progress" };
@@ -65,7 +66,7 @@ export async function mount(ctx) {
 
 function row(r) {
   const label = `${STATUS_LABEL[r.status] || r.status}`;
-  return html`<a class="runs-grid row-link" href="/runs/${encodeURIComponent(r.id)}">
+  return html`<a class="runs-grid row-link" href="${withBase(`/runs/${encodeURIComponent(r.id)}`)}">
     <span>${statusMark(r.status, label)}</span>
     <span class="pr">${r.pr != null ? `#${r.pr}` : ""}</span>
     <span class="title" title="${r.title || ""}">${r.title || r.id}</span>

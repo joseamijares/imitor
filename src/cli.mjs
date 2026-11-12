@@ -36,7 +36,7 @@ Usage (run in the app's folder):
                             print the --image-base for imitor comment: [--branch imitor-shots] [--keep 3] [--pr n] [--force] [--json]
   imitor app [--port n]     open the review interface on this machine (runs, captures, problems, agents)
   imitor export             write the interface and its data as a read-only static site:
-                            [--out dir] (default <out>/site) [--preview-url url] [--demo]
+                            [--out dir] (default <out>/site) [--preview-url url] [--base /path] [--demo]
 
 For agents and scripts (each prints JSON):
   imitor describe           flows, devices and stand-ins configured for this app
@@ -73,13 +73,13 @@ export async function main(args) {
     return console.log(`Imitor app at ${server.url} (this machine only; Ctrl+C to stop)`);
   }
   if (command === "export") {
-    for (const k of ["out", "previewUrl"]) if (opts[k] === true) throw new Error(`--${k === "out" ? "out" : "preview-url"} needs a value`);
+    for (const k of ["out", "previewUrl", "base"]) if (opts[k] === true) throw new Error(`--${k === "previewUrl" ? "preview-url" : k} needs a value`);
     const { exportSite } = await import("./export.mjs");
-    const site = exportSite(root, { out: opts.out || null, previewUrl: opts.previewUrl || null, demo: opts.demo === true });
+    const site = exportSite(root, { out: opts.out || null, previewUrl: opts.previewUrl || null, demo: opts.demo === true, base: opts.base || "" });
     const mb = (site.bytes / 1024 / 1024).toFixed(1);
     console.log(`Exported ${site.runs} run${site.runs === 1 ? "" : "s"} and ${site.files} file${site.files === 1 ? "" : "s"} (${mb} MB) to ${path.relative(root, site.dir).startsWith("..") ? site.dir : path.relative(root, site.dir)}`);
     if (site.missing.length) console.log(`${site.missing.length} referenced file${site.missing.length === 1 ? " is" : "s are"} no longer on disk and will not load, e.g. ${site.missing[0]}`);
-    console.log("It is read-only and holds this project's screenshots: publish it only where they may be seen. Serve it at the root of a domain.");
+    console.log(`It is read-only and holds this project's screenshots: publish it only where they may be seen. ${site.base ? `Serve it at ${site.base}/ on its domain.` : "Serve it at the root of a domain."}`);
     return;
   }
   if (command === "comment") {

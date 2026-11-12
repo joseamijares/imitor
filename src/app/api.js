@@ -2,6 +2,8 @@
 // A site written by `imitor export` carries <meta name="imitor-mode" content="static"> ("static demo" for the demo):
 // it reads each endpoint from the same path plus .json, and keeps what it would write in this browser instead.
 
+import { withBase } from "./base.js";
+
 const MODE = (document.querySelector('meta[name="imitor-mode"]')?.content || "").split(/\s+/);
 export const isStatic = MODE.includes("static");
 export const isDemo = isStatic && MODE.includes("demo");
@@ -14,6 +16,7 @@ export class ApiError extends Error {
 async function request(method, path, body) {
   let res;
   if (isStatic) path = `${path}.json`;
+  path = withBase(path);
   try {
     res = await fetch(path, {
       method,

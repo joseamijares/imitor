@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { buildDemo } from "../demo/build.mjs";
 import { startAppServer } from "../src/appserver.mjs";
 import { loadConfig } from "../src/config.mjs";
-import { exportSite, SPA_REWRITE } from "../src/export.mjs";
+import { exportSite, normalizeBase, SPA_REWRITE, spaRewrite } from "../src/export.mjs";
 import { appendActivity, appendCapture, listProblems, recordRun, setSeen } from "../src/store.mjs";
 
 const REPO = fileURLToPath(new URL("..", import.meta.url));
@@ -166,17 +166,56 @@ test("demo/build.mjs builds a demo site with twelve fernwood runs, the newest mi
   for (const url of jsonFiles(dir).flatMap((file) => fileUrls(readJson(path.join(dir, file))))) assert.ok(fs.existsSync(path.join(dir, decodeURIComponent(url))), url);
 });
 
-test("demo/vercel.json deploys the demo with the same single-page rewrite as an export", () => {
-  // The demo is its own Vercel project with demo/ as the root directory; the root vercel.json deploys the public site.
-  const v = readJson(path.join(REPO, "demo", "vercel.json"));
-  assert.equal(v.buildCommand, "node build.mjs");
-  assert.equal(v.outputDirectory, "site");
+test("vercel.json deploys the site, with the demo under /demo/ on the same single-page rewrite as an export", () => {
+  // One Vercel project: the root vercel.json builds the site, and site/build.mjs exports the demo into /demo/.
+  const v = readJson(path.join(REPO, "vercel.json"));
+  assert.equal(v.buildCommand, "node site/build.mjs");
+  assert.equal(v.outputDirectory, "site/dist");
   assert.equal(v.framework, null);
-  assert.deepEqual(v.rewrites, [SPA_REWRITE]);
-  const re = new RegExp("^" + SPA_REWRITE.source + "$");
-  for (const p of ["/", "/runs", "/runs/20261111T185759-7c77065", "/problems/p_abc123", "/captures"]) assert.ok(re.test(p), p);
-  for (const p of ["/app.js", "/api/runs.json", "/files/runs/x/screens/a.png", "/assets/imitor-icon-32.svg", "/api/runs/missing"]) assert.ok(!re.test(p), p);
-  const site = readJson(path.join(REPO, "vercel.json"));
-  assert.equal(site.buildCommand, "node site/build.mjs");
-  assert.equal(site.outputDirectory, "site/dist");
+  assert.deepEqual(v.rewrites, [spaRewrite("/demo")]);
+  assert.ok(!fs.existsSync(path.join(REPO, "demo", "vercel.json")), "the demo has no Vercel project of its own");
+  const re = new RegExp("^" + spaRewrite("/demo").source + "$");
+  for (const p of ["/demo/", "/demo/runs", "/demo/runs/20261111T185759-7c77065", "/demo/problems/p_abc123", "/demo/captures"]) assert.ok(re.test(p), p);
+  for (const p of ["/", "/how-to-use/", "/demo/app.js", "/demo/api/runs.json", "/demo/files/runs/x/screens/a.png", "/demo/assets/imitor-icon-32.svg", "/demo/api/runs/missing"]) assert.ok(!re.test(p), p);
+  const root = new RegExp("^" + SPA_REWRITE.source + "$");
+  for (const p of ["/", "/runs", "/runs/20261111T185759-7c77065"]) assert.ok(root.test(p), p);
+  for (const p of ["/app.js", "/api/runs.json", "/files/runs/x/screens/a.png"]) assert.ok(!root.test(p), p);
+});
+
+test("--base: the export works under a sub-path", (t) => {
+  assert.equal(normalizeBase("demo/"), "/demo");
+  assert.equal(normalizeBase("/a/b"), "/a/b");
+  assert.equal(normalizeBase("/"), "");
+  assert.equal(normalizeBase(""), "");
+  assert.equal(normalizeBase("//evil.example"), "/evil.example", "a host-looking value is only ever a path");
+  for (const bad of ["/../x", "/a b", "/x?y"]) assert.throws(() => normalizeBase(bad), /--base needs a path/, bad);
+  const dir = tmp("demo-base");
+  const site = buildDemo({ out: dir, base: "/demo" });
+  t.after(() => fs.rmSync(path.dirname(dir), { recursive: true, force: true }));
+  assert.equal(site.base, "/demo");
+  assert.deepEqual(site.missing, []);
+  const index = fs.readFileSync(path.join(dir, "index.html"), "utf8");
+  assert.match(index, /<meta name="imitor-base" content="\/demo">/);
+  assert.match(index, /href="\/demo\/app\.css"/);
+  assert.match(index, /src="\/demo\/app\.js"/);
+  assert.doesNotMatch(index, /(href|src)="\/(?!demo\/|\/)/, "no root path is left in index.html");
+  const urls = jsonFiles(dir).flatMap((file) => [...JSON.stringify(readJson(path.join(dir, file))).matchAll(/"(\/[a-z]*\/?files\/[^"]+)"/g)].map((m) => m[1]));
+  assert.ok(urls.length > 10);
+  for (const url of urls) {
+    assert.ok(url.startsWith("/demo/files/"), url);
+    assert.ok(fs.existsSync(path.join(dir, decodeURIComponent(url.slice("/demo".length)))), url);
+  }
+  assert.deepEqual(readJson(path.join(dir, "vercel.json")).rewrites, [spaRewrite("/demo")]);
+  assert.match(fs.readFileSync(path.join(dir, "_redirects"), "utf8"), /^\/demo\/\*  \/demo\/index\.html  200$/m);
+});
+
+test("the interface has no hard-coded root paths, so it works under a base", () => {
+  // Every app link, image and history call goes through withBase (src/app/base.js); a literal "/..." would leave the base.
+  const files = fs.readdirSync(path.join(REPO, "src", "app"), { recursive: true }).filter((f) => f.endsWith(".js"));
+  for (const f of files) {
+    const text = fs.readFileSync(path.join(REPO, "src", "app", f), "utf8");
+    assert.doesNotMatch(text, /\b(href|src)="\/(?!\/)/, `${f} has a literal root href or src`);
+    assert.doesNotMatch(text, /url\(\/(?!\/)/, `${f} has a literal root url()`);
+    assert.doesNotMatch(text, /history\.(push|replace)State\([^,]*,\s*[^,]*,\s*["`]\//, `${f} pushes a literal root path`);
+  }
 });

@@ -1,8 +1,0 @@
-{
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": null,
-  "installCommand": "cd .. && npm install --omit=peer --omit=optional --no-audit --no-fund",
-  "buildCommand": "node build.mjs",
-  "outputDirectory": "site",
-  "rewrites": [{ "source": "/((?!api/|files/|assets/)[^.]*)", "destination": "/index.html" }]
-}

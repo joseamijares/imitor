@@ -4,6 +4,7 @@ import { api } from "../api.js";
 import { html, raw, icon, statusMark, chip, seg, button, thumb, codeBlock, skeletonRows, errorState } from "../components.js";
 import { ago, deviceName, schemeName, humanize, stepLabel } from "../format.js";
 import { pageHeader } from "./common.js";
+import { withBase } from "../base.js";
 
 const SHOW = [{ value: "open", label: "Open" }, { value: "seen", label: "Seen" }, { value: "all", label: "All" }];
 const KINDS = { "flow-failed": "Flow failed", "page-error": "Page error", "stand-in": "Stand-in", dialog: "Dialog", "seed-failed": "Seed problem" };
@@ -37,7 +38,7 @@ export async function mount(ctx) {
     if (kind) u.set("kind", kind);
     if (flow) u.set("flow", flow);
     const s = u.toString();
-    history.replaceState(null, "", `/problems${selected ? "/" + encodeURIComponent(selected) : ""}${s ? "?" + s : ""}`);
+    history.replaceState(null, "", withBase(`/problems${selected ? "/" + encodeURIComponent(selected) : ""}${s ? "?" + s : ""}`));
   }
 
   function render() {
@@ -152,7 +153,7 @@ function standInSummary(d, modules) {
 }
 
 function row(p, active) {
-  return html`<a role="listitem" class="problem-row${active ? " is-active" : ""}" href="/problems/${encodeURIComponent(p.id)}" data-problem="${p.id}"${active ? raw(' aria-current="true"') : ""}>
+  return html`<a role="listitem" class="problem-row${active ? " is-active" : ""}" href="${withBase(`/problems/${encodeURIComponent(p.id)}`)}" data-problem="${p.id}"${active ? raw(' aria-current="true"') : ""}>
     ${statusMark(markFor(p), KINDS[p.kind])}
     <div style="min-width:0"><div class="title">${p.title}</div>
       <div class="sub">${joinDots([runRef(p.run), placeOf(p), p.kind === "stand-in" && p.detail?.shots?.length ? `${p.detail.shots.length} shots` : null])}</div></div>
@@ -164,7 +165,7 @@ function detail(p, project) {
   const modules = standInModules(project);
   const d = p.detail || {};
   const run = p.run || {};
-  const runHref = run.id ? `/runs/${encodeURIComponent(run.id)}` : null;
+  const runHref = run.id ? withBase(`/runs/${encodeURIComponent(run.id)}`) : null;
   const step = d.step != null ? String(d.step) : null;
   const shots = [];
   if (p.kind === "stand-in" && d.shots?.length) shots.push(...d.shots.map((u) => { const name = shotName(u); return html`<div class="detail-shot" title="${name}"><div class="label">${shotLabel(name, project)}</div>${thumb(u, "stand-in", { small: true, alt: name })}</div>`; }));

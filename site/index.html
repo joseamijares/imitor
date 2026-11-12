@@ -24,7 +24,7 @@
     <div class="nav-links">
       <a class="hide-s" href="/how-to-use/">How to use</a>
       <a class="hide-s" href="/agents/">For agents</a>
-      <a class="hide-s" href="https://imitor-demo.vercel.app">Demo</a>
+      <a class="hide-s" href="/demo/">Demo</a>
       <button class="theme" type="button" aria-label="Switch theme" data-theme-toggle><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="5.6"/><path d="M8 2.4v11.2A5.6 5.6 0 0 0 8 2.4z" fill="currentColor"/></svg></button>
       <a class="gh" href="https://github.com/joseamijares/imitor"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 .2a8 8 0 0 0-2.53 15.59c.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.8.06 1.23.83 1.23.83.72 1.22 1.88.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.03 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 8 .2Z"/></svg><span>GitHub</span></a>
     </div>
@@ -36,7 +36,7 @@
       <h1>Your app, imitated. <span class="named">Every <span class="dash">stand‑in</span> named.</span></h1>
       <p class="lede">See a React Native / Expo app’s UI without a simulator. Imitor builds it for the web, swaps native-only modules for stand-ins, and runs your flows in headless Chromium.</p>
       <div class="actions">
-        <a class="btn btn-primary" href="https://imitor-demo.vercel.app">Open the live demo <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></a>
+        <a class="btn btn-primary" href="/demo/">Open the live demo <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></a>
         <div class="cmd"><span class="p">$</span><code>npm i -D github:joseamijares/imitor playwright</code><button class="copy" type="button" aria-label="Copy install command"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.8"/><path d="M10.5 5.5V4A1.5 1.5 0 0 0 9 2.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5"/></svg></button></div>
         <span class="note">Free and open source, MIT. Early: v0, not on npm yet. <a href="/how-to-use/#set-up" style="color:var(--color-t-1)">Set-up takes four steps.</a></span>
       </div>
@@ -195,7 +195,7 @@
       <figure><div class="shot"><img class="on-dark" src="/assets/shots/all-set-dark.png" alt="All set" loading="lazy" width="393" height="852"><img class="on-light" src="/assets/shots/all-set-light.png" alt="All set" loading="lazy" width="393" height="852"></div><figcaption><span>07-all-set</span></figcaption></figure>
       <figure><div class="shot si"><img class="on-dark" src="/assets/shots/today-standin-dark.png" alt="Today, with the Skia ring stood in" loading="lazy" width="393" height="852"><img class="on-light" src="/assets/shots/today-standin-light.png" alt="Today, with the Skia ring stood in" loading="lazy" width="393" height="852"><svg viewBox="0 0 184 385" preserveAspectRatio="none" aria-hidden="true"><rect x="1.5" y="1.5" width="181" height="382" rx="24" fill="none" stroke="var(--color-ghost)" stroke-width="2" stroke-dasharray="7 6" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg></div><figcaption><span>08-today</span><span class="w">skia</span></figcaption></figure>
     </div>
-    <div class="sheet-meta"><span>Demo data: fernwood is an invented app.</span><a href="https://imitor-demo.vercel.app">See its runs in the live demo →</a></div>
+    <div class="sheet-meta"><span>Demo data: fernwood is an invented app.</span><a href="/demo/">See its runs in the live demo →</a></div>
   </section>
 
   <section class="band" aria-labelledby="agents-h">
@@ -245,10 +245,34 @@
     </ul>
   </section>
 
+  <section class="band" aria-labelledby="oss-h">
+    <div class="band-head">
+      <h2 id="oss-h">Open source. Read it, run it, change it.</h2>
+      <p>Imitor runs on your machines and in your agents’ environments. Nothing is sent anywhere unless you publish it yourself.</p>
+    </div>
+    <div class="oss">
+      <div class="oss-now">
+        <div class="oss-title"><span class="pill ok">Available</span><h3>MIT licence</h3></div>
+        <ul>
+          <li>The CLI and the MCP server</li>
+          <li>The review interface, <code>imitor app</code></li>
+          <li><code>imitor export</code>, to publish a run as a static site</li>
+          <li>The run format: plain JSON and PNG files</li>
+        </ul>
+        <a class="text-link" href="https://github.com/joseamijares/imitor">Read the code on GitHub <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></a>
+      </div>
+      <div class="oss-next">
+        <div class="oss-title"><span class="pill muted">Planned, not built</span><h3>Imitor Cloud</h3></div>
+        <p>A place where your agents and CI upload runs, and you sign in to review them from any device. It would only store and show runs, never run your code. The plan is to open-source it so you can host your own, and to offer a hosted version as a paid service. No date and no price yet.</p>
+        <a class="text-link" href="https://github.com/joseamijares/imitor/issues/11">Want it? Follow the plan on GitHub <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></a>
+      </div>
+    </div>
+  </section>
+
   <section class="close" aria-labelledby="close-h">
     <h2 id="close-h">See a run before you install anything.</h2>
     <div class="row">
-      <a class="btn btn-primary" href="https://imitor-demo.vercel.app">Open the live demo <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></a>
+      <a class="btn btn-primary" href="/demo/">Open the live demo <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></a>
       <a class="btn btn-secondary" href="/how-to-use/">Read how to set it up</a>
     </div>
   </section>
@@ -256,7 +280,7 @@
 
   <footer class="foot">
     <a class="brand" href="/" aria-label="Imitor home"><img src="/assets/imitor-icon-120.svg" alt=""><span>Imitor</span></a>
-    <a href="https://github.com/joseamijares/imitor">GitHub</a><a href="/how-to-use/">How to use</a><a href="/agents/">For agents</a><a href="https://imitor-demo.vercel.app">Demo</a>
+    <a href="https://github.com/joseamijares/imitor">GitHub</a><a href="/how-to-use/">How to use</a><a href="/agents/">For agents</a><a href="/demo/">Demo</a>
     <span class="legal">Open source under the MIT licence. Claude, Cursor, Codex and GitHub Actions are their owners’ trademarks, named here only to identify those products.</span>
   </footer>
 </div>
