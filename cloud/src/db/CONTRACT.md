@@ -52,7 +52,7 @@ database. A method that would break a unique rule throws an error with `code: "c
 | `listProjects` | none | every Project, oldest first (for retention) |
 | `addMember` | `projectId, userId, role = "member"` | Member; a second call changes the role |
 | `getMember` | `projectId, userId` | Member, or null |
-| `listUserProjects` | `userId` | the user's Projects, each with its `role`, by name |
+| `listUserProjects` | `userId` | the user's Projects, each with its `role`, by name, then slug |
 | `createAccessKey` | `projectId, { name = "default", expiresAt = null }` | AccessKey plus `secret` (`imk_...`), the only time it is returned. Throws for an unknown project. |
 | `findAccessKey` | `secret` | the AccessKey whose `secretSha256` is the secret's SHA-256, if it is not revoked and not expired, else null. Sets `lastUsedAt`. |
 | `getAccessKey` | `id` | AccessKey (revoked or not), or null |

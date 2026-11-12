@@ -144,7 +144,7 @@ export function pgDb({ connectionString, pool = null, schema = null, now = () =>
       return member(await one("select * from project_members where project_id = $1 and user_id = $2", [projectId, userId]));
     },
     async listUserProjects(userId) {
-      const rows = await q("select p.*, m.role from projects p join project_members m on m.project_id = p.id where m.user_id = $1 order by p.name, p.id", [userId]);
+      const rows = await q("select p.*, m.role from projects p join project_members m on m.project_id = p.id where m.user_id = $1 order by p.name, p.slug", [userId]);
       return rows.map((r) => ({ ...project(r), role: r.role }));
     },
 

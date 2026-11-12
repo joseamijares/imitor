@@ -136,7 +136,7 @@ export function memoryDb({ now = () => new Date() } = {}) {
     async listUserProjects(userId) {
       return [...members.values()].filter((m) => m.userId === userId && projects.has(m.projectId))
         .map((m) => ({ ...copy(projects.get(m.projectId)), role: m.role }))
-        .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+        .sort((a, b) => a.name.localeCompare(b.name) || a.slug.localeCompare(b.slug));
     },
 
     // ---------- keys ----------
