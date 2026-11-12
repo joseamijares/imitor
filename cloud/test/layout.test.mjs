@@ -13,13 +13,15 @@ test("nothing in src/ imports from cloud/", () => {
   for (const f of files) assert.doesNotMatch(fs.readFileSync(path.join(ROOT, "src", f), "utf8"), /cloud\//, f);
 });
 
-test("the npm package excludes cloud/, and cloud/ is AGPL with no dependencies", () => {
+test("the npm package excludes cloud/; cloud/ is AGPL with one pinned dependency (pg) and the root gains none", () => {
   const root = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
   assert.ok(!root.files.some((f) => f.startsWith("cloud")));
   assert.equal(root.license, "MIT");
   const cloud = JSON.parse(fs.readFileSync(path.join(ROOT, "cloud", "package.json"), "utf8"));
   assert.equal(cloud.license, "AGPL-3.0-only");
   assert.equal(cloud.private, true);
-  assert.equal(cloud.dependencies, undefined);
+  assert.deepEqual(Object.keys(cloud.dependencies), ["pg"]);
+  assert.match(cloud.dependencies.pg, /^\d+\.\d+\.\d+$/, "an exact version");
+  assert.deepEqual(Object.keys(root.dependencies), ["sql.js"]);
   assert.match(fs.readFileSync(path.join(ROOT, "cloud", "LICENSE"), "utf8"), /^\s+GNU AFFERO GENERAL PUBLIC LICENSE\s+Version 3, 19 November 2007/);
 });
