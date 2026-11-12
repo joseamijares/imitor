@@ -3,7 +3,7 @@
 import crypto from "node:crypto";
 
 export const json = (status, value, headers = {}) => new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...headers } });
-export const fail = (status, error, extra = {}) => json(status, { error, ...extra });
+export const fail = (status, error, extra = {}, headers = {}) => json(status, { error, ...extra }, headers);
 
 /** An HTML page. `csp` is its Content-Security-Policy (secure() adds a strict default when none is given). */
 export const page = (status, body, { csp = null, headers = {} } = {}) =>

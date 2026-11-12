@@ -14,6 +14,7 @@ import { checkUpload, MAX_BODY_BYTES } from "../../src/upload.mjs";
 import { fail, json, readText, safeEqual, secure } from "./http.mjs";
 import { newId } from "./ids.mjs";
 import { mapLimit } from "./limit.mjs";
+import { noticePage } from "./pages.mjs";
 import { handleWeb } from "./web.mjs";
 
 export { MAX_BODY_BYTES };
@@ -35,13 +36,23 @@ export function parseVersion(text) {
 }
 const older = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
 
+export const UNAVAILABLE = "the database cannot be reached right now; try again in a minute";
+
+/** The answer for an error no route handled: 503 when the database is unreachable (db code "unavailable"), else 500. */
+export function failure(request, error) {
+  if (error?.code !== "unavailable") return fail(500, "the server failed to handle this request; try again");
+  const page = /\btext\/html\b/i.test(request.headers.get("accept") || "");
+  const headers = { "retry-after": "30" };
+  return page ? noticePage(503, "Imitor Cloud is unavailable", "Its database cannot be reached right now. Try again in a minute.", { link: null, headers }) : fail(503, UNAVAILABLE, {}, headers);
+}
+
 export async function handle(request, deps) {
   let response;
   try {
     response = await route(request, deps);
   } catch (error) {
     deps.log?.(error);
-    response = fail(500, "the server failed to handle this request; try again");
+    response = failure(request, error);
   }
   return secure(response, { https: String(deps.publicUrl || "").startsWith("https:") });
 }

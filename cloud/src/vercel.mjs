@@ -3,7 +3,7 @@
 // separate site from imitor.vercel.app because vercel.app is on the Public Suffix List), only in production: a
 // preview deployment or the site's host gets 404. The root vercel.json rewrites the app host's paths to /api/cloud
 // with the original path in ?__imitor_path=, because a rewrite may change the URL the function sees.
-import { handle, retention } from "./api.mjs";
+import { failure, handle, retention } from "./api.mjs";
 import { fail, json, safeEqual, secure } from "./http.mjs";
 import { depsFromEnv } from "./server.mjs";
 
@@ -84,7 +84,12 @@ export function cronFunction(env = process.env, { deps = null } = {}) {
         console.error(error);
         return finish(fail(500, "this server is not configured yet"));
       }
-      return finish(json(200, await retention(deps)));
+      try {
+        return finish(json(200, await retention(deps)));
+      } catch (error) {
+        console.error(error);
+        return finish(failure(request, error));
+      }
     },
   };
 }

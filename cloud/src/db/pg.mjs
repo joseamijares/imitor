@@ -25,28 +25,82 @@ const RUN_COLUMNS = { status: "status", completedAt: "completed_at", run: "run",
 const JSON_COLUMNS = new Set(["run", "manifest", "files"]);
 
 /**
- * opts: { connectionString, pool (an existing pg Pool instead), schema (search_path, for tests), now, max }.
- * Returns the repository plus `close()`. The pool is made on first use, so this is synchronous.
+ * Limits on every connection, so an unreachable or stuck database fails a request in seconds instead of holding it until
+ * the platform kills it: connecting gives up after `connect` ms, an idle connection is closed after `idle` ms, and the
+ * server cancels a statement after `statement` ms (statement_timeout, sent when the connection starts; `query_timeout`
+ * a little later is the client's own backstop for a pooler that drops that parameter).
  */
-export function pgDb({ connectionString, pool = null, schema = null, now = () => new Date(), max = 5 } = {}) {
+export const TIMEOUTS = { connect: 5000, idle: 10000, statement: 10000 };
+
+const UNREACHABLE = new Set(["ECONNREFUSED", "ECONNRESET", "ETIMEDOUT", "ENOTFOUND", "EAI_AGAIN", "EHOSTUNREACH", "ENETUNREACH", "EPIPE"]);
+
+/**
+ * Whether `error` means the database cannot answer now, rather than that a query was wrong: no connection (refused,
+ * reset, unknown host, timed out), a connection exception (SQLSTATE class 08), the server shutting down (57P01-57P03),
+ * too many connections (53300), or a statement cancelled by statement_timeout (57014).
+ */
+export function isUnavailable(error) {
+  const code = String(error?.code || "");
+  if (UNREACHABLE.has(code) || /^08/.test(code) || /^57P0[123]$/.test(code) || code === "53300" || code === "57014") return true;
+  if (error instanceof AggregateError && error.errors?.some(isUnavailable)) return true;
+  return !/^[0-9A-Z]{5}$/.test(code) && /timeout exceeded when trying to connect|Connection terminated|Query read timeout|connection timeout/i.test(String(error?.message || ""));
+}
+
+/** An unavailable database as an error of its own (code "unavailable"), which handlers answer with 503. */
+const unavailable = (error) => (isUnavailable(error) ? Object.assign(new Error(`the database cannot be reached: ${error.message || error.code}`), { code: "unavailable", cause: error }) : error);
+
+/**
+ * opts: { connectionString, pool (an existing pg Pool instead), schema (search_path, for tests), now, max, timeouts
+ * (over TIMEOUTS), log (for errors of idle connections) }. Returns the repository plus `close()` and `pool()`. The pool
+ * is made on first use, so this is synchronous.
+ */
+export function pgDb({ connectionString, pool = null, schema = null, now = () => new Date(), max = 5, timeouts = {}, log = (error) => console.error(error) } = {}) {
+  const t = { ...TIMEOUTS, ...timeouts };
   let ready = pool ? Promise.resolve(pool) : null;
-  const getPool = () => (ready ||= import("pg").then(({ default: pg }) => new pg.Pool({ connectionString, max, ...(schema ? { options: `-c search_path=${schema}` } : {}) })));
+  const getPool = () => (ready ||= import("pg").then(({ default: pg }) => {
+    const made = new pg.Pool({
+      connectionString,
+      max,
+      connectionTimeoutMillis: t.connect,
+      idleTimeoutMillis: t.idle,
+      statement_timeout: t.statement,
+      query_timeout: t.statement + 2000,
+      ...(schema ? { options: `-c search_path=${schema}` } : {}),
+    });
+    // An idle connection that breaks (the server restarted, a pooler closed it) is reported here, not by a query;
+    // without a listener it would crash the process. The pool replaces it on the next query.
+    made.on("error", (error) => log(error));
+    return made;
+  }));
   const stamp = () => now().toISOString();
-  const q = async (text, values = []) => (await (await getPool()).query(text, values)).rows;
+  const q = async (text, values = []) => {
+    try {
+      return (await (await getPool()).query(text, values)).rows;
+    } catch (error) {
+      throw unavailable(error);
+    }
+  };
   const one = async (text, values) => (await q(text, values))[0] ?? null;
   /** fn(query) inside one transaction, rolled back if it throws. */
   async function transaction(fn) {
-    const client = await (await getPool()).connect();
+    let client;
+    try {
+      client = await (await getPool()).connect();
+    } catch (error) {
+      throw unavailable(error);
+    }
+    let broken = null;
     try {
       await client.query("begin");
       const result = await fn(async (text, values = []) => (await client.query(text, values)).rows);
       await client.query("commit");
       return result;
     } catch (error) {
+      if (isUnavailable(error)) broken = error;
       await client.query("rollback").catch(() => {});
-      throw error;
+      throw unavailable(error);
     } finally {
-      client.release();
+      client.release(broken || undefined); // a broken connection is destroyed, not handed out again
     }
   }
   const conflict = (error, message) => (error.code === "23505" ? Object.assign(new Error(message), { code: "conflict" }) : error);
@@ -59,6 +113,8 @@ export function pgDb({ connectionString, pool = null, schema = null, now = () =>
 
   const db = {
     transaction,
+    /** The pg Pool (made on first use). */
+    pool: getPool,
     async close() {
       if (ready) await (await ready).end();
     },

@@ -152,6 +152,10 @@ The cloud runs in the same Vercel project as the public site, on a host of its o
   `DATABASE_URL` (a pooled connection string; each function instance holds one connection), `S3_*`,
   `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `IMITOR_ALLOWED_EMAILS`, `CRON_SECRET`, and `IMITOR_ADMIN_TOKEN` only if
   you need it. Without `DATABASE_URL` and `S3_BUCKET` the function refuses to run rather than keep anything in memory.
+- **Database timeouts.** Each connection gives up connecting after 5 s, is closed after 10 s idle, and asks the server
+  to cancel any statement after 10 s (`statement_timeout`, sent as a startup parameter; the client also stops waiting
+  2 s later, for a pooler that drops it). A database that cannot be reached, or a statement cancelled that way, is
+  answered with `503` and a plain message (`Retry-After: 30`), not a hung request.
 - **Before the first deploy**, apply the migrations from your machine:
   `DATABASE_URL=... npm run migrate --prefix cloud`. Do the same before deploying a change that adds one.
 - **Google.** Register `PUBLIC_URL/auth/google/callback` as the client's authorized redirect URI.
