@@ -33,7 +33,7 @@ function projectBody(project, runs) {
   for (const f of newest?.flows || []) {
     if (flows.some((x) => x.name === f.name)) continue;
     const { name, status, device, scheme, steps, ...state } = f;
-    flows.push({ name, start: null, after: state.after ?? null, state: state.state ?? null, seeded: state.seeded === true, clock: state.clock ?? null, chain: { start: null, before: [] }, steps: (steps || []).map((s) => ({ index: s.index, action: "shot", label: s.name, step: { shot: s.name } })) });
+    flows.push({ name, start: null, after: state.after ?? null, state: state.state ?? null, seeded: state.seeded === true, clock: state.clock ?? null, secrets: Array.isArray(state.secrets) ? state.secrets : [], chain: { start: null, before: [] }, steps: (steps || []).map((s) => ({ index: s.index, action: "shot", label: s.name, step: { shot: s.name } })) });
   }
   return {
     name: project.name,

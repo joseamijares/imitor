@@ -80,7 +80,7 @@ test("every module of src/ the functions reach, and every file they read, is in 
   assert.ok(!included("src/build.mjs") && !included("src/store.mjs") && !included("src/mcp.mjs"), "includeFiles names modules, not all of src/");
   const { files } = walk(ENTRIES);
   const shared = [...files].filter((f) => f.startsWith("src/")).sort();
-  assert.deepEqual(shared, ["src/app-index.mjs", "src/config.mjs", "src/derive.mjs", "src/redact.mjs", "src/state.mjs", "src/tools.mjs", "src/upload.mjs"]);
+  assert.deepEqual(shared, ["src/app-index.mjs", "src/config.mjs", "src/derive.mjs", "src/redact.mjs", "src/secrets.mjs", "src/state.mjs", "src/tools.mjs", "src/upload.mjs"]);
   for (const f of files) if (!f.startsWith("api/")) assert.ok(included(f), `${f} is loaded by the functions but not in includeFiles`);
   // Read from disk at run time (assets.mjs): the interface and the design tokens.
   for (const f of fs.readdirSync(SOURCES.app, { recursive: true })) {

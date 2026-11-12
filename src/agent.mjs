@@ -3,8 +3,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { DEVICES, fidelityOf, loadConfig } from "./config.mjs";
 import { serve } from "./serve.mjs";
-import { assertBooted, doStep, loadPlaywright, settle, visibleStandIns, watchDialogs } from "./shoot.mjs";
-import { flowChain, prepareContext, readSeedProblems, stateInfo } from "./state.mjs";
+import { publicStep, refuseSecretRefs, scrub, typedValues } from "./secrets.mjs";
+import { assertBooted, doStep, firstLine, loadPlaywright, settle, shotOptions, visibleStandIns, watchDialogs } from "./shoot.mjs";
+import { flowChain, flowSecrets, prepareContext, readSeedProblems, stateInfo } from "./state.mjs";
 
 const slug = (s) => String(s).replace(/^\/+|\/+$/g, "").replace(/[^a-zA-Z0-9]+/g, "-") || "root";
 /**
@@ -59,14 +60,16 @@ async function withPage(root, config, opts, flow, task) {
     });
     const setup = await prepareContext(context, flow);
     const page = await context.newPage();
-    page.on("pageerror", (e) => errors.push(String(e.message).split("\n")[0]));
-    page.on("console", (m) => m.type() === "error" && errors.push(m.text().split("\n")[0].slice(0, 300)));
-    watchDialogs(page, (message) => dialogs.push(message));
+    const hide = typedValues(config, opts.steps);
+    page.on("pageerror", (e) => errors.push(firstLine(e.message, hide)));
+    page.on("console", (m) => m.type() === "error" && errors.push(firstLine(m.text(), hide, 300)));
+    watchDialogs(page, (message) => dialogs.push(message), hide);
     const result = await task({ page, context, device, scheme, baseUrl: server.url });
     const seedErrors = await readSeedProblems(page, setup);
     await context.close(); // flushes the video file
     const { after, state, seeded, clock } = stateInfo(flow);
-    return { ...result, device: device.name, scheme, after, state, seeded, clock, ...("passed" in result ? { passed: result.passed && !seedErrors.length } : {}), seedErrors, pageErrors: [...new Set(errors)], dialogs };
+    // Error messages, page errors and dialogs can echo what was typed: take every secret value out of the result.
+    return scrub({ ...result, device: device.name, scheme, after, state, seeded, clock, ...("passed" in result ? { passed: result.passed && !seedErrors.length } : {}), seedErrors, pageErrors: [...new Set(errors)], dialogs }, hide);
   } finally {
     await browser.close();
     server.close();
@@ -85,21 +88,21 @@ async function startFlow(page, config, flow, baseUrl) {
   const done = [];
   for (const b of chain.before) {
     try {
-      await doStep(page, b.step, baseUrl);
+      await doStep(page, b.step, baseUrl, config.secrets);
       if (!b.step.wait) await settle(page, 150);
       done.push({ after: b.flow, index: b.index, step: b.step, ok: true });
     } catch (error) {
-      done.push({ after: b.flow, index: b.index, step: b.step, ok: false, error: String(error.message).split("\n")[0] });
+      done.push({ after: b.flow, index: b.index, step: b.step, ok: false, error: firstLine(error.message, typedValues(config)) });
       return { steps: done, failedAt: b.index, failedIn: b.flow };
     }
   }
   return { steps: done, failedAt: null, failedIn: null };
 }
 
-/** Steps as results report them. */
+/** Steps as results report them, with fill values hidden (publicStep). */
 const stepReport = (s) => {
   const action = Object.keys(s.step)[0];
-  return { ...(s.after ? { after: s.after } : {}), index: s.index, action, target: s.step[action], ok: s.ok, ...(s.error ? { error: s.error } : {}) };
+  return { ...(s.after ? { after: s.after } : {}), index: s.index, action, target: publicStep(s.step)[action], ok: s.ok, ...(s.error ? { error: s.error } : {}) };
 };
 
 /** The flow a screenshot without `flow` runs as: the route, under the top-level state settings (or opts.state). */
@@ -108,12 +111,18 @@ function adHocFlow(config, opts) {
   return { name: null, start: opts.route || "/", steps: [], after: d.after ?? null, state: opts.state ?? d.state ?? null, seed: d.seed ?? null, clock: d.clock ?? null };
 }
 
+/** `secrets: [names]` for a result whose flow (or the flows it runs after) fills values from the environment. */
+const secretsNote = (config, flow) => {
+  const used = flowSecrets(config, flow);
+  return used.length ? { secrets: used } : {};
+};
+
 /** Run steps, calling onShot for shot steps. Returns { steps: [...], failedAt } without throwing on a failed step. */
 async function runSteps(page, steps, baseUrl, config, onShot) {
   const done = [];
   for (const [index, step] of steps.entries()) {
     try {
-      if (await doStep(page, step, baseUrl)) {
+      if (await doStep(page, step, baseUrl, config.secrets)) {
         if (!step.wait) await settle(page, 150);
       } else {
         await settle(page, config.settleMs);
@@ -122,7 +131,7 @@ async function runSteps(page, steps, baseUrl, config, onShot) {
       }
       done.push({ index: index + 1, step, ok: true });
     } catch (error) {
-      done.push({ index: index + 1, step, ok: false, error: String(error.message).split("\n")[0] });
+      done.push({ index: index + 1, step, ok: false, error: firstLine(error.message, typedValues(config, steps)) });
       return { steps: done, failedAt: index + 1 };
     }
   }
@@ -137,6 +146,7 @@ export async function screenshot(root, opts = {}) {
   const config = loadConfig(root);
   const dir = path.resolve(root, config.out, "captures");
   fs.mkdirSync(dir, { recursive: true });
+  refuseSecretRefs(opts.steps);
   const flow = opts.flow ? findFlow(config, opts.flow) : null;
   const base = flow ? (opts.state !== undefined ? { ...flow, state: opts.state } : flow) : adHocFlow(config, opts);
   return withPage(root, config, opts, base, async ({ page, device, scheme, baseUrl }) => {
@@ -151,9 +161,9 @@ export async function screenshot(root, opts = {}) {
     const route = new URL(page.url()).pathname;
     const name = opts.name || `${slug(flow ? flow.name : route)}-${device.name}-${scheme}-${uniqueSuffix()}`;
     const file = path.join(dir, `${slug(name)}.png`);
-    await page.screenshot({ path: file, fullPage: opts.fullPage === true });
+    await page.screenshot(shotOptions(page, { path: file, fullPage: opts.fullPage === true }));
     const failed = run.failedAt !== null;
-    return { file: path.relative(root, file), route, standIns: await visibleStandIns(page), failedAt: run.failedAt, ...(failed && run.failedIn ? { failedIn: run.failedIn } : {}), failedStep: failed ? run.steps.at(-1) : null };
+    return { file: path.relative(root, file), route, standIns: await visibleStandIns(page), failedAt: run.failedAt, ...(failed && run.failedIn ? { failedIn: run.failedIn } : {}), failedStep: failed ? { ...run.steps.at(-1), step: publicStep(run.steps.at(-1).step) } : null, ...secretsNote(config, base) };
   });
 }
 
@@ -169,17 +179,17 @@ export async function runFlow(root, opts = {}) {
     const shots = [];
     const own = pre.failedAt !== null ? { steps: [], failedAt: null } : await runSteps(page, flow.steps || [], baseUrl, config, async (step) => {
       const file = path.join(dir, `${slug(step.shot)}-${device.name}-${scheme}-${suffix}.png`);
-      await page.screenshot({ path: file, fullPage: step.fullPage === true });
+      await page.screenshot(shotOptions(page, { path: file, fullPage: step.fullPage === true }));
       shots.push({ shot: step.shot, file: path.relative(root, file), route: new URL(page.url()).pathname, standIns: await visibleStandIns(page) });
     });
     const run = { steps: [...pre.steps, ...own.steps], failedAt: pre.failedAt ?? own.failedAt, failedIn: pre.failedIn ?? (own.failedAt !== null ? flow.name : null) };
     let failureShot = null;
     if (run.failedAt !== null) {
       const file = path.join(dir, `FAILED-step-${run.failedAt}-${device.name}-${scheme}-${suffix}.png`);
-      await page.screenshot({ path: file }).catch(() => {});
+      await page.screenshot(shotOptions(page, { path: file })).catch(() => {});
       failureShot = path.relative(root, file);
     }
-    return { flow: flow.name, passed: run.failedAt === null, failedAt: run.failedAt, ...(run.failedIn ? { failedIn: run.failedIn } : {}), failureShot, steps: run.steps.map(stepReport), shots };
+    return { flow: flow.name, passed: run.failedAt === null, failedAt: run.failedAt, ...(run.failedIn ? { failedIn: run.failedIn } : {}), failureShot, steps: run.steps.map(stepReport), shots, ...secretsNote(config, flow) };
   });
 }
 
@@ -187,6 +197,10 @@ export async function runFlow(root, opts = {}) {
 export async function recordVideo(root, opts = {}) {
   const config = loadConfig(root);
   const flow = findFlow(config, opts.flow);
+  // A video shows every frame, including a secret being typed and whatever the session it opens shows; masks do not
+  // reach it. Refuse rather than record.
+  const used = flowSecrets(config, flow);
+  if (used.length) throw new Error(`flow "${flow.name}" fills values from the environment (${used.join(", ")}), and Imitor does not record videos of such flows`);
   const dir = path.resolve(root, config.out, "captures");
   const tmp = fs.mkdtempSync(path.join(dir.replace(/captures$/, ""), ".video-"));
   fs.mkdirSync(dir, { recursive: true });
@@ -223,5 +237,5 @@ export function readProblems(root) {
 /** Flows, devices and schemes an agent can ask for. */
 export function describe(root) {
   const config = loadConfig(root);
-  return { flows: config.flows.map((f) => ({ name: f.name, start: f.start || (f.after ? null : "/"), steps: (f.steps || []).length, shots: (f.steps || []).filter((s) => s.shot).map((s) => s.shot), ...stateInfo(f) })), devices: [...new Set([...config.devices.map((d) => d.name), ...Object.keys(DEVICES)])], schemes: ["light", "dark"], standIns: config.shims, fidelity: Object.fromEntries(Object.entries(config.shims).map(([module, kind]) => [module, fidelityOf(kind)])), built: fs.existsSync(path.resolve(root, config.out, "app", "index.html")) };
+  return { flows: config.flows.map((f) => ({ name: f.name, start: f.start || (f.after ? null : "/"), steps: (f.steps || []).length, shots: (f.steps || []).filter((s) => s.shot).map((s) => s.shot), ...stateInfo(f), secrets: flowSecrets(config, f) })), devices: [...new Set([...config.devices.map((d) => d.name), ...Object.keys(DEVICES)])], schemes: ["light", "dark"], standIns: config.shims, fidelity: Object.fromEntries(Object.entries(config.shims).map(([module, kind]) => [module, fidelityOf(kind)])), built: fs.existsSync(path.resolve(root, config.out, "app", "index.html")) };
 }

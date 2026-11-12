@@ -14,6 +14,7 @@ const KEEP = new Set([
 ]);
 const MIN_SECRET = 4; // shorter values ("1", "yes") would blank ordinary words inside text; they are blanked only whole
 
+const isEnvRef = (v) => Boolean(v) && typeof v === "object" && !Array.isArray(v) && Object.keys(v).length === 1 && typeof v.env === "string";
 const isFill = (key, v) => key === "fill" && v && typeof v === "object" && !Array.isArray(v) && "value" in v;
 
 // Visits [value, key it sits under] depth first, without recursion, so a deeply nested value cannot overflow the stack.
@@ -29,7 +30,7 @@ function* entries(value) {
 
 /** Every fill value in `value` (a config, a manifest, a step list), as strings. */
 export function fillValues(value, found = new Set()) {
-  for (const [v, key] of entries(value)) if (isFill(key, v) && v.value != null) found.add(String(v.value));
+  for (const [v, key] of entries(value)) if (isFill(key, v) && v.value != null && typeof v.value !== "object") found.add(String(v.value)); // { env } is a reference, not a value
   return found;
 }
 
@@ -41,8 +42,16 @@ const define = (o, k, v) => Object.defineProperty(o, k, { value: v, enumerable: 
 export function redact(value, { secrets = [] } = {}) {
   const exact = new Set([...fillValues(value), ...secrets].map(String).filter((s) => s && s !== BLANK));
   // Also as JSON writes them inside a string, since errors quote steps with JSON.stringify ({"value":"say \"hi\""}).
-  const words = [...new Set([...exact].filter((s) => s.length >= MIN_SECRET).flatMap((s) => [s, JSON.stringify(s).slice(1, -1)]))].sort((a, b) => b.length - a.length);
-  const pattern = words.length ? new RegExp(words.map(escape).join("|"), "g") : null;
+  // And URL-encoded, as an address carries them (a route "/u/a%20b", a query "?q=a%40b"). The hex digits of each
+  // escape may be in either case, even mixed ("%c3%A9"); the rest of the value stays case-sensitive.
+  const hexAnyCase = (src) => src.replace(/%([0-9A-F])([0-9A-F])/g, (_, a, b) => `%${anyCase(a)}${anyCase(b)}`);
+  const anyCase = (c) => (/[A-F]/.test(c) ? `[${c}${c.toLowerCase()}]` : c);
+  const forms = (s) => [
+    ...[s, JSON.stringify(s).slice(1, -1)].map((f) => ({ length: f.length, source: escape(f) })),
+    ...[encodeURI(s), encodeURIComponent(s)].map((f) => ({ length: f.length, source: hexAnyCase(escape(f)) })),
+  ];
+  const sources = [...new Map([...exact].filter((s) => s.length >= MIN_SECRET).flatMap(forms).map((f) => [f.source, f])).values()].sort((a, b) => b.length - a.length);
+  const pattern = sources.length ? new RegExp(sources.map((f) => f.source).join("|"), "g") : null;
   const scrub = (s, key) => (KEEP.has(key) ? s : exact.has(s) ? BLANK : pattern ? s.replace(pattern, BLANK) : s);
 
   // Copies iteratively for the same reason as entries(): each stack item fills one slot of a copy made earlier.
@@ -58,7 +67,8 @@ export function redact(value, { secrets = [] } = {}) {
       const fill = isFill(key, v);
       for (const [k, x] of Object.entries(v)) {
         define(out, k, undefined); // keeps the key order of the original
-        stack.push([fill && k === "value" ? BLANK : x, k, out, k]);
+        // A value from the environment ({ env: NAME }) is only a reference: keep it, so outputs say which variable it was.
+        stack.push([fill && k === "value" && !isEnvRef(x) ? BLANK : x, k, out, k]);
       }
     } else define(into, slot, typeof v === "string" ? scrub(v, key) : v);
   }

@@ -92,7 +92,7 @@ test("API: project, runs, one run, captures, problems, agents", async (t) => {
 
   const { problems } = await get("/api/problems");
   assert.equal(problems[0].title, "first-run failed at step 3");
-  assert.deepEqual(problems[0].detail.stepConfig, { fill: { placeholder: "Plant name", value: "Fern" } });
+  assert.deepEqual(problems[0].detail.stepConfig, { fill: { placeholder: "Plant name", value: "•••" } }, "a fill value never leaves the run, even from a manifest written before values were hidden");
   assert.equal(problems[0].detail.lastGoodShot, `/files/runs/${f.run.id}/screens/first-run-01-welcome-pixel-9-dark.png`);
   assert.equal(problems[1].title, "skia stand-in on 1 shot");
 

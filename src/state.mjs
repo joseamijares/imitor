@@ -8,6 +8,8 @@
 //   localStorage               seed.storage written once per browser-tab session (sessionStorage "imitor:seeded")
 // Seed problems are kept in sessionStorage "imitor:seed-errors" so they survive reloads; readSeedProblems collects them.
 
+import { secretsUsed } from "./secrets.mjs";
+
 /** A flow's setup: what the page starts with. */
 export function flowSetup(flow) {
   const seed = flow.seed || null;
@@ -50,6 +52,11 @@ export function flowChain(config, flow) {
     });
   }
   return { start: lineage[0].start || "/", before };
+}
+
+/** The environment variables a flow fills from ({ "env": "NAME" }), its own steps and those of the flows it runs after. */
+export function flowSecrets(config, flow) {
+  return secretsUsed([...flowChain(config, flow).before.map((b) => b.step), ...(flow.steps || [])]);
 }
 
 /**

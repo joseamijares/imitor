@@ -7,6 +7,7 @@ import { describe, readProblems, recordVideo, runFlow, screenshot } from "./agen
 import { build } from "./build.mjs";
 import { formatInit, init } from "./init.mjs";
 import { loadConfig } from "./config.mjs";
+import { scrubForRoot } from "./secrets.mjs";
 import { serve } from "./serve.mjs";
 import { appendActivity, recordCaptures, resolveBy } from "./store.mjs";
 import { TOOLS } from "./tools.mjs";
@@ -100,9 +101,10 @@ export function createServer(root) {
         if (!noLog) log(params.name, summary, true);
         return reply({ content });
       } catch (error) {
-        const reason = String(error.message).split("\n")[0].slice(0, 160);
+        const message = scrubForRoot(root, String(error.message));
+        const reason = message.split("\n")[0].slice(0, 160);
         if (params.name !== "imitor_init") log(params.name, `tried to ${FAILED[params.name]}: ${reason}`, false);
-        return reply({ content: [text(String(error.message))], isError: true });
+        return reply({ content: [text(message)], isError: true });
       }
     }
     if (id === undefined) return null; // a notification we do not act on

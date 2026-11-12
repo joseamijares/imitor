@@ -11,7 +11,8 @@ import { MEDIA_MARKER } from "./build.mjs";
 import { DEVICES, fidelityOf, loadConfig, NOT_COVERED } from "./config.mjs";
 import { TOOLS } from "./tools.mjs";
 import { serve } from "./serve.mjs";
-import { flowChain, flowSetup, preludeSource, stateInfo } from "./state.mjs";
+import { publicStep } from "./secrets.mjs";
+import { flowChain, flowSecrets, flowSetup, preludeSource, stateInfo } from "./state.mjs";
 import { agentsData, gitInfo, listCaptures, listProblems, listRuns, readRun, setSeen } from "./store.mjs";
 
 export const APP_DIR = fileURLToPath(new URL("./app", import.meta.url));
@@ -108,8 +109,12 @@ function stepLabel(step) {
   return String(value);
 }
 
-/** `git` ({ branch, commit }) replaces reading the checkout, for data assembled elsewhere (the demo). */
-export function projectData(root, { previewUrl = null, git = null } = {}) {
+/**
+ * `git` ({ branch, commit }) replaces reading the checkout, for data assembled elsewhere (the demo). Literal fill values
+ * are hidden (publicStep) unless `withValues`: only the local server passes it, because its live preview replays them;
+ * an exported site never has them.
+ */
+export function projectData(root, { previewUrl = null, git = null, withValues = false } = {}) {
   const config = loadConfig(root);
   const info = git || gitInfo(root);
   let name = path.basename(root);
@@ -128,9 +133,10 @@ export function projectData(root, { previewUrl = null, git = null } = {}) {
     schemes: config.schemes,
     flows: config.flows.map((f) => {
       const chain = flowChain(config, f);
-      const entry = (step, index, flow) => ({ ...(flow ? { flow } : {}), index, action: Object.keys(step)[0], label: stepLabel(step), step });
+      const entry = (step, index, flow) => ({ ...(flow ? { flow } : {}), index, action: Object.keys(step)[0], label: stepLabel(step), step: withValues ? step : publicStep(step) });
+      // A value from the environment is only ever its reference ({ env: NAME }); secrets lists those names.
       // after, state, seeded, clock: what the flow starts from. chain: where it really starts and the steps of the flows it runs after.
-      return { name: f.name, start: f.start || (f.after ? null : "/"), ...stateInfo(f), chain: { start: chain.start, before: chain.before.map((b) => entry(b.step, b.index, b.flow)) }, steps: (f.steps || []).map((step, i) => entry(step, i + 1)) };
+      return { name: f.name, start: f.start || (f.after ? null : "/"), ...stateInfo(f), secrets: flowSecrets(config, f), chain: { start: chain.start, before: chain.before.map((b) => entry(b.step, b.index, b.flow)) }, steps: (f.steps || []).map((step, i) => entry(step, i + 1)) };
     }),
     standIns: Object.entries(config.shims).map(([module, kind]) => ({ module, kind, fidelity: fidelityOf(kind) })),
     notCovered: NOT_COVERED,
@@ -171,7 +177,7 @@ export function apiGet(root, route, opts = {}) {
 
 async function api(req, res, root, out, route, previewUrl) {
   const get = req.method === "GET" || req.method === "HEAD";
-  const answer = get ? apiGet(root, route, { previewUrl }) : null;
+  const answer = get ? apiGet(root, route, { previewUrl, withValues: true }) : null;
   if (answer) return json(res, answer.status, answer.body);
   const m = /^\/api\/problems\/([^/]+)\/seen$/.exec(route);
   if (req.method === "POST" && m) {
