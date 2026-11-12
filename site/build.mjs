@@ -153,6 +153,28 @@ function docPage(key, sections, template) {
     .replace("{{body}}", body);
 }
 
+// Who runs the site and the hosted cloud, and where people write to. Shown on /privacy/ and /terms/.
+export const LEGAL = { operator: "The Imitor maintainer", contact: "hello@imitor.dev" };
+export const LEGAL_PAGES = {
+  privacy: { title: "Privacy", description: "What imitor.dev and Imitor Cloud collect, where it goes and how long it stays." },
+  terms: { title: "Terms", description: "The terms for imitor.dev and Imitor Cloud while it is in development." },
+};
+
+/** A legal page from site/legal/<key>.md, in the documentation layout. */
+function legalPage(key, template) {
+  const page = LEGAL_PAGES[key];
+  const contact = `[${LEGAL.contact}](mailto:${LEGAL.contact})`;
+  const text = fs.readFileSync(path.join(HERE, "legal", `${key}.md`), "utf8").replaceAll("{{operator}}", LEGAL.operator).replaceAll("{{contact}}", contact);
+  const body = markdown(text);
+  const toc = [...body.matchAll(/<h2 id="([^"]+)">(.*?)<\/h2>/g)].map(([, id, t]) => `<a href="#${id}">${t.replace(/<[^>]+>/g, "")}</a>`).join("");
+  return template
+    .replaceAll("{{title}}", esc(page.title))
+    .replaceAll("{{description}}", esc(page.description))
+    .replace(/\s*<p class="source">[\s\S]*?<\/p>/, "")
+    .replace("{{toc}}", toc)
+    .replace("{{body}}", body);
+}
+
 export function buildSite({ out = path.join(HERE, "dist") } = {}) {
   fs.rmSync(out, { recursive: true, force: true });
   fs.mkdirSync(path.join(out, "assets", "shots"), { recursive: true });
@@ -167,6 +189,10 @@ export function buildSite({ out = path.join(HERE, "dist") } = {}) {
   for (const key of Object.keys(PAGES)) {
     fs.mkdirSync(path.join(out, key), { recursive: true });
     fs.writeFileSync(path.join(out, key, "index.html"), docPage(key, sections, template));
+  }
+  for (const key of Object.keys(LEGAL_PAGES)) {
+    fs.mkdirSync(path.join(out, key), { recursive: true });
+    fs.writeFileSync(path.join(out, key, "index.html"), legalPage(key, template));
   }
   // The demo: a read-only export with invented data, served under /demo/. The site's own vercel.json and 404.html
   // cover it, so the export's per-folder fallbacks are dropped.
