@@ -1,9 +1,12 @@
 // Browser sessions: a random 32-byte token in an HttpOnly cookie, of which only the SHA-256 is stored. A session lasts
-// 30 days from its last use (refreshed at most once a day, so reads do not write on every request); signing out
-// deletes it, and signing out everywhere deletes every session of the person.
+// 30 days from its last use (refreshed at most once a day, so reads do not write on every request) and never more than
+// 90 days from when it was made, however often it is used; signing out deletes it, and signing out everywhere deletes
+// every session of the person.
 import { cookie, cookies, randomToken, sha256 } from "../http.mjs";
 
 export const SESSION_DAYS = 30;
+/** The absolute limit: a session ends this long after it was made, used or not. */
+export const SESSION_MAX_DAYS = 90;
 const DAY = 24 * 3600 * 1000;
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
@@ -51,7 +54,8 @@ export async function currentUser(request, deps) {
   const session = await deps.db.getSession(idHash);
   const t = nowOf(deps).getTime();
   if (!session) return { user: null, setCookie: clearSessionCookie(deps) };
-  if (Date.parse(session.expiresAt) <= t) {
+  const end = Date.parse(session.createdAt) + SESSION_MAX_DAYS * DAY;
+  if (Date.parse(session.expiresAt) <= t || end <= t) {
     await deps.db.deleteSession(idHash);
     return { user: null, setCookie: clearSessionCookie(deps) };
   }
@@ -61,11 +65,12 @@ export async function currentUser(request, deps) {
     return { user: null, setCookie: clearSessionCookie(deps) };
   }
   let setCookie;
-  if (Date.parse(session.expiresAt) - t < (SESSION_DAYS - 1) * DAY) {
-    const expiresAt = new Date(t + SESSION_DAYS * DAY).toISOString();
+  const until = Math.min(t + SESSION_DAYS * DAY, end);
+  if (Date.parse(session.expiresAt) - t < (SESSION_DAYS - 1) * DAY && until > Date.parse(session.expiresAt)) {
+    const expiresAt = new Date(until).toISOString();
     await deps.db.updateSession(idHash, { expiresAt });
     session.expiresAt = expiresAt;
-    setCookie = cookie(names.session, token, { maxAge: SESSION_DAYS * 24 * 3600, secure: names.secure });
+    setCookie = cookie(names.session, token, { maxAge: Math.floor((until - t) / 1000), secure: names.secure });
   }
   return { user, session, setCookie };
 }

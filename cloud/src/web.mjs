@@ -95,7 +95,11 @@ async function login(request, deps, url) {
   return loginPage({ google: !!deps.oidc, adminToken: !!deps.adminToken, next });
 }
 
-/** The person to sign in for verified Google claims, or null when they may not. Creates nothing for someone not allowed. */
+/**
+ * The person to sign in for verified Google claims, or null when they may not. Creates nothing for someone not allowed.
+ * Two first sign-ins at once (two tabs, a double click) race to create the user and bind the identity; the one that
+ * loses reads what the other made instead of failing.
+ */
 export async function admit(deps, claims) {
   const { db } = deps;
   const known = await db.findIdentity("google", claims.sub);
@@ -108,13 +112,27 @@ export async function admit(deps, claims) {
   let user = await db.findUserByEmail(email);
   if (user) {
     // The address is someone's who signed in with another Google account: an address can change hands, so the owner decides.
-    if ((await db.listIdentities(user.id)).some((i) => i.provider === "google")) return null;
+    // (Its own identity may have been bound by another sign-in of this same account since the lookup above.)
+    if ((await db.listIdentities(user.id)).some((i) => i.provider === "google" && i.subject !== claims.sub)) return null;
     user = await db.updateUser(user.id, { allowed: true, ...(user.name ? {} : { name: claims.name ?? null }) });
   } else {
-    user = await db.createUser({ email: claims.email, name: claims.name ?? null, allowed: true });
+    try {
+      user = await db.createUser({ email: claims.email, name: claims.name ?? null, allowed: true });
+    } catch (error) {
+      if (error.code !== "conflict") throw error;
+      return admit(deps, claims); // made a moment ago by another sign-in: start over with it
+    }
     await db.addAudit({ userId: user.id, action: "user.create", detail: { email: user.email, via: "google" } });
   }
-  await db.addIdentity("google", claims.sub, user.id);
+  try {
+    await db.addIdentity("google", claims.sub, user.id);
+  } catch (error) {
+    if (error.code !== "conflict") throw error;
+    // Bound a moment ago by another sign-in of the same account: whoever it was bound to is who this is.
+    const bound = await db.findIdentity("google", claims.sub);
+    const owner = bound && (await db.getUser(bound.userId));
+    return owner?.allowed ? owner : null;
+  }
   return user;
 }
 
@@ -204,9 +222,15 @@ async function tokenLogin(request, deps, url) {
   const email = deps.adminEmail || "admin";
   let user = await deps.db.findUserByEmail(email);
   if (!user) {
-    user = await deps.db.createUser({ email, name: "Admin", allowed: true });
-    await deps.db.addAudit({ userId: user.id, action: "user.create", detail: { email, via: "admin-token" } });
-  } else if (!user.allowed) user = await deps.db.updateUser(user.id, { allowed: true });
+    try {
+      user = await deps.db.createUser({ email, name: "Admin", allowed: true });
+      await deps.db.addAudit({ userId: user.id, action: "user.create", detail: { email, via: "admin-token" } });
+    } catch (error) {
+      if (error.code !== "conflict") throw error;
+      user = await deps.db.findUserByEmail(email); // made a moment ago by another sign-in
+    }
+  }
+  if (!user.allowed) user = await deps.db.updateUser(user.id, { allowed: true });
   await deps.db.addAudit({ userId: user.id, action: "user.signin", detail: { email, via: "admin-token" } });
   return redirect(next, 303, { "set-cookie": await startSession(deps, user.id) });
 }

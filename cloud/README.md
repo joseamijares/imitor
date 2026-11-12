@@ -188,7 +188,13 @@ and that sign-in completes against Google. After the first night, open the proje
 
 - Sessions: a random 32-byte token in `__Host-imitor_session` (HttpOnly, Secure, SameSite=Lax, Path=/; plain
   `imitor_session` without Secure only on `http://localhost` for local runs). Only its SHA-256 is stored. 30 days from
-  last use; signing out deletes it, signing out everywhere deletes all of the person's.
+  last use, and never more than 90 days from signing in however often it is used; signing out deletes it, signing out
+  everywhere deletes all of the person's.
+- Google's ID token: RS256 against Google's published keys, `iss`, `aud`, `exp`, `iat` and the nonce checked, and
+  `azp` must be this client whenever it is present (and present when there is more than one audience). Two first
+  sign-ins of one person at once both succeed, as one user with one identity.
+- A failure the handler did not answer (the Node server's last resort) is a `500` with the same security headers as
+  every other answer.
 - CSRF: every request that changes something and is not under `/v1` (which uses keys, not cookies) must carry an
   `Origin`, or else a `Referer`, equal to `PUBLIC_URL`'s origin. That includes the admin token form.
 - The interface's pages allow scripts from the cloud's own origin and the one inline theme script by its hash; images

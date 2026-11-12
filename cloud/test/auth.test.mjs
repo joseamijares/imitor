@@ -2,9 +2,9 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import test from "node:test";
-import { SESSION_DAYS } from "../src/auth/session.mjs";
+import { SESSION_DAYS, SESSION_MAX_DAYS } from "../src/auth/session.mjs";
 import { clientAddress, throttle } from "../src/throttle.mjs";
-import { TOKEN_FAILURES, TOKEN_WINDOW_MS } from "../src/web.mjs";
+import { admit, TOKEN_FAILURES, TOKEN_WINDOW_MS } from "../src/web.mjs";
 import { browser, CLIENT_ID, cloud, fakeProvider, googleSignIn, HTML, PUBLIC_URL } from "./helpers.mjs";
 
 const DAY = 24 * 3600 * 1000;
@@ -84,6 +84,8 @@ test("refused ID tokens: wrong aud, wrong iss, expired, issued in the future, ba
   const cases = [
     [{ claims: { aud: "someone-else.apps.example" } }, /for another application/],
     [{ claims: { aud: [CLIENT_ID, "other"], azp: "other" } }, /for another application/],
+    [{ claims: { aud: [CLIENT_ID, "other"] } }, /for another application/],
+    [{ claims: { azp: "other.apps.example" } }, /for another application/],
     [{ claims: { iss: "https://accounts.example" } }, /issued by https:\/\/accounts\.example/],
     [{ claims: { exp: t0 - 120, iat: t0 - 3720 } }, /has expired/],
     [{ claims: { iat: t0 + 600 } }, /issued in the future/],
@@ -98,8 +100,9 @@ test("refused ID tokens: wrong aud, wrong iss, expired, issued in the future, ba
     assert.match(done.text, error);
     assert.equal(b.jar.has("__Host-imitor_session"), false);
   }
-  // Within the minute of skew is fine.
+  // Within the minute of skew is fine, and so is an azp naming this client (Google sends one).
   assert.equal((await googleSignIn(browser(s.deps), s.provider, { now: s.now, claims: { exp: t0 - 30 } })).done.status, 303);
+  assert.equal((await googleSignIn(browser(s.deps), s.provider, { now: s.now, claims: { azp: CLIENT_ID } })).done.status, 303);
   assert.equal((await s.db.listAudit()).filter((a) => a.action === "user.create").length, 1, "nothing made for a refused token");
 });
 
@@ -183,6 +186,60 @@ test("sessions slide for 30 days from last use, then expire; sign-out and sign-o
   assert.equal((await s.b.call("GET", "/projects", { headers: HTML })).status, 302);
   assert.equal((await phone.call("GET", "/projects", { headers: HTML })).status, 302);
   assert.ok((await s.db.listAudit()).some((a) => a.action === "user.signout-everywhere"));
+});
+
+test("a session ends 90 days after it was made, however often it is used", async (t) => {
+  const s = await setup(t);
+  await googleSignIn(s.b, s.provider, { now: s.now });
+  const hash = sha(s.b.jar.get("__Host-imitor_session"));
+  const made = Date.parse((await s.db.getSession(hash)).createdAt);
+  const page = () => s.b.call("GET", "/projects", { headers: HTML });
+  // Used every few days: the sliding 30 days alone would keep it forever.
+  for (let day = 3; day < SESSION_MAX_DAYS; day += 3) {
+    s.now.set(new Date(made + day * DAY).toISOString());
+    assert.equal((await page()).status, 200, `day ${day}`);
+  }
+  const stored = await s.db.getSession(hash);
+  assert.equal(stored.expiresAt, new Date(made + SESSION_MAX_DAYS * DAY).toISOString(), "a refresh never goes past the limit");
+  s.now.set(new Date(made + (SESSION_MAX_DAYS - 2) * DAY).toISOString());
+  const last = await page();
+  assert.equal(last.status, 200);
+  s.now.set(new Date(made + SESSION_MAX_DAYS * DAY + 1000).toISOString());
+  const over = await page();
+  assert.equal(over.status, 302);
+  assert.equal(over.location, "/login");
+  assert.equal(await s.db.getSession(hash), null);
+  // The cookie a refresh near the end sets lasts only until then.
+  const fresh = browser(s.deps);
+  await googleSignIn(fresh, s.provider, { now: s.now });
+  const freshHash = sha(fresh.jar.get("__Host-imitor_session"));
+  s.now.advance((SESSION_MAX_DAYS - 10) * DAY);
+  await s.db.updateSession(freshHash, { expiresAt: new Date(s.now().getTime() + 2 * DAY).toISOString() });
+  const near = await fresh.call("GET", "/projects", { headers: HTML });
+  assert.equal(near.status, 200);
+  assert.match(near.cookies[0], new RegExp(`Max-Age=${10 * 24 * 3600}$`), "10 days are left, not 30");
+});
+
+test("two first sign-ins at once (two tabs, a double click) both get in, as one user with one identity", async (t) => {
+  const s = await setup(t, { allowed: ["ada@example.com", "bob@example.com"] });
+  const claims = { sub: "100200300400", email: "ada@example.com", email_verified: true, name: "Ada Lovelace" };
+  const users = await Promise.all([admit(s.deps, claims), admit(s.deps, claims), admit(s.deps, claims)]);
+  assert.ok(users.every((u) => u && u.id === users[0].id), "the same user for each");
+  assert.equal((await s.db.listIdentities(users[0].id)).length, 1);
+  assert.equal((await s.db.listAudit()).filter((a) => a.action === "user.create").length, 1);
+  // And through the callback, side by side.
+  const [a, b] = [browser(s.deps), browser(s.deps)];
+  const done = await Promise.all([googleSignIn(a, s.provider, { now: s.now, claims: { sub: "999", email: "bob@example.com" } }), googleSignIn(b, s.provider, { now: s.now, claims: { sub: "999", email: "bob@example.com" } })]);
+  assert.deepEqual(done.map((d) => d.done.status), [303, 303]);
+  const bob = await s.db.findUserByEmail("bob@example.com");
+  assert.deepEqual((await s.db.listIdentities(bob.id)).map((i) => i.subject), ["999"]);
+
+  // The admin token's first sign-in, twice at once.
+  const token = crypto.randomBytes(32).toString("base64url");
+  const p = cloud({ adminToken: token });
+  const both = await Promise.all([1, 2].map(() => browser(p.deps).call("POST", "/login/token", { form: { token } })));
+  assert.deepEqual(both.map((r) => r.status), [303, 303]);
+  assert.equal((await p.db.listAudit()).filter((a) => a.action === "user.create").length, 1);
 });
 
 test("CSRF: a cookie-authenticated POST needs Origin (or Referer) equal to PUBLIC_URL", async (t) => {

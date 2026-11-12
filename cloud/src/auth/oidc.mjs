@@ -112,7 +112,9 @@ export function oidcClient({ clientId, clientSecret, redirectUri, discoveryUrl =
       const claims = b64json(p);
       if (!issuers.includes(claims.iss)) throw new OidcError(`the ID token was issued by ${claims.iss}, not the sign-in provider`);
       const aud = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
-      if (!aud.includes(clientId) || (aud.length > 1 && claims.azp !== clientId)) throw new OidcError("the ID token is for another application");
+      // azp (the party the token was issued to) must be this client whenever it is present, and must be present when
+      // the token has more than one audience.
+      if (!aud.includes(clientId) || ((aud.length > 1 || claims.azp !== undefined) && claims.azp !== clientId)) throw new OidcError("the ID token is for another application");
       const t = Math.floor(now().getTime() / 1000);
       if (typeof claims.exp !== "number" || claims.exp < t - SKEW) throw new OidcError("the ID token has expired");
       if (typeof claims.iat !== "number" || claims.iat > t + SKEW) throw new OidcError("the ID token was issued in the future");

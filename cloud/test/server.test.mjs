@@ -4,8 +4,9 @@ import net from "node:net";
 import test from "node:test";
 import { MAX_BODY_BYTES } from "../src/api.mjs";
 import { memoryDb } from "../src/db/memory.mjs";
+import { CSP_NONE } from "../src/http.mjs";
 import { LINGER_MS, startServer } from "../src/server.mjs";
-import { memoryStorage } from "../src/storage/memory.mjs";
+import { memoryStorage, STORAGE_PATH } from "../src/storage/memory.mjs";
 
 /**
  * POST a chunked body (Transfer-Encoding: chunked, no content-length) to /v1/runs over a raw socket, 64 KB at a time,
@@ -126,4 +127,21 @@ test("a client that never stops sending is dropped soon after the linger time", 
   const res = await rawChunked(server, auth, { stopOnAnswer: false });
   assert.equal(res.status, 413);
   assert.ok(res.closedAfterMs < LINGER_MS + 3000, `the connection stayed open ${res.closedAfterMs} ms`);
+});
+
+test("a failure outside the handler is a 500 with the same security headers as every other answer", async (t) => {
+  const logged = [];
+  const deps = { db: memoryDb(), storage: memoryStorage(), log: (e) => logged.push(e) };
+  deps.storage.handle = async () => { throw new Error("the storage handler broke"); };
+  const server = await startServer({ port: 0, deps });
+  t.after(() => server.close());
+  const res = await fetch(`${server.url}${STORAGE_PATH}x/y.png`);
+  assert.equal(res.status, 500);
+  assert.deepEqual(await res.json(), { error: "the server failed to handle this request" });
+  assert.equal(res.headers.get("x-content-type-options"), "nosniff");
+  assert.equal(res.headers.get("x-frame-options"), "DENY");
+  assert.equal(res.headers.get("referrer-policy"), "same-origin");
+  assert.equal(res.headers.get("content-security-policy"), CSP_NONE);
+  assert.equal(res.headers.get("cache-control"), "no-store");
+  assert.equal(logged.length, 1);
 });

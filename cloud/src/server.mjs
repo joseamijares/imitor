@@ -9,7 +9,7 @@ import { oidcClient } from "./auth/oidc.mjs";
 import { isLocalHttp } from "./auth/session.mjs";
 import { memoryDb } from "./db/memory.mjs";
 import { pgDb } from "./db/pg.mjs";
-import { randomToken } from "./http.mjs";
+import { fail, randomToken, secure } from "./http.mjs";
 import { memoryStorage, STORAGE_PATH } from "./storage/memory.mjs";
 import { s3FromEnv } from "./storage/s3.mjs";
 
@@ -137,8 +137,10 @@ export async function startServer({ port = 0, host = "127.0.0.1", deps = depsFro
       await send(res, local ? await deps.storage.handle(request) : await handle(request, deps), req);
     } catch (error) {
       deps.log?.(error);
-      if (!res.headersSent) res.writeHead(500, { "content-type": "application/json" }).end(JSON.stringify({ error: "the server failed to handle this request" }));
-      else res.destroy();
+      if (res.headersSent) return res.destroy();
+      // The same headers as every other answer: no sniffing, never framed, the strict CSP.
+      const failed = secure(fail(500, "the server failed to handle this request"), { https: String(deps.publicUrl || "").startsWith("https:") });
+      await send(res, failed, req).catch(() => res.destroy());
     }
   });
   const actual = await new Promise((resolve, reject) => {
