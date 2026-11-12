@@ -27,7 +27,16 @@ preview/
 
 ## Set up
 
-In the app's folder:
+In the app's folder, install Imitor and Playwright with its Chromium.
+
+**Not on npm yet:** until the first release is published, install from GitHub instead: `npm i -D github:joseamijares/imitor playwright`.
+
+```bash
+npm i -D imitor playwright
+npx playwright install chromium
+```
+
+Then, in the same folder:
 
 ```bash
 npx imitor init --dry-run   # show every change it would make, as diffs
@@ -35,15 +44,6 @@ npx imitor init             # make them
 ```
 
 `imitor init` works on Expo apps (with or without their own `ios/` and `android/` folders). It stops and explains on a bare React Native app without Expo. It never installs anything: it ends with the exact install command for what is missing, for the package manager your lockfile shows (npm, yarn, pnpm or bun), and the next commands to run. It is safe to run twice; the second run changes nothing. An agent can do the same through the `imitor_init` MCP tool.
-
-Install (once Imitor is on npm):
-
-```bash
-npm i -D imitor playwright
-npx playwright install chromium
-```
-
-**Not on npm yet:** until the first release is published, install from GitHub instead: `npm i -D github:joseamijares/imitor playwright`.
 
 ### What init does
 

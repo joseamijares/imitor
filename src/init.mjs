@@ -545,8 +545,12 @@ export function formatInit(result) {
     return out.join("\n");
   }
   out.push("", 'Add steps to the "home" flow in imitor.config.json to go further, e.g. { "tap": "Continue" }, then { "shot": "next" }. Steps: tap, fill, goto, waitFor, wait, scroll, shot (README, Flow steps).');
-  out.push("", "Next:", ...result.nextSteps.map((n, i) => `  ${i + 1}. ${n}`));
-  if (result.install.missing.includes("imitor")) out.push(`  (${UNPUBLISHED_NOTE})`);
+  out.push("", "Next:");
+  result.nextSteps.forEach((n, i) => {
+    out.push(`  ${i + 1}. ${n}`);
+    // Right under the install command it changes, before anything runs imitor.
+    if (n === result.install.install && result.install.missing.includes("imitor")) out.push(`     (${UNPUBLISHED_NOTE})`);
+  });
   if (result.dryRun) out.push("", "Dry run: nothing was written. Run imitor init to apply.");
   return out.join("\n");
 }
