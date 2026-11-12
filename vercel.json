@@ -1,8 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "installCommand": "npm install --omit=peer --omit=optional --no-audit --no-fund",
-  "buildCommand": "node demo/build.mjs",
-  "outputDirectory": "demo/site",
-  "rewrites": [{ "source": "/((?!api/|files/|assets/)[^.]*)", "destination": "/index.html" }]
+  "installCommand": "echo 'The site has no dependencies'",
+  "buildCommand": "node site/build.mjs",
+  "outputDirectory": "site/dist",
+  "cleanUrls": true,
+  "trailingSlash": true
 }

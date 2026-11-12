@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Imitor: your Expo app’s UI, without a simulator</title>
+<meta name="description" content="Imitor builds a React Native / Expo app for the web, swaps native-only modules for stand-ins, runs your flows in headless Chromium, and names every stand-in in the result. Open source, MIT.">
+<meta property="og:title" content="Imitor">
+<meta property="og:description" content="Your app, imitated. Every stand-in named. See a React Native / Expo app’s UI without a simulator.">
+<meta name="theme-color" content="#0B0B0C">
+<link rel="icon" type="image/svg+xml" href="/assets/imitor-icon-32.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Instrument+Serif:ital@1&display=swap">
+<link rel="stylesheet" href="/tokens.css">
+<link rel="stylesheet" href="/site.css">
+<script>try { const t = localStorage.getItem("imitor-theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="wrap">
+  <nav class="nav" aria-label="Main">
+    <a class="brand" href="/" aria-label="Imitor home"><img src="/assets/imitor-icon-120.svg" alt=""><span>Imitor</span></a>
+    <div class="nav-links">
+      <a class="hide-s" href="/how-to-use/">How to use</a>
+      <a class="hide-s" href="/agents/">For agents</a>
+      <a class="hide-s" href="https://imitor-demo.vercel.app">Demo</a>
+      <button class="theme" type="button" aria-label="Switch theme" data-theme-toggle><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="5.6"/><path d="M8 2.4v11.2A5.6 5.6 0 0 0 8 2.4z" fill="currentColor"/></svg></button>
+      <a class="gh" href="https://github.com/joseamijares/imitor"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 .2a8 8 0 0 0-2.53 15.59c.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.8.06 1.23.83 1.23.83.72 1.22 1.88.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.03 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 8 .2Z"/></svg><span>GitHub</span></a>
+    </div>
+  </nav>
+
+  <main id="main">
+  <header class="hero">
+    <div class="hero-copy">
+      <h1>Your app, imitated. <span class="named">Every <span class="dash">stand‑in</span> named.</span></h1>
+      <p class="lede">See a React Native / Expo app’s UI without a simulator. Imitor builds it for the web, swaps native-only modules for stand-ins, and runs your flows in headless Chromium.</p>
+      <div class="actions">
+        <a class="btn btn-primary" href="https://imitor-demo.vercel.app">Open the live demo <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></a>
+        <div class="cmd"><span class="p">$</span><code>npm i -D github:joseamijares/imitor playwright</code><button class="copy" type="button" aria-label="Copy install command"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.8"/><path d="M10.5 5.5V4A1.5 1.5 0 0 0 9 2.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5"/></svg></button></div>
+        <span class="note">Free and open source, MIT. Early: v0, not on npm yet. <a href="/how-to-use/#set-up" style="color:var(--color-t-1)">Set-up takes four steps.</a></span>
+      </div>
+    </div>
+
+    <figure class="scene" style="margin:0" aria-labelledby="scene-cap">
+      <figcaption id="scene-cap" class="visually-hidden" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">The fernwood demo app’s Today screen, cast above the app’s code as a dashed yellow copy. The watering ring, drawn with Skia, is marked as a stand-in.</figcaption>
+      <svg viewBox="0 0 920 820" aria-hidden="true">
+        <defs>
+          <clipPath id="screenClip"><rect x="-122" y="-264.5" width="244" height="529" rx="28"/></clipPath>
+          <clipPath id="codeClip"><rect x="-130" y="-272.5" width="260" height="545" rx="34"/></clipPath>
+        </defs>
+        <!-- The app: a solid slab with its own code on it. -->
+        <g transform="translate(480 576) matrix(0.866 0.5 -0.866 0.5 0 0)"><rect x="-130" y="-272.5" width="260" height="545" rx="34" fill="var(--slab-shade)"/></g>
+        <g transform="translate(480 560) matrix(0.866 0.5 -0.866 0.5 0 0)">
+          <rect x="-130" y="-272.5" width="260" height="545" rx="34" fill="var(--slab)" stroke="var(--slab-edge)" stroke-width="1.2"/>
+          <g clip-path="url(#codeClip)" class="code">
+            <text x="-108" y="-232">import { Canvas } from</text>
+            <text x="-108" y="-212" class="w">"@shopify/react-native-skia";</text>
+            <text x="-108" y="-184">import * as SQLite from</text>
+            <text x="-108" y="-164" class="w">"expo-sqlite";</text>
+            <text x="-108" y="-128">export function Today() {</text>
+            <text x="-108" y="-108">  return (</text>
+            <text x="-108" y="-88">    &lt;WaterRing done={1} /&gt;</text>
+            <text x="-108" y="-68">  );</text>
+            <text x="-108" y="-48">}</text>
+          </g>
+          <rect x="-110" y="-207" width="210" height="1.4" fill="var(--color-warn)" class="after"/>
+        </g>
+        <!-- The imitation: the shot, lifted off the app into a dashed copy. -->
+        <g class="ghost">
+          <g transform="translate(480 300) matrix(0.866 0.5 -0.866 0.5 0 0)">
+            <rect x="-130" y="-272.5" width="260" height="545" rx="34" fill="var(--color-bg)"/>
+            <image class="on-dark" href="/assets/shots/today-standin-dark.png" x="-122" y="-264.5" width="244" height="529" preserveAspectRatio="none" clip-path="url(#screenClip)"/>
+            <image class="on-light" href="/assets/shots/today-standin-light.png" x="-122" y="-264.5" width="244" height="529" preserveAspectRatio="none" clip-path="url(#screenClip)"/>
+            <rect class="tile" x="-99" y="-191" width="72" height="74" rx="9" fill="var(--color-acc-bg)" fill-opacity=".16" stroke="var(--color-ghost)" stroke-width="2" stroke-dasharray="5 4"/>
+            <rect class="solid" x="-130" y="-272.5" width="260" height="545" rx="34" fill="none" stroke="var(--slab-edge)" stroke-width="1.4"/>
+            <rect class="dashed" x="-130" y="-272.5" width="260" height="545" rx="34" fill="none" stroke="var(--color-ghost)" stroke-width="2.4" stroke-dasharray="9 8" stroke-linecap="round"/>
+          </g>
+        </g>
+        <!-- The link: the Skia import in the code becomes the stand-in tile on the imitation. -->
+        <path class="link" d="M660 452 L559 192" fill="none" stroke="var(--color-warn)" stroke-width="1.2"/>
+        <circle class="link" cx="660" cy="452" r="3" fill="var(--color-ghost)"/>
+        <!-- Labels -->
+        <g class="after">
+          <g fill="none" stroke-width="1">
+            <path d="M558.8 191.5 L420 66 H392" stroke="var(--color-warn)" stroke-dasharray="4 3"/>
+            <path d="M770 200 L800 96" stroke="var(--color-t-3)"/>
+            <path d="M700 560 L716 610" stroke="var(--color-t-3)"/>
+          </g>
+          <circle cx="558.8" cy="191.5" r="3.5" fill="var(--color-ghost)"/>
+          <circle cx="770" cy="200" r="3.5" fill="var(--color-ghost)"/>
+          <circle cx="700" cy="560" r="3.5" fill="var(--color-t-2)"/>
+          <text class="lbl" x="386" y="62" text-anchor="end">Stand-in, named</text>
+          <text class="sub" x="386" y="82" text-anchor="end">react-native-skia → skia</text>
+          <text class="lbl" x="760" y="70">The imitation</text>
+          <text class="sub" x="760" y="90">headless Chromium</text>
+          <text class="lbl" x="700" y="632">Your app</text>
+          <text class="sub" x="700" y="652">native builds untouched</text>
+        </g>
+        <text class="demo" x="480" y="812" text-anchor="middle">Demo shot: fernwood, an invented app</text>
+      </svg>
+      <ul class="scene-labels">
+        <li><svg class="mark warn" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="1.5" width="13" height="13" rx="3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2.6 2"/></svg><b>The imitation</b><span>headless Chromium</span></li>
+        <li><svg class="mark warn" viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="2" fill="currentColor" fill-opacity=".2" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2 1.6"/></svg><b>Stand-in, named</b><span>react-native-skia → skia</span></li>
+        <li><svg class="mark" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="1.5" width="13" height="13" rx="3" fill="var(--color-t-2)"/></svg><b>Your app</b><span>native builds untouched</span></li>
+        <li class="demo-note">Demo shot: fernwood, an invented app</li>
+      </ul>
+    </figure>
+  </header>
+
+  <section class="band" aria-labelledby="ledger-h">
+    <div class="band-head">
+      <h2 id="ledger-h">Every result says what it is.</h2>
+      <p>Each shot, preview and agent reply lists what came from your code, what was stood in, and what Imitor cannot show. Nothing is passed off as the real phone.</p>
+    </div>
+    <figure class="ledger" aria-label="One shot and its ledger">
+      <div class="ledger-head">
+        <span>today</span><span class="sep">/</span><span>iphone-16</span><span class="sep">/</span><span class="on-dark">dark</span><span class="on-light">light</span><span class="sep">/</span><span>5d0b7f1</span>
+        <span class="demo-note">Demo data: fernwood is an invented app</span>
+      </div>
+      <div class="ledger-body" id="ledger">
+        <div class="stage">
+          <div class="device" id="device">
+            <svg class="ghost-outline" viewBox="0 0 280 607" preserveAspectRatio="none" aria-hidden="true"><rect x="1" y="1" width="278" height="605" rx="40" fill="none" stroke="var(--color-ghost)" stroke-width="1.6" stroke-dasharray="7 6" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>
+            <div class="frame">
+              <img class="on-dark" src="/assets/shots/today-standin-dark.png" alt="The fernwood Today screen. The watering ring is a dashed stand-in box." width="393" height="852">
+              <img class="on-light" src="/assets/shots/today-standin-light.png" alt="The fernwood Today screen. The watering ring is a dashed stand-in box." width="393" height="852">
+            </div>
+            <span class="pin" style="left:55%;top:7.6%" aria-hidden="true">1</span>
+            <span class="pin w" style="left:38%;top:14.8%" aria-hidden="true">2</span>
+            <span class="pin w" style="left:97%;top:41%" aria-hidden="true">3</span>
+            <span class="pin" style="left:97%;top:93%" aria-hidden="true">4</span>
+          </div>
+        </div>
+        <div class="ledger-rows">
+        <ol class="rows">
+          <li data-pin="1"><span class="n">1</span><div><h3>Header, copy and colours</h3><p>Rendered from your own components and styles.</p></div><span class="pill ok">Your code</span></li>
+          <li data-pin="2"><span class="n w">2</span><div><h3>Watering ring</h3><p><code>@shopify/react-native-skia</code> → <code>skia</code>. The canvas keeps its box and draws nothing.</p></div><span class="pill warn">Stand-in</span></li>
+          <li data-pin="3"><span class="n w">3</span><div><h3>Plant list data</h3><p><code>expo-sqlite</code> → <code>sqljs</code>. Real SQLite, compiled to wasm, in memory.</p></div><span class="pill warn">Stand-in</span></li>
+          <li data-pin="4"><span class="n">4</span><div><h3>Tab bar</h3><p>Your navigator, as the web build lays it out.</p></div><span class="pill ok">Your code</span></li>
+          <li><span class="n none"><svg class="mark muted" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.3" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5.5 8h5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></span><div><h3>Native transitions, gestures and the keyboard</h3><p>Not shown. Check these on a real phone.</p></div><span class="pill muted">Not shown</span></li>
+        </ol>
+        <div class="manifest">
+            <div class="label"><span>The same shot in <code>manifest.json</code>, abridged</span><span>written by every run</span></div>
+<pre>{
+  <span class="k">"file"</span>: "screens/log-a-watering-01-today-iphone-16-<span class="on-dark">dark</span><span class="on-light">light</span>.png",
+  <span class="k">"route"</span>: "/",
+  <span class="k">"device"</span>: "iphone-16", <span class="k">"scheme"</span>: "<span class="on-dark">dark</span><span class="on-light">light</span>",
+  <span class="k">"stubs"</span>: [<span class="w">"skia"</span>]
+}</pre>
+          </div>
+        </div>
+        <svg class="leaders" id="leaders" aria-hidden="true"></svg>
+      </div>
+    </figure>
+  </section>
+
+  <section class="band" aria-labelledby="how-h">
+    <div class="band-head">
+      <h2 id="how-h">From your code to a shot that says what it is.</h2>
+      <p>No Mac, no emulator, no device. It runs on any Linux box, CI runner or cloud agent session. Stand-ins only apply to the web build Imitor makes; your iOS and Android builds are never touched.</p>
+    </div>
+    <ol class="rail">
+      <li>
+        <svg class="glyph" viewBox="0 0 128 128" aria-hidden="true"><g transform="translate(64 74) matrix(.866 .5 -.866 .5 0 0)"><rect x="-34" y="-34" width="68" height="68" rx="14" fill="var(--slab-shade)"/></g><g transform="translate(64 62) matrix(.866 .5 -.866 .5 0 0)"><rect x="-34" y="-34" width="68" height="68" rx="14" fill="var(--color-t-1)"/><g fill="var(--color-bg)" opacity=".35"><rect x="-22" y="-22" width="30" height="5" rx="2.5"/><rect x="-22" y="-10" width="40" height="5" rx="2.5"/><rect x="-22" y="2" width="22" height="5" rx="2.5"/></g></g></svg>
+        <h3>Build for the web</h3><code>imitor build</code><p>Metro, wrapped with <code style="color:inherit;margin:0;font-size:inherit">withImitor()</code>, builds a static web version of the app.</p>
+      </li>
+      <li>
+        <svg class="glyph" viewBox="0 0 128 128" aria-hidden="true"><g transform="translate(64 80) matrix(.866 .5 -.866 .5 0 0)"><rect x="-34" y="-34" width="68" height="68" rx="14" fill="var(--slab-shade)"/></g><g transform="translate(64 68) matrix(.866 .5 -.866 .5 0 0)"><rect x="-34" y="-34" width="68" height="68" rx="14" fill="var(--color-t-1)"/><rect x="-18" y="-18" width="28" height="28" rx="7" fill="var(--color-bg)"/></g><g transform="translate(64 34) matrix(.866 .5 -.866 .5 0 0)"><rect x="-18" y="-18" width="28" height="28" rx="7" fill="var(--color-acc-bg)" fill-opacity=".14" stroke="var(--color-ghost)" stroke-width="1.8" stroke-dasharray="4 3"/></g><path d="M58 46 v14" stroke="var(--color-ghost)" stroke-width="1.4" stroke-dasharray="2 3"/></svg>
+        <h3>Swap in stand-ins</h3><code>expo-sqlite → sqljs</code><p>Native-only modules get a web stand-in, and every result names which ones.</p>
+      </li>
+      <li>
+        <svg class="glyph" viewBox="0 0 128 128" aria-hidden="true"><g transform="translate(64 86) matrix(.866 .5 -.866 .5 0 0)"><rect x="-34" y="-34" width="68" height="68" rx="14" fill="var(--slab-shade)"/></g><g transform="translate(64 76) matrix(.866 .5 -.866 .5 0 0)"><rect x="-34" y="-34" width="68" height="68" rx="14" fill="var(--color-t-1)"/></g><g transform="translate(64 42) matrix(.866 .5 -.866 .5 0 0)"><rect x="-34" y="-34" width="68" height="68" rx="14" fill="none" stroke="var(--color-ghost)" stroke-width="2" stroke-dasharray="7 6" stroke-linecap="round"/></g></svg>
+        <h3>Run your flows</h3><code>imitor shoot</code><p>Taps, fills and shots in headless Chromium, once per device and colour scheme.</p>
+      </li>
+      <li>
+        <svg class="glyph" viewBox="0 0 128 128" aria-hidden="true"><g transform="translate(64 90) matrix(.866 .5 -.866 .5 0 0)"><rect x="-34" y="-34" width="68" height="68" rx="14" fill="var(--slab-shade)"/></g><g transform="translate(64 78) matrix(.866 .5 -.866 .5 0 0)"><rect x="-34" y="-34" width="68" height="68" rx="14" fill="var(--color-t-3)"/></g><g transform="translate(64 64) matrix(.866 .5 -.866 .5 0 0)"><rect x="-34" y="-34" width="68" height="68" rx="14" fill="var(--color-t-1)"/></g><path d="M50 62 l9 6 20 -14" fill="none" stroke="var(--color-ok)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <h3>Review</h3><code>imitor app</code><p>Runs, captures and problems for people, or <code style="color:inherit;margin:0;font-size:inherit">imitor export</code> as a static site.</p>
+      </li>
+    </ol>
+  </section>
+
+  <section class="band" aria-labelledby="sheet-h">
+    <div class="band-head">
+      <h2 id="sheet-h">One flow, every shot, the stand-in marked.</h2>
+      <p>The first-run flow of the demo app on an iPhone 16. The last shot holds the Skia watering ring, so it carries a dashed outline and the stand-in’s name.</p>
+    </div>
+    <div class="sheet" tabindex="0" aria-label="Shots of the first-run flow">
+      <figure><div class="shot"><img class="on-dark" src="/assets/shots/welcome-dark.png" alt="Welcome" loading="lazy" width="393" height="852"><img class="on-light" src="/assets/shots/welcome-light.png" alt="Welcome" loading="lazy" width="393" height="852"></div><figcaption><span>01-welcome</span></figcaption></figure>
+      <figure><div class="shot"><img class="on-dark" src="/assets/shots/your-space-dark.png" alt="Your space" loading="lazy" width="393" height="852"><img class="on-light" src="/assets/shots/your-space-light.png" alt="Your space" loading="lazy" width="393" height="852"></div><figcaption><span>02-your-space</span></figcaption></figure>
+      <figure><div class="shot"><img class="on-dark" src="/assets/shots/add-plant-dark.png" alt="Add a plant" loading="lazy" width="393" height="852"><img class="on-light" src="/assets/shots/add-plant-light.png" alt="Add a plant" loading="lazy" width="393" height="852"></div><figcaption><span>03-add-plant</span></figcaption></figure>
+      <figure><div class="shot"><img class="on-dark" src="/assets/shots/plant-details-dark.png" alt="Plant details" loading="lazy" width="393" height="852"><img class="on-light" src="/assets/shots/plant-details-light.png" alt="Plant details" loading="lazy" width="393" height="852"></div><figcaption><span>04-plant-details</span></figcaption></figure>
+      <figure><div class="shot"><img class="on-dark" src="/assets/shots/schedule-dark.png" alt="Schedule" loading="lazy" width="393" height="852"><img class="on-light" src="/assets/shots/schedule-light.png" alt="Schedule" loading="lazy" width="393" height="852"></div><figcaption><span>05-schedule</span></figcaption></figure>
+      <figure><div class="shot"><img class="on-dark" src="/assets/shots/reminders-dark.png" alt="Reminders" loading="lazy" width="393" height="852"><img class="on-light" src="/assets/shots/reminders-light.png" alt="Reminders" loading="lazy" width="393" height="852"></div><figcaption><span>06-reminders</span></figcaption></figure>
+      <figure><div class="shot"><img class="on-dark" src="/assets/shots/all-set-dark.png" alt="All set" loading="lazy" width="393" height="852"><img class="on-light" src="/assets/shots/all-set-light.png" alt="All set" loading="lazy" width="393" height="852"></div><figcaption><span>07-all-set</span></figcaption></figure>
+      <figure><div class="shot si"><img class="on-dark" src="/assets/shots/today-standin-dark.png" alt="Today, with the Skia ring stood in" loading="lazy" width="393" height="852"><img class="on-light" src="/assets/shots/today-standin-light.png" alt="Today, with the Skia ring stood in" loading="lazy" width="393" height="852"><svg viewBox="0 0 184 385" preserveAspectRatio="none" aria-hidden="true"><rect x="1.5" y="1.5" width="181" height="382" rx="24" fill="none" stroke="var(--color-ghost)" stroke-width="2" stroke-dasharray="7 6" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg></div><figcaption><span>08-today</span><span class="w">skia</span></figcaption></figure>
+    </div>
+    <div class="sheet-meta"><span>Demo data: fernwood is an invented app.</span><a href="https://imitor-demo.vercel.app">See its runs in the live demo →</a></div>
+  </section>
+
+  <section class="band" aria-labelledby="agents-h">
+    <div class="agents">
+      <div>
+        <h2 id="agents-h">Your agent drives it. You review it.</h2>
+        <p>Seven MCP tools let a coding agent build the preview, run flows, take screenshots and record videos, then read which parts were stood in. Run these in the app’s folder.</p>
+        <div class="connect-list">
+          <span class="who"><span class="agent-tile" data-agent="claude"><img src="/assets/agents/claude.svg" alt=""></span>Claude Code</span>
+          <div class="cmd"><span class="p">$</span><code>claude mcp add imitor -- npx imitor mcp</code><button class="copy" type="button" aria-label="Copy command"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.8"/><path d="M10.5 5.5V4A1.5 1.5 0 0 0 9 2.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5"/></svg></button></div>
+          <span class="who"><span class="agent-tile" data-agent="cursor"><img src="/assets/agents/cursor.svg" alt=""></span>Cursor, or any MCP client</span>
+          <div class="cmd"><span class="p">$</span><code>npx imitor mcp</code><button class="copy" type="button" aria-label="Copy command"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.8"/><path d="M10.5 5.5V4A1.5 1.5 0 0 0 9 2.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5"/></svg></button></div>
+          <span class="who"><span class="agent-tile">C</span>Codex</span>
+          <div class="cmd"><span class="p">$</span><code>codex mcp add imitor -- npx imitor mcp</code><button class="copy" type="button" aria-label="Copy command"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.8"/><path d="M10.5 5.5V4A1.5 1.5 0 0 0 9 2.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5"/></svg></button></div>
+        </div>
+        <a class="text-link" href="/agents/">Every tool, and the same operations for CI <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></a>
+      </div>
+      <div class="log">
+        <div class="log-head"><span>Agent activity</span><span class="mono">demo data</span></div>
+        <ol>
+          <li><span class="agent-tile" data-agent="claude"><img src="/assets/agents/claude.svg" alt="Claude Code"></span><code>imitor_describe</code><span>2 flows, built</span></li>
+          <li><span class="agent-tile" data-agent="claude"><img src="/assets/agents/claude.svg" alt="Claude Code"></span><code>imitor_build</code><span>web build ready</span></li>
+          <li><span class="agent-tile" data-agent="claude"><img src="/assets/agents/claude.svg" alt="Claude Code"></span><code>imitor_run_flow</code><span>log-a-watering, 4 shots, <span class="w">skia stand-in</span></span></li>
+          <li><span class="agent-tile" data-agent="claude"><img src="/assets/agents/claude.svg" alt="Claude Code"></span><code>imitor_screenshot</code><span>today, iphone-16, dark</span></li>
+          <li><span class="agent-tile" data-agent="claude"><img src="/assets/agents/claude.svg" alt="Claude Code"></span><code>imitor_read_problems</code><span>no failed steps</span></li>
+          <li><span class="agent-tile" data-agent="claude"><img src="/assets/agents/claude.svg" alt="Claude Code"></span><code>imitor_record_video</code><span>first-run, .webm</span></li>
+          <li><span class="agent-tile" data-agent="claude"><img src="/assets/agents/claude.svg" alt="Claude Code"></span><code>imitor_open_preview</code><span>a URL a person can open</span></li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" aria-labelledby="limits-h">
+    <div class="band-head">
+      <h2 id="limits-h">What it does not show.</h2>
+      <p>Imitor shrinks what the final check on a real phone has to find. It does not replace that check.</p>
+    </div>
+    <ul class="limits">
+      <li><svg class="mark muted" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.3" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5.5 8h5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>Native navigation chrome, transitions and gestures</li>
+      <li><svg class="mark muted" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.3" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5.5 8h5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>Keyboard behaviour</li>
+      <li><svg class="mark muted" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.3" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5.5 8h5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>The phone’s exact font rendering</li>
+      <li><svg class="mark muted" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.3" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5.5 8h5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>Entering and layout animations</li>
+      <li><svg class="mark warn" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="1.5" width="13" height="13" rx="3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2.6 2"/></svg>Anything behind a stand-in</li>
+      <li><svg class="mark muted" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.3" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5.5 8h5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>Platform-specific code paths: the build runs as web</li>
+      <li><svg class="mark muted" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.3" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5.5 8h5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>Widgets, notifications, Live Activities, watch apps</li>
+    </ul>
+  </section>
+
+  <section class="close" aria-labelledby="close-h">
+    <h2 id="close-h">See a run before you install anything.</h2>
+    <div class="row">
+      <a class="btn btn-primary" href="https://imitor-demo.vercel.app">Open the live demo <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></a>
+      <a class="btn btn-secondary" href="/how-to-use/">Read how to set it up</a>
+    </div>
+  </section>
+  </main>
+
+  <footer class="foot">
+    <a class="brand" href="/" aria-label="Imitor home"><img src="/assets/imitor-icon-120.svg" alt=""><span>Imitor</span></a>
+    <a href="https://github.com/joseamijares/imitor">GitHub</a><a href="/how-to-use/">How to use</a><a href="/agents/">For agents</a><a href="https://imitor-demo.vercel.app">Demo</a>
+    <span class="legal">Open source under the MIT licence. Claude, Cursor, Codex and GitHub Actions are their owners’ trademarks, named here only to identify those products.</span>
+  </footer>
+</div>
+<script src="/site.js" defer></script>
+</body>
+</html>
