@@ -50,14 +50,40 @@ export function toRequest(req, origin) {
   return new Request(new URL(req.url, origin), { method: req.method, headers, body, duplex: "half" });
 }
 
+/** How long a connection keeps reading, and discarding, a body it answered early before it is dropped. */
+export const LINGER_MS = 2000;
+
+/**
+ * Close a connection whose request body was not read to the end without losing the answer. node closes it with
+ * socket.destroySoon(), which drops the socket at once; the client's unsent body is still arriving, so the kernel answers
+ * it with a reset, and a reset makes the client's kernel discard what it had received but not yet read: the 413 itself.
+ * Instead: send the answer and a FIN, keep reading and discarding what the client still sends, and drop the socket once
+ * the client closes its side or after LINGER_MS, whichever comes first (the usual "lingering close").
+ */
+function lingerOnClose(socket) {
+  if (!socket || socket.imitorLinger) return;
+  socket.imitorLinger = true;
+  socket.destroySoon = function lingeringClose() {
+    this.end();
+    this.resume();
+    const timer = setTimeout(() => this.destroy(), LINGER_MS);
+    timer.unref();
+    this.once("close", () => clearTimeout(timer));
+  };
+}
+
 /** Write a web Response to a node ServerResponse. */
 export async function send(res, response, req = null) {
   const body = Buffer.from(await response.arrayBuffer());
   const headers = Object.fromEntries(response.headers);
   const setCookies = response.headers.getSetCookie();
   if (setCookies.length) headers["set-cookie"] = setCookies; // one header each, not joined with commas
-  // A body the handler did not read to the end (refused, or over the limit) is not drained: the connection closes.
-  if (req && !req.complete) headers.connection = "close";
+  // A body the handler did not read to the end (refused, or over the limit) is not drained: the connection closes,
+  // after a short linger so the client can read the answer while it is still sending.
+  if (req && !req.complete) {
+    headers.connection = "close";
+    lingerOnClose(req.socket);
+  }
   res.writeHead(response.status, headers);
   res.end(body);
 }
