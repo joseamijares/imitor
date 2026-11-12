@@ -6,7 +6,7 @@ import crypto from "node:crypto";
 import net from "node:net";
 import test from "node:test";
 import { handle, UNAVAILABLE } from "../src/api.mjs";
-import { isUnavailable, pgDb, TIMEOUTS } from "../src/db/pg.mjs";
+import { isPooled, isUnavailable, pgDb, TIMEOUTS } from "../src/db/pg.mjs";
 import { cronFunction } from "../src/vercel.mjs";
 import { cloud, HTML, PUBLIC_URL } from "./helpers.mjs";
 
@@ -104,4 +104,16 @@ test("a database that never answers fails after the connect timeout, not when th
   c.deps.db = db;
   const res = await handle(new Request(`${PUBLIC_URL}/projects`, { headers: { cookie: "__Host-imitor_session=abc" } }), c.deps);
   assert.equal(res.status, 503);
+});
+
+test("through a pooler the statement timeout is not sent as a startup parameter, which PgBouncer would refuse", needsPg, async (t) => {
+  assert.equal(isPooled("postgres://u:p@ep-cool-name-123456-pooler.us-east-2.aws.neon.tech/db?sslmode=require"), true);
+  assert.equal(isPooled("postgres://u:p@db.example.com:6432/db?pgbouncer=true"), true);
+  assert.equal(isPooled("postgres://u:p@ep-cool-name-123456.us-east-2.aws.neon.tech/db?sslmode=require"), false);
+  assert.equal(isPooled("not a url"), false);
+  const db = pgDb({ connectionString: "postgres://u:p@ep-x-pooler.example.neon.tech/x" });
+  t.after(() => db.close());
+  const pool = await db.pool();
+  assert.equal(pool.options.statement_timeout, undefined);
+  assert.ok(pool.options.query_timeout > TIMEOUTS.statement, "the client still stops waiting");
 });

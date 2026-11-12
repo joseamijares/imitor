@@ -10,8 +10,6 @@ const TABLE = JSON.parse(fs.readFileSync(new URL("./standins.json", import.meta.
 export const DEFAULT_OUT = "preview";
 // Folders an Expo project usually ignores already, tried in order when .gitignore must not be edited.
 const IGNORED_CANDIDATES = ["dist", "web-build", ".expo"];
-// Until imitor is on npm, installs come from GitHub. Remove this once `npm publish` has run (see RELEASING.md).
-export const UNPUBLISHED_NOTE = "imitor is not on npm yet: until it is, install it with github:joseamijares/imitor in place of imitor.";
 
 const WRAP = 'require("imitor/metro").withImitor';
 const METRO_MANUAL = `Wrap what your Metro config exports, keeping everything else as it is:\n  module.exports = require("imitor/metro").withImitor(config);\nFor an ES module config: import imitor from "imitor/metro"; export default imitor.withImitor(config);`;
@@ -549,7 +547,6 @@ export function formatInit(result) {
   result.nextSteps.forEach((n, i) => {
     out.push(`  ${i + 1}. ${n}`);
     // Right under the install command it changes, before anything runs imitor.
-    if (n === result.install.install && result.install.missing.includes("imitor")) out.push(`     (${UNPUBLISHED_NOTE})`);
   });
   if (result.dryRun) out.push("", "Dry run: nothing was written. Run imitor init to apply.");
   return out.join("\n");

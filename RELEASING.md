@@ -51,6 +51,8 @@ Then make a GitHub release from the tag. The GitHub Action is used as `joseamija
 
 ## After the first publish
 
+Done for 0.1.0 (published 12 November 2026); kept for the record.
+
 - In `README.md`, under Set up, remove the line marked **Not on npm yet**.
 - In `src/init.mjs`, remove `UNPUBLISHED_NOTE` and its one use in `formatInit`.
 - On the landing page (`site/index.html`), change the install command to `npm i -D imitor playwright`.

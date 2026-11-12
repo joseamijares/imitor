@@ -27,10 +27,25 @@ const JSON_COLUMNS = new Set(["run", "manifest", "files"]);
 /**
  * Limits on every connection, so an unreachable or stuck database fails a request in seconds instead of holding it until
  * the platform kills it: connecting gives up after `connect` ms, an idle connection is closed after `idle` ms, and the
- * server cancels a statement after `statement` ms (statement_timeout, sent when the connection starts; `query_timeout`
- * a little later is the client's own backstop for a pooler that drops that parameter).
+ * server cancels a statement after `statement` ms (statement_timeout, sent when the connection starts, except through a pooler: see
+ * isPooled; `query_timeout` a little later is the client's own backstop).
  */
 export const TIMEOUTS = { connect: 5000, idle: 10000, statement: 10000 };
+
+/**
+ * Whether `connectionString` points at a connection pooler (PgBouncer, as Neon's `-pooler` hosts are), which refuses
+ * startup parameters it does not track, `statement_timeout` among them. Through a pooler the server-side limit comes
+ * from the role instead (`ALTER ROLE <role> SET statement_timeout = '10s'`, see cloud/README.md), and `query_timeout`
+ * still stops the client waiting.
+ */
+export function isPooled(connectionString) {
+  try {
+    const url = new URL(connectionString);
+    return /-pooler(\.|$)/.test(url.hostname) || url.searchParams.get("pgbouncer") === "true";
+  } catch {
+    return false;
+  }
+}
 
 const UNREACHABLE = new Set(["ECONNREFUSED", "ECONNRESET", "ETIMEDOUT", "ENOTFOUND", "EAI_AGAIN", "EHOSTUNREACH", "ENETUNREACH", "EPIPE"]);
 
@@ -63,7 +78,7 @@ export function pgDb({ connectionString, pool = null, schema = null, now = () =>
       max,
       connectionTimeoutMillis: t.connect,
       idleTimeoutMillis: t.idle,
-      statement_timeout: t.statement,
+      ...(isPooled(connectionString) ? {} : { statement_timeout: t.statement }),
       query_timeout: t.statement + 2000,
       ...(schema ? { options: `-c search_path=${schema}` } : {}),
     });

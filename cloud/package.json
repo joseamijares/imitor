@@ -11,6 +11,7 @@
   "scripts": {
     "start": "node src/server.mjs",
     "migrate": "node src/db/migrate.mjs",
+    "verify-deploy": "node scripts/verify-deploy.mjs",
     "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
