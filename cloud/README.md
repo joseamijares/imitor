@@ -63,7 +63,8 @@ For people (a session cookie):
 | `GET /auth/google`, `GET /auth/google/callback` | The OpenID Connect code flow with PKCE, state and nonce. |
 | `GET` and `POST /login/token` | The admin token form, only with `IMITOR_ADMIN_TOKEN`. |
 | `POST /logout`, `POST /logout/everywhere` | End this session, or every session of the person. |
-| `GET /` | The person's projects, and a form to make one (`POST /projects`; JSON: `GET` and `POST /projects`). |
+| `GET /projects` | The person's projects, and a form to make one (`POST /projects`). The same path answers JSON to a request whose `Accept` does not name `text/html` (`GET` and `POST /projects`). Signing in lands here. |
+| `GET /` | A redirect to `/projects` (on Vercel, `vercel.json` does it, since `/` is the site's own page there). |
 | `/p/<project>/...` | The interface in cloud mode. Its API is `/p/<project>/api/*`, the same answers as the local server's `/api/*` (built with the same code, `src/derive.mjs`), plus `me` and `keys` (`GET`; `POST keys` with `{ name }` and `POST keys/<id>/revoke`, owners only). Files: `/p/<project>/files/runs/<run>/<path>`, a 302 to storage. |
 
 `imitor push` only sends to an `https://` address, or to plain `http://` on `localhost`, `127.0.0.1` or `[::1]`.
@@ -130,11 +131,18 @@ The cloud runs in the same Vercel project as the public site, on a host of its o
   the Public Suffix List, so it is a separate site from `imitor.vercel.app`, with its own cookies and storage. The
   cloud is never served under a path of the site's host.
 - **Functions.** `api/cloud.mjs` and `api/cron-retention.mjs` at the repository root are shims for
-  [`src/vercel.mjs`](src/vercel.mjs). The root `vercel.json` rewrites the app host's `/`, `/p/*`, `/v1/*`, `/login`,
+  [`src/vercel.mjs`](src/vercel.mjs). The root `vercel.json` rewrites the app host's `/p/*`, `/v1/*`, `/login`,
   `/logout`, `/auth/*`, `/projects` and `/static/*` to `/api/cloud` (with the original path in `?__imitor_path=`),
-  redirects the app host's other paths to the site, includes `src/`, `cloud/src/` and `design/tokens.css` in the
-  functions, installs only `cloud/`'s locked dependencies (`npm ci --prefix cloud`), and runs retention daily at 04:17
-  UTC (the Hobby plan allows one run a day).
+  redirects the app host's `/` to `/projects/` and its other paths to the site, includes `src/`, `cloud/src/` and
+  `design/tokens.css` in the functions, installs only `cloud/`'s locked dependencies (`npm ci --prefix cloud`), and
+  runs retention daily at 04:17 UTC by calling `/api/cron-retention/` (the Hobby plan allows one run a day).
+- **Static files win.** Vercel serves the site's files (`site/dist`) before it applies any rewrite, so `/` on the app
+  host would be the site's landing page: that is why the cloud's home is `/projects` and `/` is a redirect (redirects
+  run before files). No path the cloud answers may be a file or folder of the site (`/`, `/how-to-use/`, `/agents/`,
+  `/demo/`, `/assets/`, `/404.html`, `tokens.css`, `site.css`, `site.js`, `robots.txt`); `test/vercel.test.mjs` builds
+  the site and checks it.
+- **Cron and `trailingSlash`.** The site's `trailingSlash: true` answers `/api/cron-retention` with a 308, and Vercel
+  Cron does not follow redirects, so the cron path is `/api/cron-retention/` (the function answers on either).
 - **Guards.** The function answers 404 unless `VERCEL_ENV` is `production` and the request's host is `PUBLIC_URL`'s,
   so preview deployments and the site's host never reach the cloud. Google's redirect URI is built from `PUBLIC_URL`
   only, never from a Host header. Every answer is `cache-control: private, no-store` with the strict
@@ -163,8 +171,10 @@ holds the cloud's secrets; `test/site.test.mjs` checks both.
 Nothing here has run on Vercel, against a real Google client or a real bucket. Before relying on it, check on a
 first deployment: that the rewrites reach `/api/cloud` with `?__imitor_path=` (the function also accepts the original
 URL if the runtime shows that instead), that `trailingSlash` answers `POST /v1/runs` with a 308 that `imitor push`
-follows (or no redirect at all), that `includeFiles` bundles the interface, that Vercel Cron's call carries
-`Authorization: Bearer <CRON_SECRET>`, and that sign-in completes against Google.
+follows (or no redirect at all), that `/` on the app host redirects to `/projects/` and `/projects/` shows the projects
+page, that `includeFiles` bundles the interface, that Vercel Cron's call carries `Authorization: Bearer <CRON_SECRET>`,
+and that sign-in completes against Google. After the first night, open the project's Cron Jobs logs and confirm the
+04:17 UTC call to `/api/cron-retention/` answered 200 (not 308 or 401).
 
 ## Security notes
 

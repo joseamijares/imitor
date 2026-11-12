@@ -2,9 +2,11 @@
 // mode, security headers and scheduled retention.
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import fs from "node:fs";
 import test from "node:test";
 import { handle, KEEP_DAYS } from "../src/api.mjs";
-import { browser, cloud, PUBLIC_URL } from "./helpers.mjs";
+import { HOME, safeNext } from "../src/web.mjs";
+import { browser, cloud, HTML, PUBLIC_URL } from "./helpers.mjs";
 
 const TOKEN = crypto.randomBytes(32).toString("base64url");
 const sha = (s) => crypto.createHash("sha256").update(s).digest("hex");
@@ -46,12 +48,40 @@ test("projects: create (the creator owns it), list mine, unique slugs; a form ge
   assert.equal((await s.ada.call("POST", "/projects", { form: { name: "x".repeat(81) } })).status, 400);
   assert.deepEqual((await s.ada.call("GET", "/projects")).json.projects.map((p) => [p.slug, p.role]), [["fernwood-app", "owner"], ["fernwood-app-2", "owner"]]);
   assert.deepEqual((await s.bob.call("GET", "/projects")).json.projects, [], "only my projects");
-  const page = await s.ada.call("GET", "/");
+  const page = await s.ada.call("GET", "/projects", { headers: HTML });
   assert.match(page.text, /href="\/p\/fernwood-app\/"/);
+  assert.match(page.headers.get("content-type"), /^text\/html/);
+  assert.equal(page.headers.get("vary"), "Accept");
   assert.equal((await browser(s.deps).call("GET", "/projects")).status, 401);
-  assert.equal((await browser(s.deps).call("GET", "/")).location, "/login");
+  assert.equal((await browser(s.deps).call("GET", "/projects", { headers: HTML })).location, "/login");
   const audit = (await s.db.listAudit()).filter((a) => a.action === "project.create");
   assert.deepEqual(audit.map((a) => a.detail), [{ name: "Fernwood app", slug: "fernwood-app" }, { name: "Fernwood app", slug: "fernwood-app-2" }]);
+});
+
+test("home is /projects, never /: / redirects there, and signing in, the brand link and the interface land there", async () => {
+  // On Vercel "/" is the public site's index.html (static files win over rewrites), so nothing may send people to it.
+  const s = await setup();
+  assert.equal(HOME, "/projects");
+  assert.equal(safeNext(undefined), HOME);
+  assert.equal(safeNext("/"), HOME, "a next of / would land on the site's page");
+  assert.equal(safeNext("//evil.example"), HOME);
+  assert.equal(safeNext("/p/fernwood/runs"), "/p/fernwood/runs");
+  for (const b of [s.ada, browser(s.deps)]) {
+    const root = await b.call("GET", "/", { headers: HTML });
+    assert.equal(root.status, 302);
+    assert.equal(root.location, HOME);
+  }
+  const signin = await browser(s.deps).call("POST", "/login/token", { form: { token: TOKEN } });
+  assert.equal(signin.location, HOME, "signing in without a next lands on the projects page");
+  const page = await s.ada.call("GET", HOME, { headers: HTML });
+  assert.match(page.text, /<a class="brand" href="\/projects">/);
+  assert.doesNotMatch(page.text, /href="\/"/);
+  for (const p of ["/login", "/login/token"]) assert.doesNotMatch((await browser(s.deps).call("GET", p)).text, /href="\/"|next=%2F"/, p);
+  const notFound = await s.ada.call("GET", "/nope");
+  assert.match(notFound.text, /href="\/projects">Your projects/);
+  // The interface's "All projects" links (src/app/api.js runs in a browser, so it is read as text here).
+  const appApi = fs.readFileSync(new URL("../../src/app/api.js", import.meta.url), "utf8");
+  assert.match(appApi, /CLOUD_PAGES = \{ projects: "\/projects",/);
 });
 
 test("access keys: an owner makes one (the secret once), lists them without secrets, revokes; all audited", async () => {

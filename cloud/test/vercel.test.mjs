@@ -3,9 +3,13 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { buildSite } from "../../site/build.mjs";
 import { cloudFunction, cronFunction, originalRequest } from "../src/vercel.mjs";
+import { HOME } from "../src/web.mjs";
 import { cloud } from "./helpers.mjs";
 
 const APP = "https://imitor-app.vercel.app";
@@ -80,16 +84,28 @@ test("a sign-in through the function: cookies and Origin checked against PUBLIC_
 test("cron: production only, Authorization: Bearer <CRON_SECRET>, runs retention", async () => {
   const { deps } = setup();
   const cron = cronFunction(ENV, { deps });
-  const call = (auth) => cron.fetch(new Request("https://imitor.vercel.app/api/cron-retention", { headers: auth ? { authorization: auth, "user-agent": "vercel-cron/1.0" } : {} }));
+  const call = (auth, at = "/api/cron-retention/") => cron.fetch(new Request(`https://imitor.vercel.app${at}`, { headers: auth ? { authorization: auth, "user-agent": "vercel-cron/1.0" } : {} }));
   assert.equal((await call(null)).status, 401);
   assert.equal((await call(`Bearer ${SECRET}x`)).status, 401);
   const ok = await call(`Bearer ${SECRET}`);
   assert.equal(ok.status, 200);
   assert.deepEqual(await ok.json(), { projects: 0, pruned: 0, failed: 0, sessions: 0 });
   assert.equal(ok.headers.get("cache-control"), "private, no-store");
+  assert.equal((await call(`Bearer ${SECRET}`, "/api/cron-retention")).status, 200, "with or without the trailing slash");
   assert.equal((await cronFunction({ ...ENV, VERCEL_ENV: "preview" }, { deps }).fetch(new Request("https://x/api/cron-retention", { headers: { authorization: `Bearer ${SECRET}` } }))).status, 404);
   assert.equal((await cronFunction({ ...ENV, CRON_SECRET: "" }, { deps }).fetch(new Request("https://x/api/cron-retention"))).status, 404);
 });
+
+/** vercel.json's redirect that sends the app host's other paths to the site, as a RegExp. */
+const toSite = (v) => {
+  const r = v.redirects.find((x) => x.destination.startsWith("https://imitor.vercel.app/"));
+  return new RegExp(`^${r.source.replace("/(", "/(?:")}$`);
+};
+/** The rewrite of the app host's paths to /api/cloud ("/:first(a|b)/:rest*"), as a RegExp. */
+const toCloud = (v) => {
+  const r = v.rewrites.find((x) => x.destination.startsWith("/api/cloud"));
+  return new RegExp(`^${r.source.replace(":first(", "(").replace("/:rest*", "(?:/.*)?")}$`);
+};
 
 test("the root shims and vercel.json: two functions, the cloud's rewrites only on its host, a daily cron", async () => {
   const v = JSON.parse(fs.readFileSync(`${ROOT}vercel.json`, "utf8"));
@@ -97,9 +113,36 @@ test("the root shims and vercel.json: two functions, the cloud's rewrites only o
   assert.equal((await import("../../api/cloud.mjs")).default.fetch.constructor.name, "AsyncFunction");
   assert.equal(typeof (await import("../../api/cron-retention.mjs")).default.fetch, "function");
   assert.equal(v.installCommand, "npm ci --prefix cloud --omit=dev --ignore-scripts");
-  assert.deepEqual(v.crons, [{ path: "/api/cron-retention", schedule: "17 4 * * *" }]);
+  // trailingSlash answers /api/cron-retention with a 308, and Vercel Cron does not follow redirects.
+  assert.equal(v.trailingSlash, true);
+  assert.deepEqual(v.crons, [{ path: "/api/cron-retention/", schedule: "17 4 * * *" }]);
   assert.ok(fs.existsSync(`${ROOT}cloud/package-lock.json`));
-  const redirect = new RegExp(`^${v.redirects[0].source.replace("/(", "/(?:")}$`);
+  const redirect = toSite(v);
   for (const p of ["/", "/login", "/login/", "/logout/", "/p/fernwood/runs/", "/v1/runs/", "/auth/google/callback/", "/projects/", "/static/cloud.css", "/api/cloud"]) assert.ok(!redirect.test(p), `${p} stays on the app host`);
   for (const p of ["/how-to-use/", "/demo/", "/robots.txt"]) assert.ok(redirect.test(p), `${p} goes to the site`);
+  const rewrite = toCloud(v);
+  for (const p of ["/login/", "/login/token/", "/logout/everywhere/", "/auth/google/callback/", `${HOME}/`, "/p/fernwood/runs/", "/v1/runs/", "/static/cloud.css"]) assert.ok(rewrite.test(p), `${p} reaches the cloud`);
+  assert.ok(!rewrite.test("/"), "/ is the site's index.html, which a rewrite cannot reach");
+});
+
+test("no path the cloud answers on its host is a file of the site, and / on the app host goes to the projects page", () => {
+  const v = JSON.parse(fs.readFileSync(`${ROOT}vercel.json`, "utf8"));
+  // Vercel serves the site's files before any rewrite, so a cloud route that is also a file or folder of site/dist
+  // would show the site instead. Redirects come before files.
+  const out = buildSite({ out: fs.mkdtempSync(path.join(os.tmpdir(), "imitor-site-")) });
+  const top = fs.readdirSync(out);
+  assert.ok(top.includes("index.html"), "the site has a / of its own");
+  const routes = [...new Set(["login", "logout", "auth", "projects", "p", "v1", "static", "api", HOME.slice(1), ...toCloud(v).source.match(/\(([a-z0-9|]+)\)/)[1].split("|")])];
+  for (const r of routes) {
+    for (const f of [r, `${r}.html`, `${r}/index.html`]) assert.ok(!fs.existsSync(path.join(out, f)), `site/dist/${f} would hide the cloud's /${r}`);
+  }
+  for (const entry of top) {
+    if (entry === "index.html") continue;
+    const p = fs.statSync(path.join(out, entry)).isDirectory() ? `/${entry}/` : `/${entry}`;
+    assert.ok(toSite(v).test(p), `${p} is the site's: the app host sends it there`);
+  }
+  const home = v.redirects.find((r) => r.source === "/");
+  assert.deepEqual(home, { source: "/", has: [{ type: "host", value: new URL(APP).host }], destination: `${HOME}/`, permanent: false });
+  assert.ok(!v.rewrites.some((r) => r.source === "/"), "a rewrite of / would never run: index.html wins");
+  fs.rmSync(out, { recursive: true, force: true });
 });

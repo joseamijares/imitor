@@ -22,7 +22,7 @@ export class ApiError extends Error {
 }
 
 /** Imitor Cloud's own pages, outside the project's base: the router leaves links to them to the browser. */
-export const CLOUD_PAGES = { projects: "/", signOut: "/logout", signOutEverywhere: "/logout/everywhere" };
+export const CLOUD_PAGES = { projects: "/projects", signOut: "/logout", signOutEverywhere: "/logout/everywhere" };
 
 /** Off to the sign-in page, coming back here afterwards. */
 function signIn() {

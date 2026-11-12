@@ -10,6 +10,12 @@
   },
   "redirects": [
     {
+      "source": "/",
+      "has": [{ "type": "host", "value": "imitor-app.vercel.app" }],
+      "destination": "/projects/",
+      "permanent": false
+    },
+    {
       "source": "/((?!p/|v1/|login|logout|auth/|projects|static/|api/).+)",
       "has": [{ "type": "host", "value": "imitor-app.vercel.app" }],
       "destination": "https://imitor.vercel.app/$1",
@@ -17,9 +23,8 @@
     }
   ],
   "rewrites": [
-    { "source": "/", "has": [{ "type": "host", "value": "imitor-app.vercel.app" }], "destination": "/api/cloud?__imitor_path=/" },
     { "source": "/:first(p|v1|login|logout|auth|projects|static)/:rest*", "has": [{ "type": "host", "value": "imitor-app.vercel.app" }], "destination": "/api/cloud?__imitor_path=/:first/:rest*" },
     { "source": "/demo/((?!api/|files/|assets/)[^.]*)", "destination": "/demo/index.html" }
   ],
-  "crons": [{ "path": "/api/cron-retention", "schedule": "17 4 * * *" }]
+  "crons": [{ "path": "/api/cron-retention/", "schedule": "17 4 * * *" }]
 }

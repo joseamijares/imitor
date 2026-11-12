@@ -4,7 +4,8 @@
 //   GET  /login, /login/token, POST /login/token     sign-in page; the admin token form (IMITOR_ADMIN_TOKEN only)
 //   GET  /auth/google, /auth/google/callback          Google sign-in (OIDC code flow with PKCE, state and nonce)
 //   POST /logout, /logout/everywhere                  end this session, or every session of the person
-//   GET  /, GET /projects, POST /projects             the person's projects (HTML; JSON), create one
+//   GET  /projects, POST /projects                    the person's projects (HTML for a browser, else JSON), create one
+//   GET  /                                            a redirect to /projects (on Vercel, vercel.json does it first)
 //   /p/<slug>/api/...                                 the interface's API (read.mjs) and the project's access keys
 //   GET  /p/<slug>/files/runs/<run>/<path>            302 to a 5-minute storage URL for a file of a ready run
 //   GET  /p/<slug>/...                                the interface (src/app), marked as cloud mode under that base
@@ -18,9 +19,10 @@ import { loadAssets, typeOf } from "./assets.mjs";
 import { OidcError } from "./auth/oidc.mjs";
 import { cookieNames, currentUser, endSession, sameOrigin, startSession, clearSessionCookie } from "./auth/session.mjs";
 import { cookie, cookies, fail, json, page, randomToken, readFields, redirect, safeEqual } from "./http.mjs";
-import { inviteOnlyPage, loginPage, noticePage, PAGE_CSS, projectsPage, tokenPage } from "./pages.mjs";
+import { HOME, inviteOnlyPage, loginPage, noticePage, PAGE_CSS, projectsPage, tokenPage } from "./pages.mjs";
 import { problemRun, readRoute } from "./read.mjs";
 
+export { HOME };
 export const FILE_URL_SECONDS = 5 * 60;
 const SIGNIN_SECONDS = 10 * 60;
 
@@ -29,8 +31,10 @@ const withCookies = (response, ...values) => {
   for (const v of values) if (v) response.headers.append("set-cookie", v);
   return response;
 };
-/** A path on this server to return to after signing in, or "/". */
-export const safeNext = (next) => (typeof next === "string" && /^\/(?![/\\])[^\s\\]*$/.test(next) ? next : "/");
+/** A path on this server to return to after signing in, or HOME. */
+export const safeNext = (next) => (typeof next === "string" && /^\/(?![/\\])[^\s\\]*$/.test(next) && next !== "/" ? next : HOME);
+// A browser navigating (its Accept names text/html), as opposed to a script asking for JSON (fetch sends any type).
+const wantsHtml = (request) => /\btext\/html\b/i.test(request.headers.get("accept") || "");
 
 const publicKey = ({ id, name, prefix, createdAt, lastUsedAt, revokedAt, expiresAt }) => ({ id, name, prefix, createdAt, lastUsedAt, revokedAt, expiresAt });
 const publicProject = ({ id, name, slug, createdAt, role }) => ({ id, name, slug, createdAt, role });
@@ -65,16 +69,12 @@ export async function handleWeb(request, deps) {
     }
     return withCookies(redirect("/login", 303), clearSessionCookie(deps));
   }
-  if (p === "/") {
-    if (!read) return done(fail(405, "method not allowed"));
-    if (!user) return done(redirect("/login"));
-    return done(projectsPage({ user, projects: await deps.db.listUserProjects(user.id) }));
-  }
-  if (p === "/projects") return done(await projects(request, deps, user));
+  if (p === "/") return done(read ? redirect(HOME) : fail(405, "method not allowed"));
+  if (p === HOME) return done(await projects(request, deps, user));
 
   const m = /^\/p\/([a-z0-9-]{1,64})(\/.*)?$/.exec(p);
   if (m) return done(await projectRoute(request, deps, user, m[1], m[2] || "", url));
-  return done(noticePage(404, "Not found", `There is no page at ${p}.`, { link: { href: "/", label: "Your projects" } }));
+  return done(noticePage(404, "Not found", `There is no page at ${p}.`, { link: { href: HOME, label: "Your projects" } }));
 }
 
 // ---------- static pieces of the pages ----------
@@ -195,8 +195,11 @@ async function tokenLogin(request, deps, url) {
 
 async function projects(request, deps, user) {
   if (request.method === "GET" || request.method === "HEAD") {
-    if (!user) return fail(401, "sign in first");
-    return json(200, { projects: (await deps.db.listUserProjects(user.id)).map(publicProject) });
+    // One path for both: a browser gets the page, the interface's fetch (and any script) gets JSON.
+    const vary = (response) => (response.headers.append("vary", "Accept"), response);
+    if (wantsHtml(request)) return vary(user ? projectsPage({ user, projects: await deps.db.listUserProjects(user.id) }) : redirect("/login"));
+    if (!user) return vary(fail(401, "sign in first"));
+    return vary(json(200, { projects: (await deps.db.listUserProjects(user.id)).map(publicProject) }));
   }
   if (request.method !== "POST") return fail(405, "method not allowed");
   const { fields, form, error } = await readFields(request);
@@ -219,7 +222,7 @@ async function projectRoute(request, deps, user, slug, rest, url) {
   const project = await deps.db.getProjectBySlug(slug);
   const member = project && (await deps.db.getMember(project.id, user.id));
   // Not a member reads exactly as no such project, so slugs of other people's projects cannot be probed.
-  if (!member) return api || files ? fail(404, `no project ${slug}`) : noticePage(404, "No such project", `There is no project ${slug} among yours.`, { link: { href: "/", label: "Your projects" } });
+  if (!member) return api || files ? fail(404, `no project ${slug}`) : noticePage(404, "No such project", `There is no project ${slug} among yours.`, { link: { href: HOME, label: "Your projects" } });
   if (api) return projectApi(request, deps, user, project, member, rest.slice("/api".length));
   if (request.method !== "GET" && request.method !== "HEAD") return fail(405, "method not allowed");
   if (files) return file(deps, project, rest.slice("/files/".length));

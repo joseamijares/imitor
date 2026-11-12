@@ -8,6 +8,8 @@ import { memoryDb } from "../src/db/memory.mjs";
 import { memoryStorage } from "../src/storage/memory.mjs";
 
 export const PUBLIC_URL = "https://cloud.example";
+/** What a browser sends when it navigates to a page. */
+export const HTML = { accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" };
 export const CLIENT_ID = "imitor-test.apps.example";
 export const CLIENT_SECRET = "test-client-secret";
 

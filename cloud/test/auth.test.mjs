@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import test from "node:test";
 import { SESSION_DAYS } from "../src/auth/session.mjs";
-import { browser, CLIENT_ID, cloud, fakeProvider, googleSignIn, PUBLIC_URL } from "./helpers.mjs";
+import { browser, CLIENT_ID, cloud, fakeProvider, googleSignIn, HTML, PUBLIC_URL } from "./helpers.mjs";
 
 const DAY = 24 * 3600 * 1000;
 const sha = (s) => crypto.createHash("sha256").update(s).digest("hex");
@@ -46,7 +46,7 @@ test("Google sign-in: PKCE, state and nonce; a first sign-in on the allowlist ma
   assert.deepEqual((await s.db.findIdentity("google", "100200300400")).userId, user.id);
   assert.deepEqual((await s.db.listAudit()).map((a) => a.action), ["user.create", "user.signin"]);
 
-  const home = await s.b.call("GET", "/");
+  const home = await s.b.call("GET", "/projects", { headers: HTML });
   assert.equal(home.status, 200);
   assert.match(home.text, /Ada Lovelace/);
   assert.match(home.headers.get("content-security-policy"), /default-src 'none'.*frame-ancestors 'none'/);
@@ -71,7 +71,7 @@ test("afterwards the sub decides: a changed address still signs in, the address 
   // A person the owner turned off (allowed = false) is out, sessions and all.
   const user = await s.db.findUserByEmail("ada@example.com");
   await s.db.updateUser(user.id, { allowed: false });
-  assert.equal((await s.b.call("GET", "/")).status, 302);
+  assert.equal((await s.b.call("GET", "/projects", { headers: HTML })).status, 302);
   assert.equal((await googleSignIn(browser(s.deps), s.provider, { now: s.now })).done.status, 403);
 });
 
@@ -148,17 +148,17 @@ test("sessions slide for 30 days from last use, then expire; sign-out and sign-o
   const hash = sha(s.b.jar.get("__Host-imitor_session"));
 
   s.now.advance(12 * 3600 * 1000);
-  const quiet = await s.b.call("GET", "/");
+  const quiet = await s.b.call("GET", "/projects", { headers: HTML });
   assert.equal(quiet.status, 200);
   assert.deepEqual(quiet.cookies, [], "not refreshed within the first day");
 
   s.now.advance(2 * DAY);
-  const refreshed = await s.b.call("GET", "/");
+  const refreshed = await s.b.call("GET", "/projects", { headers: HTML });
   assert.match(refreshed.cookies[0], /^__Host-imitor_session=.*Max-Age=2592000$/);
   assert.equal((await s.db.getSession(hash)).expiresAt, new Date(s.now().getTime() + SESSION_DAYS * DAY).toISOString());
 
   s.now.advance(SESSION_DAYS * DAY + 1000);
-  const late = await s.b.call("GET", "/");
+  const late = await s.b.call("GET", "/projects", { headers: HTML });
   assert.equal(late.status, 302);
   assert.equal(late.location, "/login");
   assert.equal(await s.db.getSession(hash), null, "an expired session is deleted when it is seen");
@@ -172,14 +172,14 @@ test("sessions slide for 30 days from last use, then expire; sign-out and sign-o
   assert.equal(out.status, 303);
   assert.equal(out.location, "/login");
   assert.equal(s.b.jar.has("__Host-imitor_session"), false);
-  assert.equal((await s.b.call("GET", "/")).status, 302);
-  assert.equal((await phone.call("GET", "/")).status, 200, "the other browser is still signed in");
+  assert.equal((await s.b.call("GET", "/projects", { headers: HTML })).status, 302);
+  assert.equal((await phone.call("GET", "/projects", { headers: HTML })).status, 200, "the other browser is still signed in");
 
   // Everywhere: every session of the person.
   await googleSignIn(s.b, s.provider, { now: s.now });
   assert.equal((await phone.call("POST", "/logout/everywhere")).status, 303);
-  assert.equal((await s.b.call("GET", "/")).status, 302);
-  assert.equal((await phone.call("GET", "/")).status, 302);
+  assert.equal((await s.b.call("GET", "/projects", { headers: HTML })).status, 302);
+  assert.equal((await phone.call("GET", "/projects", { headers: HTML })).status, 302);
   assert.ok((await s.db.listAudit()).some((a) => a.action === "user.signout-everywhere"));
 });
 
@@ -192,7 +192,7 @@ test("CSRF: a cookie-authenticated POST needs Origin (or Referer) equal to PUBLI
     assert.equal(res.json.error, "this request did not come from a page of this server");
   }
   assert.equal((await s.b.call("POST", "/logout", { origin: "https://evil.example" })).status, 403);
-  assert.equal((await s.b.call("GET", "/")).status, 200, "still signed in");
+  assert.equal((await s.b.call("GET", "/projects", { headers: HTML })).status, 200, "still signed in");
   assert.equal((await s.b.call("POST", "/projects", { body: { name: "fernwood" }, origin: null, headers: { referer: `${PUBLIC_URL}/` } })).status, 201, "a same-origin Referer is enough");
   assert.equal((await s.b.call("POST", "/projects", { body: { name: "ferns" } })).status, 201);
   assert.deepEqual((await s.db.listUserProjects((await s.db.findUserByEmail("ada@example.com")).id)).map((p) => p.slug), ["fernwood", "ferns"].sort());
@@ -216,13 +216,13 @@ test("the admin token signs in the first admin on a private instance; it is off 
   const right = await b.call("POST", "/login/token", { form: { token, next: "/p/local/" } });
   assert.equal(right.status, 303);
   assert.equal(right.location, "/p/local/");
-  assert.equal((await b.call("GET", "/")).status, 200);
+  assert.equal((await b.call("GET", "/projects", { headers: HTML })).status, 200);
   const admin = await s.db.findUserByEmail("admin");
   assert.equal(admin.allowed, true);
   assert.deepEqual((await s.db.listAudit()).map((a) => a.action), ["user.signin-refused", "user.create", "user.signin"]);
 
   const evil = await browser(s.deps).call("POST", "/login/token", { form: { token, next: "//evil.example/x" } });
-  assert.equal(evil.location, "/", "next stays on this server");
+  assert.equal(evil.location, "/projects", "next stays on this server");
 });
 
 test("on http://localhost the cookies drop __Host- and Secure; anywhere else they keep both", async (t) => {

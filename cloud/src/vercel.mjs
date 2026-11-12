@@ -67,7 +67,11 @@ export function cloudFunction(env = process.env, { deps = null } = {}) {
   };
 }
 
-/** The daily retention run (Vercel Cron: GET with Authorization: Bearer <CRON_SECRET>), production only. */
+/**
+ * The daily retention run (Vercel Cron: GET with Authorization: Bearer <CRON_SECRET>), production only. It answers on
+ * any path: vercel.json's cron calls /api/cron-retention/, since trailingSlash answers the bare path with a 308 that
+ * Vercel Cron does not follow.
+ */
 export function cronFunction(env = process.env, { deps = null } = {}) {
   return {
     async fetch(request) {

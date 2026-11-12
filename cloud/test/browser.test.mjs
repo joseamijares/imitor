@@ -95,6 +95,11 @@ test("the interface in cloud mode, end to end in Chromium", { skip: !playwright 
   const admin = await deps.db.findUserByEmail("admin");
   assert.deepEqual((await deps.db.listSeen((await deps.db.getProjectBySlug("fernwood")).id, admin.id)).map((m) => m.problemId), [failed.id]);
 
+  // "All projects" in Settings leads to the projects page (not to "/", the public site's page on Vercel).
+  await page.goto(`${server.url}/p/fernwood/settings`);
+  await Promise.all([page.waitForURL(/\/projects$/), page.click(".set-value a:has-text('All projects')")]);
+  assert.equal(await page.textContent("main h1"), "Projects");
+
   // Revoke the key; then sign out.
   await page.goto(`${server.url}/p/fernwood/settings#access-keys`);
   page.once("dialog", (d) => d.accept());

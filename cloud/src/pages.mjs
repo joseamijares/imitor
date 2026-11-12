@@ -3,6 +3,13 @@
 // served as /static/cloud.css with the styles below).
 import { esc, page } from "./http.mjs";
 
+/**
+ * The projects page, where signing in lands and the brand link goes. Not "/": on Vercel the cloud shares its project
+ * with the public site, whose static files win over rewrites, so "/" there is the site's landing page (vercel.json
+ * redirects the app host's "/" here). No path the cloud answers may be a file or folder of site/dist.
+ */
+export const HOME = "/projects";
+
 export const PAGE_CSP = "default-src 'none'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
 
 export const PAGE_CSS = `
@@ -74,13 +81,13 @@ ${body}
 </body>
 </html>`;
 
-const brand = (size = 28) => `<a class="brand" href="/"><img src="/static/icon.svg" width="${size}" height="${size}" alt=""><span class="wordmark">Imitor</span></a>`;
+const brand = (size = 28) => `<a class="brand" href="${HOME}"><img src="/static/icon.svg" width="${size}" height="${size}" alt=""><span class="wordmark">Imitor</span></a>`;
 
 const html = (status, title, body, headers = {}) => page(status, shell(title, body), { csp: PAGE_CSP, headers });
 
 /** The sign-in page. opts: { google, adminToken, next, error }. */
-export function loginPage({ google, adminToken, next = "/", error = null }, status = 200, headers = {}) {
-  const q = next && next !== "/" ? `?next=${encodeURIComponent(next)}` : "";
+export function loginPage({ google, adminToken, next = HOME, error = null }, status = 200, headers = {}) {
+  const q = next && next !== HOME ? `?next=${encodeURIComponent(next)}` : "";
   const ways = [];
   if (google) ways.push(`<a class="btn btn-primary" href="/auth/google${q}">Continue with Google</a>`);
   if (adminToken) ways.push(`<a class="btn btn-secondary" href="/login/token${q}">Sign in with the admin token</a>`);
@@ -94,7 +101,7 @@ export function loginPage({ google, adminToken, next = "/", error = null }, stat
 }
 
 /** The admin token form (only when IMITOR_ADMIN_TOKEN is set). */
-export function tokenPage({ next = "/", error = null }, status = 200) {
+export function tokenPage({ next = HOME, error = null }, status = 200) {
   return html(status, "Admin token", `<main class="center"><div class="card">
   ${brand()}
   <h1>Sign in with the admin token</h1>
