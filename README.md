@@ -353,7 +353,7 @@ Keep the `concurrency` block above: two pushes in quick succession start two run
 
 Turn it off with `comment: "false"`. To delete what was stored, delete the `imitor-shots` branch.
 
-The same comment is available locally. `imitor comment` prints it for the last run, with file paths in a table; `--image-base <url>` makes it use images at that address instead (the shot's path is added to the end, or before a `?query`). `--max-shots`, `--device`, `--scheme` and `--fail-on` change what it shows, and `--json` prints the data instead. `imitor publish-shots` is the push the action does; it refuses to run outside GitHub Actions unless given `--force`.
+The same comment is available locally. `imitor comment` prints it for the last run, with file paths in a table; `--image-base <url>` makes it use images at that address instead (the shot's path is added to the end, or before a `?query`). `--max-shots`, `--device`, `--scheme` and `--fail-on` change what it shows, `--sha` names the commit it reports (the action passes the pull request's head, since the checkout of a pull request is GitHub's merge commit), and `--json` prints the data instead. `imitor publish-shots` is the push the action does; it refuses to run outside GitHub Actions unless given `--force`.
 
 Nobody has seen this comment on a real pull request yet: the Markdown is tested, and publishing is tested against local Git repositories, but the action's publish and comment steps have not run on GitHub.
 

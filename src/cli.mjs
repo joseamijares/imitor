@@ -94,7 +94,7 @@ export async function main(args) {
     return;
   }
   if (command === "comment") {
-    for (const k of ["imageBase", "maxShots", "device", "scheme", "failOn", "reportUrl"]) if (opts[k] === true) throw new Error(`--${k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)} needs a value`);
+    for (const k of ["imageBase", "maxShots", "device", "scheme", "failOn", "reportUrl", "sha"]) if (opts[k] === true) throw new Error(`--${k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)} needs a value`);
     const { commentFor, formatComment } = await import("./comment.mjs");
     const data = commentFor(root, opts);
     return opts.json === true ? print(data) : process.stdout.write(formatComment(data));
