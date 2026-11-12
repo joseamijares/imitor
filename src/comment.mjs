@@ -92,7 +92,9 @@ export function buildComment(manifest, opts = {}) {
   return {
     marker: MARKER,
     app: manifest.app || null,
-    commit: manifest.commit || null,
+    // On a pull request the checkout is GitHub's merge commit; --sha names the commit the reviewer pushed (the action
+    // passes the pull request's head), the same one the published shots are filed under.
+    commit: opts.sha ? String(opts.sha).slice(0, 7) : manifest.commit || null,
     verdict: { passed: verdict.passed, reasons: verdict.reasons, failOn: verdict.failOn },
     counts: { shots: verdict.shots, flows: flows.length, failedFlows: verdict.failedFlows.length, pageErrors: verdict.pageErrors.length, shotsWithStandIns: verdict.shotsWithStandIns, standIns: verdict.standIns, shotsWithInventedData: invented, genuine },
     showing: { device, scheme, maxShots, devices: present("device"), schemes: present("scheme") },

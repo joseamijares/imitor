@@ -164,3 +164,10 @@ test("a failure inside a flow it runs after names that flow and step in the comm
   assert.match(md, /stopped at step 2 of "welcome" \(which it runs after\) while tapping "Continue"\. boom/);
   assert.ok(!md.includes("step 0"));
 });
+
+test("--sha names the commit the comment reports, short, instead of the checkout's (a pull request's merge commit)", () => {
+  assert.equal(buildComment(run).commit, "abc1234");
+  const data = buildComment(run, { sha: "80a2676bfded1e3d8f35bd9529693b0d836daba5" });
+  assert.equal(data.commit, "80a2676");
+  assert.match(formatComment(data).split("\n")[2], /· commit `80a2676`$/);
+});

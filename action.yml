@@ -102,7 +102,7 @@ runs:
         # Never fails the job: the gate's own result stays the job's result.
         notice() { echo "::notice title=Imitor: no comment::$1"; exit 0; }
         body="$(mktemp)"
-        args=(--fail-on "$IMITOR_FAIL_ON" --max-shots "$IMITOR_MAX_SHOTS" --report-url "$IMITOR_RUN_URL")
+        args=(--fail-on "$IMITOR_FAIL_ON" --max-shots "$IMITOR_MAX_SHOTS" --report-url "$IMITOR_RUN_URL" --sha "$IMITOR_SHA")
         if [ -n "$IMITOR_IMAGE_BASE" ]; then args+=(--image-base "$IMITOR_IMAGE_BASE"); fi
         if [ -n "$IMITOR_REPORT" ]; then
           npx imitor comment "${args[@]}" > "$body" || notice "Could not write the comment for this run."
