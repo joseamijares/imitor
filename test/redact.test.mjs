@@ -62,7 +62,8 @@ test("a password typed in a flow never appears in the redacted upload body", () 
 
   const dir = path.join(out, "runs", run.id);
   const read = (f) => JSON.parse(fs.readFileSync(path.join(dir, f), "utf8"));
-  const raw = { clientRunId: run.id, schemaVersion: 1, run: read("run.json"), manifest: read("manifest.json"), files: [] };
+  const files = [...new Set([...shots, ...problems].map((f) => f.file).filter(Boolean))].map((p) => ({ path: p, size: 3, sha256: "a".repeat(64), contentType: "image/png" }));
+  const raw = { clientRunId: run.id, schemaVersion: 1, run: read("run.json"), manifest: read("manifest.json"), files };
   assert.ok(JSON.stringify(raw).includes(PASSWORD), "the run on disk holds the password (the case this guards)");
 
   const body = redact(raw, { secrets: [...fillValues(loadConfig(root))] });
@@ -72,4 +73,47 @@ test("a password typed in a flow never appears in the redacted upload body", () 
   assert.equal(body.manifest.problems[0].stepConfig.fill.value, BLANK);
   assert.equal(body.manifest.problems[0].stepConfig.fill.placeholder, "Password");
   assert.equal(checkUpload(body), null);
+});
+
+test("a password in any free text is blanked: an after-step failure's error, a locator error, state, url, activity", () => {
+  // What src/shoot.mjs writes when a fill step without a locator fails inside a flow this one runs after: locate()
+  // throws `cannot locate {"value":"..."}`, kept in both message and error.
+  const thrown = `cannot locate ${JSON.stringify({ value: PASSWORD })}`;
+  const quoted = 'say "hi" \\ there';
+  const manifest = {
+    shots: [{ file: "screens/home-01-feed-iphone-16-light.png", flow: "home", shot: "01-feed", device: "iphone-16", scheme: "light", route: "/feed", stubs: ["camera"], state: `signed-in-as-${PASSWORD}` }],
+    problems: [
+      { where: "home / iphone-16 / light", kind: "flow-failed", message: `in "sign-in", which this flow runs after, step 2: ${thrown}`, error: thrown, file: "screens/home-FAILED-iphone-16-light.png", flow: "home", device: "iphone-16", scheme: "light", step: 0, stepConfig: { fill: { value: PASSWORD } }, after: { flow: "sign-in", step: 2 }, lastGoodShot: null, notReached: [`02-${PASSWORD}`] },
+      { kind: "page-error", message: `cannot locate ${JSON.stringify({ value: quoted })}`, flow: "home" },
+      { kind: "dialog", message: "pin", flow: "home", url: `https://fernwood.example/reset?token=${PASSWORD}` },
+    ],
+  };
+  const activity = [{ at: "2026-11-10T09:00:00.000Z", tool: "imitor_run_flow", text: "ran sign-in", target: PASSWORD, note: `typed ${PASSWORD}`, ok: false }];
+  const value = { manifest, activity, steps: [{ fill: { placeholder: "PIN", value: "pin" } }, { fill: { label: "Note", value: quoted } }] };
+  const red = redact(value);
+  const text = JSON.stringify(red);
+  assert.ok(!text.includes(PASSWORD), text);
+  assert.ok(!text.includes(JSON.stringify(quoted).slice(1, -1)), "a value as JSON quotes it inside an error message");
+  assert.equal(red.manifest.problems[0].error, `cannot locate {"value":"${BLANK}"}`);
+  assert.equal(red.manifest.problems[2].message, BLANK, "a short typed value is blanked when it is the whole text");
+  assert.equal(red.manifest.shots[0].route, "/feed", "a short value is not blanked inside other text");
+  // Ids, paths, names and times stay as they were, so files and records still match.
+  for (const k of ["file", "flow", "device", "scheme", "shot", "stubs"]) assert.deepEqual(red.manifest.shots[0][k], manifest.shots[0][k], k);
+  assert.deepEqual(red.manifest.problems[0].after, { flow: "sign-in", step: 2 });
+  assert.equal(red.manifest.problems[0].where, "home / iphone-16 / light");
+  assert.equal(red.activity[0].at, activity[0].at);
+  assert.equal(red.activity[0].tool, "imitor_run_flow");
+});
+
+test("redact copies a value too deep to recurse into, and keeps __proto__ as a plain key", () => {
+  let deep = { fill: { value: PASSWORD } };
+  for (let i = 0; i < 200000; i++) deep = [deep];
+  let red = redact({ deep });
+  let n = 0;
+  for (red = red.deep; Array.isArray(red); red = red[0]) n++;
+  assert.equal(n, 200000);
+  assert.deepEqual(red, { fill: { value: BLANK } });
+  const odd = redact(JSON.parse(`{"__proto__":{"message":"${PASSWORD}"},"fill":{"value":"${PASSWORD}"}}`));
+  assert.equal(Object.getPrototypeOf(odd), Object.prototype);
+  assert.deepEqual(Object.keys(odd), ["__proto__", "fill"]);
 });
