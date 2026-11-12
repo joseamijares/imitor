@@ -12,4 +12,7 @@ jobs:
         with:
           node-version: 22
       - run: npm install --no-audit --no-fund
+      # The browser tests skip themselves without Playwright, so install it here to run them.
+      - run: npm install --no-save --no-audit --no-fund playwright
+      - run: npx playwright install --with-deps chromium
       - run: npm test

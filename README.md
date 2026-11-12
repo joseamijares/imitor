@@ -167,6 +167,73 @@ Other config keys: `locale` (default `en-US`), `timezone` (`UTC`), `settleMs` (`
 `reducedMotion` (`true`), `out` (`preview`). Devices: `iphone-16`, `iphone-se`,
 `pixel-9`, `small-android`, or `{ "name", "width", "height", "scale" }`.
 
+## Gate your native builds
+
+A native build costs money and minutes. `imitor gate` runs first and blocks the build when the app's UI is already broken on the web imitation.
+
+```bash
+npx imitor gate
+```
+
+It builds the preview, runs every flow, prints a verdict and exits non-zero when the run should block. `--fail-on` sets how strict it is:
+
+| `--fail-on` | Blocks when |
+| --- | --- |
+| `flows` (default) | A flow could not be completed |
+| `errors` | Also when the page threw an uncaught error |
+| `stand-ins` | Also when any shot contains a stand-in |
+
+`--no-build` reuses the last build, and `--json` prints the verdict as JSON. On GitHub Actions it also writes a job summary, step outputs and error annotations.
+
+The gate checks the web imitation only. It does not test the native build; it stops you paying for one that would fail review anyway.
+
+### GitHub Actions
+
+```yaml
+jobs:
+  imitor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - uses: joseamijares/imitor@main
+        with:
+          fail-on: flows
+
+  build:
+    needs: imitor # runs only if the gate passed
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "start your native build here"
+```
+
+The action installs Chromium, runs the gate, and uploads the report as an artifact whether it passes or fails. Its outputs are `passed`, `shots`, `failed-flows`, `page-errors` and `stand-ins`. Your app needs `imitor` and `playwright` in its dev dependencies, as in Set up.
+
+### EAS Workflows
+
+```yaml
+jobs:
+  imitor:
+    runs_on: linux-medium
+    steps:
+      - uses: eas/checkout
+      - uses: eas/install_node_modules
+      - run: npx playwright install --with-deps chromium
+      - run: npx imitor gate
+
+  build_ios:
+    needs: [imitor]
+    type: build
+    params:
+      platform: ios
+      profile: production
+```
+
+This follows the EAS Workflows syntax but has not been run on EAS. Check how your plan counts custom jobs before relying on it.
+
 ## What it does not show
 
 - Native navigation chrome, transitions and gestures
