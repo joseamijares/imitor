@@ -376,7 +376,6 @@ This follows the EAS Workflows syntax but has not been run on EAS. Check how you
 
 - Text size and language controls in the live preview (device, scheme and motion are there)
 - "Pretend iOS / Android" mode so platform-specific styles render
-- The review interface (runs, captures, problems, agents), designed in `design/`
 - Android widget and notification renders on a plain JVM
 - Bare React Native (no Expo) adapter
 - Apple surfaces on a macOS runner
