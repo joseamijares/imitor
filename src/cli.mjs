@@ -28,6 +28,10 @@ Usage (run in the app's folder):
   imitor serve              serve an existing build for manual clicking
   imitor gate               build, run every flow, and exit non-zero if the run should block a native build:
                             [--fail-on flows|errors|stand-ins] [--no-build] [--json]
+  imitor comment            print the pull-request comment for the last run (verdict, failed flows, shots):
+                            [--image-base url] [--max-shots n] [--device d] [--scheme s] [--fail-on f] [--report-url url] [--json]
+  imitor publish-shots      push the last run's screenshots to a branch of this repository (GitHub Actions only),
+                            print the --image-base for imitor comment: [--branch imitor-shots] [--keep 3] [--pr n] [--force] [--json]
   imitor app [--port n]     open the review interface on this machine (runs, captures, problems, agents)
   imitor export             write the interface and its data as a read-only static site:
                             [--out dir] (default <out>/site) [--preview-url url] [--demo]
@@ -67,6 +71,20 @@ export async function main(args) {
     if (site.missing.length) console.log(`${site.missing.length} referenced file${site.missing.length === 1 ? " is" : "s are"} no longer on disk and will not load, e.g. ${site.missing[0]}`);
     console.log("It is read-only and holds this project's screenshots: publish it only where they may be seen. Serve it at the root of a domain.");
     return;
+  }
+  if (command === "comment") {
+    for (const k of ["imageBase", "maxShots", "device", "scheme", "failOn", "reportUrl"]) if (opts[k] === true) throw new Error(`--${k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)} needs a value`);
+    const { commentFor, formatComment } = await import("./comment.mjs");
+    const data = commentFor(root, opts);
+    return opts.json === true ? print(data) : process.stdout.write(formatComment(data));
+  }
+  if (command === "publish-shots") {
+    for (const k of ["branch", "keep", "pr", "sha", "repo", "remote"]) if (opts[k] === true) throw new Error(`--${k} needs a value`);
+    const { publishShots } = await import("./publish.mjs");
+    const result = publishShots(root, { ...opts, force: opts.force === true });
+    if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `image-base=${result.baseUrl}\n`);
+    console.error(`Published ${result.files.length} files to ${result.branch}:${result.folder}${result.removed.length ? `; removed ${result.removed.join(", ")}` : ""}`);
+    return opts.json === true ? print(result) : console.log(result.baseUrl);
   }
   if (command === "describe") return print(describe(root));
   if (command === "problems") return print(readProblems(root));
