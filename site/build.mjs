@@ -2,11 +2,13 @@
 //   node site/build.mjs        (or: npm run site)
 // The landing page is hand-written HTML. The two documentation pages are generated from README.md at build time, and
 // the agent connect commands come from src/store.mjs, so the site and the README cannot drift. Node only, no
-// dependencies, so it runs on a static host's build machine. Shots are copied from demo/assets (the invented app).
+// dependencies, so it runs on a static host's build machine. Shots are copied from demo/assets (the invented app), and
+// the demo of the review interface is exported into /demo/ of the same site.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { CONNECT_COMMANDS } from "../src/store.mjs";
+import { buildDemo } from "../demo/build.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const ROOT = path.join(HERE, "..");
@@ -166,6 +168,10 @@ export function buildSite({ out = path.join(HERE, "dist") } = {}) {
     fs.mkdirSync(path.join(out, key), { recursive: true });
     fs.writeFileSync(path.join(out, key, "index.html"), docPage(key, sections, template));
   }
+  // The demo: a read-only export with invented data, served under /demo/. The site's own vercel.json and 404.html
+  // cover it, so the export's per-folder fallbacks are dropped.
+  buildDemo({ out: path.join(out, "demo"), base: "/demo" });
+  for (const f of ["vercel.json", "_redirects", "404.html"]) fs.rmSync(path.join(out, "demo", f), { force: true });
   return out;
 }
 

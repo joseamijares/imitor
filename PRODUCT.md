@@ -35,11 +35,20 @@ It is an imitation and says so. Every shot and preview states what was rendered,
 
 ## Capabilities and Constraints
 
-- Works today: Metro plugin with stand-ins (SQLite via sql.js, Skia box, inert), scripted flows (tap, fill, shot), devices and light/dark, HTML report with problems and stand-in labels; an MCP server with seven tools and the same operations as JSON CLI commands; the review interface (`imitor app`) with runs, captures, problems, agents, a live preview and phone layouts; `imitor export` as a read-only static site; a public demo with invented data; a public site (landing page, How to use, For agents).
-- Planned, not built: text size and language controls in the live preview, "pretend iOS / Android" mode, real Skia on web, seeded data states, Android widget renders, Apple surfaces on macOS. A hosted service with sign-in is not built and not promised; `app.<domain>` is reserved for it if one is made.
+- Works today: Metro plugin with stand-ins (SQLite via sql.js, Skia box, inert), scripted flows (tap, fill, shot), devices and light/dark, HTML report with problems and stand-in labels; an MCP server with seven tools and the same operations as JSON CLI commands; the review interface (`imitor app`) with runs, captures, problems, agents, a live preview and phone layouts; `imitor export` as a read-only static site; a public demo with invented data, served at /demo/ of the public site (landing page, How to use, For agents); `imitor export --base` for hosting the interface under a sub-path.
+- Planned, not built: text size and language controls in the live preview, "pretend iOS / Android" mode, real Skia on web, seeded data states, Android widget renders, Apple surfaces on macOS. Imitor Cloud (see Business Model) is planned and not built.
 - Known limits the interface must state: native navigation chrome, keyboard, exact fonts, entering animations, platform-specific code paths, widgets and notifications.
 - Terminology: "stand-in" (a replaced native module), "flow", "shot", "device", "scheme".
-- Undecided: hosted service versus self-hosted only; visual diffs between commits.
+- Undecided: visual diffs between commits; prices for the hosted cloud.
+
+## Business Model
+
+Decided by the owner, 12 Nov 2026, after reviewing Postiz and OpenSEO: open source first, then a paid hosted service.
+
+- Free: the CLI, MCP server, review interface, `imitor export` and the run format (MIT), and a self-hostable Imitor Cloud with every feature.
+- Imitor Cloud (planned, not built): agents and CI upload finished runs with `imitor push` and a per-project write-only key; people sign in with Google and review runs in the same interface. It is receive-only: it never builds or executes uploaded code. Server code in `cloud/` of this repo under AGPL-3.0 with a contributor agreement; multi-tenant with an allowlist; retention the newest 50 runs and 30 days by default.
+- Paid hosted service (planned): sells running it (managed storage, longer history, share links, a ready-made GitHub App for pull-request comments, keyless CI, seats, support), not gated features. Prices are undecided placeholders; payments through a merchant of record (Polar is the lead option).
+- Public promise until it exists: only "planned, not built", with interest collected on GitHub issue #11. No prices, Log in or trial on the site before the hosted service works.
 
 ## Brand Commitments
 

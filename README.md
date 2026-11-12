@@ -12,7 +12,7 @@ check has to find.
 
 Status: early (v0). Tried on two Expo SDK 54 apps so far.
 
-Site: [imitor.vercel.app](https://imitor.vercel.app) · Live demo: [imitor-demo.vercel.app](https://imitor-demo.vercel.app)
+Site: [imitor.vercel.app](https://imitor.vercel.app) · Live demo: [imitor.vercel.app/demo](https://imitor.vercel.app/demo/)
 
 ## What you get
 
@@ -130,7 +130,7 @@ The Appearance and Reduce motion controls rely on an override that `imitor build
 
 The iPhone status bar and the Android camera are drawn above the app, not over it: the web build has no safe-area insets, so drawing them on top would hide what the shots show.
 
-A public demo of the interface, with invented data for an invented plant-care app ("fernwood"), runs at [imitor-demo.vercel.app](https://imitor-demo.vercel.app). It is built from `demo/` with `npm run demo` (it writes `demo/site/`), and `demo/vercel.json` deploys it: import this repository into Vercel with `demo` as the root directory. The root `vercel.json` deploys the public site in `site/` (`npm run site`), whose How to use and For agents pages are generated from this README.
+A public demo of the interface, with invented data for an invented plant-care app ("fernwood"), runs at [imitor.vercel.app/demo](https://imitor.vercel.app/demo/). It is built from `demo/` with `npm run demo` (it writes `demo/site/`). The root `vercel.json` deploys the public site in `site/` (`npm run site`): its How to use and For agents pages are generated from this README, and the demo is exported into its `/demo/` folder.
 
 ## Publish a run
 
@@ -138,9 +138,10 @@ A public demo of the interface, with invented data for an invented plant-care ap
 npx imitor export                                  # writes preview/site/
 npx imitor export --out review-site                # or anywhere else
 npx imitor export --preview-url https://my-preview.example.com
+npx imitor export --base /review                   # to serve it under /review/ instead of a domain root
 ```
 
-`imitor export` writes the interface and its data as plain static files, for any static host (Vercel, Netlify, GitHub Pages, an S3 bucket): the interface, every API response as a `.json` file, and the shots, failure screenshots and captures those responses point to (nothing else from the output folder). It is read-only: marking a problem seen is kept in each visitor's browser, and nothing can start a run. The live preview needs a running build, so it is left out and the Live page says so, unless `--preview-url` names a deployed web build of the app. Serve the folder at the root of a domain; it includes a `404.html`, a `vercel.json` and a `_redirects` file so deep links like `/runs/<id>` load the interface.
+`imitor export` writes the interface and its data as plain static files, for any static host (Vercel, Netlify, GitHub Pages, an S3 bucket): the interface, every API response as a `.json` file, and the shots, failure screenshots and captures those responses point to (nothing else from the output folder). It is read-only: marking a problem seen is kept in each visitor's browser, and nothing can start a run. The live preview needs a running build, so it is left out and the Live page says so, unless `--preview-url` names a deployed web build of the app. Serve the folder at the root of a domain, or under the path given with `--base`; it includes a `404.html`, a `vercel.json` and a `_redirects` file so deep links like `/runs/<id>` load the interface.
 
 The site holds the app's screenshots and videos. Publish it only where those may be seen, for example a team-only or password-protected deployment, not a public URL for an unreleased app.
 

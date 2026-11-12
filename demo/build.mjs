@@ -17,7 +17,7 @@ const HERE = fileURLToPath(new URL(".", import.meta.url));
 const ASSETS = path.join(HERE, "assets");
 const DEVICE = "iphone-16";
 
-export function buildDemo({ out = path.join(HERE, "site"), now = Date.now() } = {}) {
+export function buildDemo({ out = path.join(HERE, "site"), now = Date.now(), base = "" } = {}) {
   const at = (minutesAgo) => new Date(now - minutesAgo * 60000).toISOString();
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "imitor-demo-"));
   try {
@@ -84,7 +84,7 @@ export function buildDemo({ out = path.join(HERE, "site"), now = Date.now() } = 
     for (const [ago, by, tool, text, ok = true] of [...ACTIVITY].reverse()) appendActivity(dir, { at: at(ago), by, tool, text, ok });
 
     const newest = RUNS[0];
-    return exportSite(root, { out, demo: true, git: { branch: newest.branch, commit: newest.commit } });
+    return exportSite(root, { out, demo: true, base, git: { branch: newest.branch, commit: newest.commit } });
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

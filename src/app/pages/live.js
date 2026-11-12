@@ -6,6 +6,7 @@
 import { api, isStatic, isDemo, LIVE_NEEDS_APP } from "../api.js";
 import { html, raw, icon, logo, statusMark, chip, pill, switchEl, loadingLine, errorState, codeBlock, demoPill } from "../components.js";
 import { ago, deviceName, humanize, stepLabel, plural } from "../format.js";
+import { withBase } from "../base.js";
 
 const STRIP = { ios: 47, android: 28 }; // status bar drawn above the app (device px); the app's viewport stays the device's size
 const BEZEL = 10; // screen px
@@ -34,13 +35,13 @@ export async function mount(ctx) {
 }
 
 function topBar({ runId, project, run, problems, shots, builtAt }) {
-  const base = runId ? `/runs/${encodeURIComponent(runId)}` : null;
+  const base = runId ? withBase(`/runs/${encodeURIComponent(runId)}`) : null;
   const title = run ? `${run.pr != null ? `#${run.pr} ` : ""}${run.title || run.id}` : runId ? runId : "Latest build";
   return html`<header class="live-bar">
     <div class="live-crumbs">
-      <a class="live-brand" href="/runs" title="Runs">${logo(24)}<span class="wordmark">Imitor</span></a>
+      <a class="live-brand" href="${withBase(`/runs`)}" title="Runs">${logo(24)}<span class="wordmark">Imitor</span></a>
       <span class="sep" aria-hidden="true">/</span>
-      <a class="crumb-project" href="/runs">${project?.name || "…"}</a>
+      <a class="crumb-project" href="${withBase(`/runs`)}">${project?.name || "…"}</a>
       <span class="sep" aria-hidden="true">/</span>
       ${base ? html`<a class="crumb-run" href="${base}" title="${title}">${title}</a>` : html`<span class="crumb-run t2">${title}</span>`}
       ${run?.commit ? chip(run.commit) : ""}
@@ -394,7 +395,7 @@ function createLive(ctx, project, detail) {
   function renderStage() {
     // An exported site has no preview server unless it was exported with --preview-url.
     if (isStatic && !project.previewUrl) {
-      const shots = runId ? `/runs/${encodeURIComponent(runId)}` : "/runs";
+      const shots = withBase(runId ? `/runs/${encodeURIComponent(runId)}` : "/runs");
       fit.innerHTML = String(html`<div class="state stage-state"><h2>No live preview on this site</h2><p>${LIVE_NEEDS_APP} <a href="${shots}" style="text-decoration:underline">${runId ? "See this run’s shots" : "See the runs and their shots"}</a> instead.</p></div>`);
       return false;
     }

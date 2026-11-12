@@ -1,5 +1,6 @@
 // Components from the design's component sheet. Each returns an HTML string built with `html`,
 // which escapes every interpolated value unless it was produced by `html` or wrapped in `raw`.
+import { withBase } from "./base.js";
 
 class Safe {
   constructor(s) { this.s = s; }
@@ -112,7 +113,7 @@ export function button(label, kind = "secondary", opts = {}) {
   const inner = html`${opts.icon ? icon(opts.icon, 14) : ""}${label}`;
   const attrs = raw(opts.attrs || "");
   const title = opts.title ? html` title="${opts.title}"` : "";
-  if (opts.href) return html`<a class="btn btn-${raw(kind)}" href="${opts.href}"${title} ${attrs}>${inner}</a>`;
+  if (opts.href) return html`<a class="btn btn-${raw(kind)}" href="${withBase(opts.href)}"${title} ${attrs}>${inner}</a>`;
   return html`<button type="button" class="btn btn-${raw(kind)}"${opts.disabled ? raw(" disabled") : ""}${title} ${attrs}>${inner}</button>`;
 }
 
@@ -143,7 +144,7 @@ export function codeBlock(lines, copyText) {
 
 /** Sidebar navigation item. */
 export function navItem({ href, iconName, label, active, count, external }) {
-  return html`<a class="nav-item${active ? " is-active" : ""}" href="${href}"${active ? raw(' aria-current="page"') : ""}${external ? raw(' target="_blank" rel="noopener"') : ""} title="${label}">${icon(iconName)}<span class="nav-label">${label}</span>${count ? html`<span class="nav-count">${count}</span>` : ""}</a>`;
+  return html`<a class="nav-item${active ? " is-active" : ""}" href="${withBase(href)}"${active ? raw(' aria-current="page"') : ""}${external ? raw(' target="_blank" rel="noopener"') : ""} title="${label}">${icon(iconName)}<span class="nav-label">${label}</span>${count ? html`<span class="nav-count">${count}</span>` : ""}</a>`;
 }
 
 /* ---------- Agent avatar ---------- */
@@ -159,8 +160,8 @@ export function avatar(by, size = 16) {
   const kind = isObj ? by.kind : "agent";
   const file = kind === "agent" || kind === "ci" ? AGENT_FILES[n] : null;
   const cls = size >= 24 ? "avatar lg" : "avatar";
-  if (file === "cursor") return html`<span class="${cls}" aria-hidden="true"><span class="glyph-mask" style="--glyph:url(/assets/agents/cursor.svg)"></span></span>`;
-  if (file) return html`<span class="${cls}" aria-hidden="true"><img src="/assets/agents/${file}.svg" alt=""></span>`;
+  if (file === "cursor") return html`<span class="${cls}" aria-hidden="true"><span class="glyph-mask" style="--glyph:url(${withBase("/assets/agents/cursor.svg")})"></span></span>`;
+  if (file) return html`<span class="${cls}" aria-hidden="true"><img src="${withBase(`/assets/agents/${file}.svg`)}" alt=""></span>`;
   return html`<span class="${cls}" aria-hidden="true">${n.trim().charAt(0).toUpperCase() || "?"}</span>`;
 }
 export const who = (by) => html`<span class="who">${avatar(by || {})}<span>${by?.name || "Unknown"}</span></span>`;

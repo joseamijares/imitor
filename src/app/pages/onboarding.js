@@ -3,6 +3,7 @@
 import { api, isStatic } from "../api.js";
 import { html, raw, icon, logo, statusMark, chip, pill, seg, avatar, button, codeBlock, thumb, loadingLine, errorState } from "../components.js";
 import { ago, deviceName, schemeName, humanize, stepLabel, plural } from "../format.js";
+import { withBase } from "../base.js";
 
 const STEPS = [
   { key: "add", path: "/onboarding", name: "Add Imitor" },
@@ -36,13 +37,13 @@ export async function mount(ctx) {
 
 function topBar(current) {
   return html`<header class="onb-bar">
-    <a class="onb-brand" href="/runs" title="Runs">${logo(24)}<span class="wordmark">Imitor</span></a>
+    <a class="onb-brand" href="${withBase(`/runs`)}" title="Runs">${logo(24)}<span class="wordmark">Imitor</span></a>
     <ol class="onb-steps" aria-label="Set up steps">${STEPS.map((s, i) => {
       const state = i < current ? "done" : i === current ? "now" : "next";
       return html`${i ? html`<li class="onb-line" aria-hidden="true"></li>` : ""}<li class="onb-step is-${raw(state)}">
-        <a href="${s.path}"${i === current ? raw(' aria-current="step"') : ""}><span class="onb-num" aria-hidden="true">${state === "done" ? icon("check", 11) : i + 1}</span>${s.name}</a></li>`;
+        <a href="${withBase(s.path)}"${i === current ? raw(' aria-current="step"') : ""}><span class="onb-num" aria-hidden="true">${state === "done" ? icon("check", 11) : i + 1}</span>${s.name}</a></li>`;
     })}</ol>
-    <a class="onb-skip" href="/runs">Skip setup</a>
+    <a class="onb-skip" href="${withBase(`/runs`)}">Skip setup</a>
   </header>`;
 }
 

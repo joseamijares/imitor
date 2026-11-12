@@ -4,6 +4,7 @@ import { api } from "../api.js";
 import { html, raw, icon, seg, pill, avatar, codeBlock, safeUrl, skeletonRows, errorState } from "../components.js";
 import { dayGroup, deviceName, schemeName, humanize } from "../format.js";
 import { pageHeader } from "./common.js";
+import { withBase } from "../base.js";
 
 const KINDS = [{ value: "all", label: "All" }, { value: "screenshot", label: "Screenshots" }, { value: "video", label: "Videos" }];
 
@@ -50,7 +51,7 @@ export async function mount(ctx) {
     if (f.kind !== "all") u.set("kind", f.kind);
     for (const k of ["device", "by", "scheme"]) if (f[k]) u.set(k, f[k]);
     const s = u.toString();
-    history.replaceState(null, "", `/captures${s ? "?" + s : ""}`);
+    history.replaceState(null, "", withBase(`/captures${s ? "?" + s : ""}`));
   }
 
   const select = (key, label, anyLabel, values, show) => html`<label class="select-box"><span>${label}</span><select data-filter="${key}">
