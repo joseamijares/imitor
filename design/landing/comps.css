@@ -1,0 +1,59 @@
+/* Shared base for the landing page comps. Tokens come from the Signal identity. */
+@import url("../tokens.css");
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-t-1);
+  font: 400 15px/24px var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "ss01";
+}
+::selection { background: var(--color-acc-bg); color: var(--color-on-acc); }
+a { color: inherit; text-decoration: none; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--color-acc); outline-offset: 3px; border-radius: 6px; }
+img { display: block; max-width: 100%; }
+code, .mono { font-family: var(--font-mono); font-feature-settings: "zero"; }
+
+.wrap { max-width: 1280px; margin: 0 auto; padding: 0 48px; }
+@media (max-width: 720px) { .wrap { padding: 0 16px; } }
+
+/* Navigation */
+.nav { height: 64px; display: flex; align-items: center; gap: 32px; }
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand img { width: 28px; height: 28px; }
+.brand span { font-family: var(--font-wordmark); font-style: italic; font-size: 27px; line-height: 1; letter-spacing: -0.02em; }
+.nav-links { display: flex; gap: 24px; font-size: 14px; color: var(--color-t-2); margin-left: auto; align-items: center; }
+.nav-links a:hover { color: var(--color-t-1); }
+.gh { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border: 1px solid var(--color-line-2); border-radius: 6px; color: var(--color-t-1); }
+.gh svg { width: 16px; height: 16px; }
+@media (max-width: 720px) { .nav-links a.hide-s { display: none; } .nav { gap: 12px; } }
+
+/* Buttons */
+.btn { display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 18px; border-radius: 8px; font-weight: 500; font-size: 15px; white-space: nowrap; }
+.btn-primary { background: var(--color-acc-bg); color: var(--color-on-acc); }
+.btn-primary:hover { filter: brightness(1.06); }
+.btn svg { width: 16px; height: 16px; }
+
+/* Command block */
+.cmd { display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 8px 0 14px; background: var(--color-panel); border: 1px solid var(--color-line-2); border-radius: 8px; font: 400 13px/20px var(--font-mono); color: var(--color-t-1); max-width: 100%; }
+.cmd .p { color: var(--color-t-3); user-select: none; }
+.cmd code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmd button { margin-left: auto; flex-shrink: 0; width: 30px; height: 30px; border: 0; border-radius: 6px; background: transparent; color: var(--color-t-2); display: grid; place-items: center; cursor: pointer; }
+.cmd button:hover { background: var(--color-raised); color: var(--color-t-1); }
+.cmd button svg { width: 16px; height: 16px; }
+
+/* Status marks: genuine (solid), stand-in (dashed accent), not shown (ring with a dash) */
+.mark { width: 16px; height: 16px; flex-shrink: 0; }
+.ok { color: var(--color-ok); }
+.warn { color: var(--color-warn); }
+.muted { color: var(--color-t-3); }
+
+.agent-tile { width: 24px; height: 24px; border-radius: 6px; background: var(--color-raised); box-shadow: inset 0 0 0 1px var(--color-line-2); display: grid; place-items: center; flex-shrink: 0; font-size: 13px; font-weight: 600; }
+.agent-tile img { width: 15px; height: 15px; }
+.demo-tag { font: 400 11px/16px var(--font-mono); color: var(--color-t-3); }
+
+.foot { border-top: 1px solid var(--color-line); padding: 32px 0 48px; color: var(--color-t-3); font-size: 13px; display: flex; flex-wrap: wrap; gap: 12px 32px; align-items: center; }
+.foot a:hover { color: var(--color-t-1); }
