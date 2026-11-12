@@ -35,7 +35,7 @@ It is an imitation and says so. Every shot and preview states what was rendered,
 
 ## Capabilities and Constraints
 
-- Works today: Metro plugin with stand-ins (SQLite via sql.js, Skia box, inert), scripted flows (tap, fill, shot), devices and light/dark, HTML report with problems and stand-in labels; an MCP server with seven tools and the same operations as JSON CLI commands; the review interface (`imitor app`) with runs, captures, problems, agents, a live preview and phone layouts; `imitor export` as a read-only static site; a public demo with invented data; a public site (landing page, How to use, For agents).
+- Works today: Metro plugin with stand-ins (SQLite via sql.js, Skia box, inert), scripted flows (tap, fill, shot), devices and light/dark, HTML report with problems and stand-in labels; an MCP server with eight tools and the same operations as JSON CLI commands; the review interface (`imitor app`) with runs, captures, problems, agents, a live preview and phone layouts; `imitor export` as a read-only static site; a public demo with invented data; a public site (landing page, How to use, For agents).
 - Planned, not built: text size and language controls in the live preview, "pretend iOS / Android" mode, real Skia on web, seeded data states, Android widget renders, Apple surfaces on macOS. A hosted service with sign-in is not built and not promised; `app.<domain>` is reserved for it if one is made.
 - Known limits the interface must state: native navigation chrome, keyboard, exact fonts, entering animations, platform-specific code paths, widgets and notifications.
 - Terminology: "stand-in" (a replaced native module), "flow", "shot", "device", "scheme".

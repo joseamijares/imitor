@@ -22,6 +22,8 @@ function flags(args) {
 const HELP = `imitor: see a React Native / Expo app without a simulator
 
 Usage (run in the app's folder):
+  imitor init               set Imitor up in this Expo app: Metro wrap, imitor.config.json with stand-ins, ignores.
+                            Prints every change as a diff; installs nothing. [--dry-run] [--force] [--yes]
   imitor                    build the web preview, run every flow, write the report
   imitor build              only build the web preview into <out>/app
   imitor shoot              only run the flows from an existing build
@@ -49,6 +51,14 @@ export async function main(args) {
   if (command === "mcp") return (await import("./mcp.mjs")).runStdio(root);
   const print = (value) => console.log(JSON.stringify(value, null, 2));
   const opts = flags(args.slice(1));
+  if (command === "init") {
+    // --yes is accepted and is the default: init never asks questions, so agents can run it.
+    const { init, formatInit } = await import("./init.mjs");
+    const result = init(root, { dryRun: opts.dryRun === true, force: opts.force === true });
+    console.log(formatInit(result));
+    if (result.stop) process.exitCode = 1;
+    return;
+  }
   if (command === "app") {
     const port = opts.port === undefined ? 4173 : Number(opts.port);
     if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error(`--port needs a number, got "${opts.port}"`);

@@ -27,23 +27,40 @@ preview/
 
 ## Set up
 
-1. Install (not on npm yet):
+In the app's folder:
 
-   ```bash
-   npm i -D github:joseamijares/imitor playwright
-   npx playwright install chromium
-   ```
+```bash
+npx imitor init --dry-run   # show every change it would make, as diffs
+npx imitor init             # make them
+```
 
-2. Wrap your Metro config: keep building `config` as you do now (`getDefaultConfig`, Sentry's `getSentryExpoConfig`, your transformers) and wrap what you export. It does nothing unless Imitor is running the build.
+`imitor init` works on Expo apps (with or without their own `ios/` and `android/` folders). It stops and explains on a bare React Native app without Expo. It never installs anything: it ends with the exact install command for what is missing, for the package manager your lockfile shows (npm, yarn, pnpm or bun), and the next commands to run. It is safe to run twice; the second run changes nothing. An agent can do the same through the `imitor_init` MCP tool.
+
+Install (once Imitor is on npm):
+
+```bash
+npm i -D imitor playwright
+npx playwright install chromium
+```
+
+**Not on npm yet:** until the first release is published, install from GitHub instead: `npm i -D github:joseamijares/imitor playwright`.
+
+### What init does
+
+These are the steps `imitor init` takes. Do them by hand if you prefer, or when it asks you to.
+
+1. Wrap your Metro config: keep building `config` as you do now (`getDefaultConfig`, Sentry's `getSentryExpoConfig`, your transformers) and wrap what you export. It does nothing unless Imitor is running the build.
 
    ```js
    // metro.config.js
    module.exports = require("imitor/metro").withImitor(config);
    ```
 
-   Add the output folder (`preview/` by default) to `.gitignore`.
+   init makes this one-line edit when `metro.config.js` (or `.cjs`) exports a variable or a call, creates the standard Expo config already wrapped when there is none, and otherwise leaves the file alone and prints these instructions (an ES module `metro.config.mjs` or `.ts`, or a shape it does not recognise).
 
-3. Add `imitor.config.json` next to `package.json`:
+2. Keep the output folder (`preview/` by default) out of git: init adds it to `.gitignore`, and to `.easignore` when there is one. If the app's runtime version comes from Expo's fingerprint (`"runtimeVersion": { "policy": "fingerprint" }`, or a `fingerprint.config.js`), editing `.gitignore` would change the runtime version and force new store builds, so init leaves it alone and sets `"out"` to a folder it already ignores, such as `dist/imitor`. It also tells you when an ESLint flat config would lint the output folder; it does not edit lint config.
+
+3. Add `imitor.config.json` next to `package.json`. init writes stand-ins for the app's dependencies (see [Stand-ins](#stand-ins)), one device, the colour schemes the app has (`userInterfaceStyle`) and a first flow that opens `/` and takes one shot. It lists packages it does not know that have native code and no web build as "may need a stand-in", without adding them; most Expo packages need none. If the file exists, init shows what would change and writes nothing unless you pass `--force`. A fuller config:
 
    ```json
    {
@@ -78,7 +95,7 @@ preview/
 
    `imitor build` runs `expo export --platform web` with your environment, so `EXPO_PUBLIC_*` values are inlined into the build as usual. If the app needs them to start (a backend URL, a public key), pass harmless placeholders for that command rather than real ones, for example `EXPO_PUBLIC_API_URL=http://127.0.0.1:9 npx imitor build`; the app then sees an unreachable backend.
 
-Other commands: `imitor build`, `imitor shoot` (reuse the last build), `imitor serve` (click around by hand), `imitor app` (the review interface), `imitor export` (the interface as a static site).
+Other commands: `imitor init`, `imitor build`, `imitor shoot` (reuse the last build), `imitor serve` (click around by hand), `imitor app` (the review interface), `imitor export` (the interface as a static site).
 
 ## For agents
 
@@ -92,6 +109,7 @@ Any MCP client works the same way: the command is `npx imitor mcp`, over stdio.
 
 | Tool | What it does |
 | --- | --- |
+| `imitor_init` | Sets Imitor up in the app (Metro wrap, `imitor.config.json`, ignores). Only shows the changes unless `dryRun` is `false` |
 | `imitor_describe` | Lists the flows, devices and stand-ins configured, and whether a build exists |
 | `imitor_build` | Builds the web preview of the app as it is on disk |
 | `imitor_screenshot` | Takes one screenshot and returns the image. Reach the screen by `route`, by `flow`, or with inline `steps` |
@@ -156,6 +174,8 @@ The site holds the app's screenshots and videos. Publish it only where those may
 A key matches the module name as the app imports it (`"some-sdk"` also covers `"some-sdk/sub/path"`), before path aliases are resolved.
 
 Stand-ins only apply to the web build Imitor makes (`IMITOR=1`). Your iOS and Android builds are untouched.
+
+`imitor init` proposes stand-ins from [`src/standins.json`](https://github.com/joseamijares/imitor/blob/main/src/standins.json): packages checked by hand against a real install (does it ship a web build, does it load its native module at import), each with the version checked and why. So far it covers the packages of two Expo SDK 54 apps; only `expo-sqlite` and `@shopify/react-native-skia` needed a built-in stand-in, and everything else there works on the web as it is (its own web build, or a fallback that does nothing). A package with native code that is not in the table and has no web build is listed as "may need a stand-in": try the build, and add `"inert"` or your own file if it fails.
 
 ## Flow steps
 
