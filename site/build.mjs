@@ -154,7 +154,7 @@ function docPage(key, sections, template) {
 }
 
 // Who runs the site and the hosted cloud, and where people write to. Shown on /privacy/ and /terms/.
-export const LEGAL = { operator: "The Imitor maintainer", contact: "hello@imitor.dev" };
+export const LEGAL = { operator: "The Imitor maintainer", contact: "hello@jamaklab.com" };
 export const LEGAL_PAGES = {
   privacy: { title: "Privacy", description: "What imitor.dev and Imitor Cloud collect, where it goes and how long it stays." },
   terms: { title: "Terms", description: "The terms for imitor.dev and Imitor Cloud while it is in development." },
