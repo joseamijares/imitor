@@ -1,8 +1,8 @@
 // Runs: one row per run, grouped Today / Yesterday / Earlier, filtered All / Pull requests / Main.
-import { api, isStatic } from "../api.js";
+import { api, isCloud, isRemote } from "../api.js";
 import { html, raw, icon, statusMark, chip, seg, who, button, skeletonRows, errorState } from "../components.js";
 import { ago, dayGroup, isMainBranch, plural } from "../format.js";
-import { pageHeader, noRuns } from "./common.js";
+import { pageHeader, noRuns, noCloudRuns } from "./common.js";
 import { withBase } from "../base.js";
 
 const FILTERS = [{ value: "all", label: "All" }, { value: "prs", label: "Pull requests" }, { value: "main", label: "Main" }];
@@ -12,8 +12,8 @@ export async function mount(ctx) {
   const { main } = ctx;
   document.title = "Runs · Imitor";
   let filter = FILTERS.some((f) => f.value === ctx.url.searchParams.get("filter")) ? ctx.url.searchParams.get("filter") : "all";
-  // An exported site cannot start a run, so it has no "Run now".
-  const header = pageHeader(html`<h1>Runs</h1>`, isStatic ? "" :
+  // An exported site or Imitor Cloud cannot start a run, so neither has "Run now".
+  const header = pageHeader(html`<h1>Runs</h1>`, isRemote ? "" :
     button("Run now", "secondary", { icon: "play", attrs: 'data-copy="npx imitor" data-copy-toast="Copied “npx imitor”: run it in the project to start a run"', title: "Copy the command that starts a run" }));
   main.innerHTML = String(html`${header}<div class="content">${skeletonRows(8)}</div>`);
 
@@ -28,6 +28,10 @@ export async function mount(ctx) {
   if (!runs.length) {
     await ctx.projectReady();
     if (!ctx.isCurrent()) return;
+    if (isCloud) {
+      content.innerHTML = String(noCloudRuns(ctx.projectName()));
+      return;
+    }
     content.innerHTML = String(noRuns(ctx.projectName()));
     content.querySelector(".state")?.insertAdjacentHTML("beforeend", String(button("Set up step by step", "secondary", { href: "/onboarding", icon: "chevron" })));
     return;

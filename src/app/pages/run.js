@@ -1,5 +1,5 @@
 // A run: tabs Shots, Live, Problems, Captures. Shots groups the run's shots by flow, filtered by device and scheme.
-import { api, isStatic, LIVE_NEEDS_APP } from "../api.js";
+import { api, isRemote, LIVE_UNAVAILABLE } from "../api.js";
 import { html, raw, icon, statusMark, chip, seg, pill, button, thumb, loadingLine, errorState, madeMark } from "../components.js";
 import { ago, deviceName, schemeName, humanize, stepLabel, plural } from "../format.js";
 import { pageHeader } from "./common.js";
@@ -22,9 +22,9 @@ export async function mount(ctx) {
     return;
   }
   if (!ctx.isCurrent()) return;
-  if (isStatic) { await ctx.projectReady(); if (!ctx.isCurrent()) return; }
-  // An exported site has no preview server unless it was exported with --preview-url: say so on the way in.
-  const liveNote = isStatic && !ctx.state.project?.previewUrl ? LIVE_NEEDS_APP : undefined;
+  if (isRemote) { await ctx.projectReady(); if (!ctx.isCurrent()) return; }
+  // An exported site has no preview server unless it was exported with --preview-url, Imitor Cloud has none: say so on the way in.
+  const liveNote = isRemote && !ctx.state.project?.previewUrl ? LIVE_UNAVAILABLE : undefined;
 
   const { run, flows = [], problems = [] } = data;
   const devices = data.devices?.length ? data.devices : [...new Set(flows.map((f) => f.device))];

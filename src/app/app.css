@@ -533,6 +533,22 @@ button.thumb:hover { box-shadow: 0 0 0 1px var(--color-t-3); }
 .set-chips { display: inline-flex; gap: 6px; }
 .set-empty { color: var(--color-t-3); padding: 8px 0; }
 .set-list { margin: 0; padding: 0 0 0 16px; max-width: 360px; color: var(--color-t-2); font-size: var(--text-12); line-height: 18px; }
+.set-value form { margin: 0; }
+
+/* Imitor Cloud: access keys, and the dialog that shows a new key once. */
+.key-create { display: flex; gap: 8px; margin: 4px 0 8px; }
+.key-create .field { flex: 1; }
+.key-dialog-backdrop { position: fixed; inset: 0; z-index: 40; background: var(--color-backdrop); display: grid; place-items: center; padding: 16px; }
+.key-dialog {
+  width: 100%; max-width: 560px; display: flex; flex-direction: column; gap: 12px; padding: 20px;
+  background: var(--color-bg); border: 1px solid var(--color-line-2); border-radius: var(--radius-block); box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.6);
+}
+.key-dialog h2 { margin: 0; font-size: var(--text-16); line-height: var(--leading-16); font-weight: 600; letter-spacing: -0.01em; }
+.key-dialog p { margin: 0; color: var(--color-t-2); }
+.key-dialog-actions { display: flex; justify-content: flex-end; }
+.project-all { padding-top: 8px; border-top: 1px solid var(--color-line); color: var(--color-t-1); text-decoration: none; }
+.project-all:hover { text-decoration: underline; }
+@media (max-width: 699px) { .key-create { flex-direction: column; } .set-value form + form { margin-left: 0; } }
 
 /* Run shots: one row per flow that scrolls sideways instead of wrapping a lone tile. */
 .flows .tiles {

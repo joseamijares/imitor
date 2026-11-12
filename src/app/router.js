@@ -1,6 +1,6 @@
 // A small History-API router. Routes are patterns like "/runs/:id/:tab".
 
-import { stripBase, withBase } from "./base.js";
+import { BASE, stripBase, withBase } from "./base.js";
 
 export function createRouter(routes, onRoute) {
   const compiled = routes.map((r) => {
@@ -36,7 +36,8 @@ export function createRouter(routes, onRoute) {
     if (!a || a.target || a.hasAttribute("download")) return;
     const url = new URL(a.href, location.href);
     const p = stripBase(url.pathname);
-    if (url.origin !== location.origin || p.startsWith("/files/") || p.startsWith("/preview/") || p.startsWith("/api/")) return;
+    // A link outside the base (Imitor Cloud's projects page, its sign-out) is another site's page, not a route here.
+    if (url.origin !== location.origin || (BASE && p === url.pathname) || p.startsWith("/files/") || p.startsWith("/preview/") || p.startsWith("/api/")) return;
     e.preventDefault();
     navigate(url.pathname + url.search + url.hash);
   });

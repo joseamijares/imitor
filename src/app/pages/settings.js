@@ -1,11 +1,20 @@
 // Settings: what Imitor knows about this project, read-only (from GET /api/project), and the app's
 // appearance. There is no settings API: the preview configuration lives in imitor.config.json.
-import { api, isStatic } from "../api.js";
-import { html, seg, pill, chip, skeletonRows, errorState } from "../components.js";
-import { deviceName, schemeName, humanize, plural } from "../format.js";
+// In Imitor Cloud the project is what its newest run says, and two more sections appear: the project's upload keys
+// (made, listed and revoked here; a new key is shown once) and the signed-in account.
+import { api, cloud, CLOUD_PAGES, isCloud, isStatic } from "../api.js";
+import { html, seg, pill, chip, button, codeBlock, skeletonRows, errorState } from "../components.js";
+import { ago, deviceName, schemeName, humanize, plural } from "../format.js";
 import { pageHeader } from "./common.js";
 
-const SECTIONS = [
+const SECTIONS = isCloud ? [
+  { id: "project", label: "Project" },
+  { id: "devices", label: "Devices" },
+  { id: "flows", label: "Flows" },
+  { id: "access-keys", label: "Access keys" },
+  { id: "account", label: "Account" },
+  { id: "appearance", label: "Appearance" },
+] : [
   { id: "project", label: "Project" },
   { id: "devices", label: "Devices" },
   { id: "flows", label: "Flows" },
@@ -13,7 +22,12 @@ const SECTIONS = [
   { id: "appearance", label: "Appearance" },
 ];
 const THEMES = [{ value: "system", label: "System" }, { value: "light", label: "Light" }, { value: "dark", label: "Dark" }];
-const CONFIG_NOTE = html`These come from <span class="mono">imitor.config.json</span> in the app’s folder. Edit that file to change them.`;
+const CONFIG_NOTE = isCloud
+  ? html`These come from the newest run pushed to this project. Edit <span class="mono">imitor.config.json</span> in the app’s folder to change them for the next run.`
+  : html`These come from <span class="mono">imitor.config.json</span> in the app’s folder. Edit that file to change them.`;
+const PROJECT_NOTE = isCloud
+  ? "The branch and commit of the newest run pushed to this project."
+  : isStatic ? "Read from the app’s folder and its git checkout when this site was exported." : html`Read from the app’s folder and its git checkout when <span class="mono">imitor app</span> started.`;
 
 export async function mount(ctx) {
   const { main } = ctx;
@@ -40,11 +54,12 @@ export async function mount(ctx) {
     <div class="set-body">
       <section id="project" class="set-section" aria-labelledby="project-h">
         <h2 id="project-h">Project</h2>
-        <p class="set-note">${isStatic ? "Read from the app’s folder and its git checkout when this site was exported." : html`Read from the app’s folder and its git checkout when <span class="mono">imitor app</span> started.`}</p>
+        <p class="set-note">${PROJECT_NOTE}</p>
         ${row("Name", p.name || "—")}
         ${row("Branch", p.branch ? html`<span class="mono">${p.branch}</span>` : "—")}
         ${row("Commit", p.commit ? chip(p.commit) : "—")}
-        ${row("Preview", p.built ? pill("Built", "ok") : pill("Not built yet", "neutral"), p.built ? "The web build that runs, shots and the live preview use" : html`Run <span class="mono">npx imitor build</span> to build it`)}
+        ${isCloud ? row("Live preview", pill("Not in the cloud", "neutral"), "Imitor Cloud keeps runs and their shots, not a build of the app")
+          : row("Preview", p.built ? pill("Built", "ok") : pill("Not built yet", "neutral"), p.built ? "The web build that runs, shots and the live preview use" : html`Run <span class="mono">npx imitor build</span> to build it`)}
       </section>
 
       <section id="devices" class="set-section" aria-labelledby="devices-h">
@@ -63,14 +78,14 @@ export async function mount(ctx) {
         }) : html`<p class="set-empty">No flows configured yet.</p>`}
       </section>
 
-      <section id="stand-ins" class="set-section" aria-labelledby="stand-ins-h">
+      ${isCloud ? cloudSections() : html`<section id="stand-ins" class="set-section" aria-labelledby="stand-ins-h">
         <h2 id="stand-ins-h">Stand-ins</h2>
         <p class="set-note">${CONFIG_NOTE} A stand-in replaces a native-only module so the app runs on the web; what it draws is not like the real app.</p>
         ${standIns.length ? standIns.map((s) => row(html`<span class="mono">${s.module}</span>`, s.fidelity === "genuine" ? pill("Genuine", "ok") : pill("Stand-in", "warn"), s.fidelity === "genuine" ? `${s.kind}: the real code, running on the web` : `${s.kind}: not drawn like the real app`))
           : html`<p class="set-empty">No stand-ins: every module this app uses runs on the web.</p>`}
         ${p.notCovered?.length ? html`<div class="set-row set-row-top"><div class="set-label"><span>Never shown</span><span class="set-sub">An imitation can’t show these, whatever the configuration</span></div>
           <ul class="set-list">${p.notCovered.map((n) => html`<li>${n}</li>`)}</ul></div>` : ""}
-      </section>
+      </section>`}
 
       <section id="appearance" class="set-section" aria-labelledby="appearance-h">
         <h2 id="appearance-h">Appearance</h2>
@@ -118,6 +133,117 @@ export async function mount(ctx) {
   };
   document.addEventListener("imitor:theme", syncTheme);
 
+  if (isCloud) mountCloud(ctx, main);
+
   const hash = location.hash.slice(1);
   if (SECTIONS.some((s) => s.id === hash)) { main.querySelector(`#${hash}`).scrollIntoView({ block: "start" }); setCurrent(hash); }
+}
+
+/* ---------- Imitor Cloud: access keys and the account ---------- */
+
+function cloudSections() {
+  return html`<section id="access-keys" class="set-section" aria-labelledby="access-keys-h">
+        <h2 id="access-keys-h">Access keys</h2>
+        <p class="set-note">Agents and CI push runs to this project with a key. A key can only upload runs here: it cannot read, list or delete anything. Only a hash of it is kept, so it is shown once, when it is made.</p>
+        <div data-keys>${skeletonRows(2)}</div>
+      </section>
+
+      <section id="account" class="set-section" aria-labelledby="account-h">
+        <h2 id="account-h">Account</h2>
+        <div data-account>${skeletonRows(1)}</div>
+      </section>`;
+}
+
+function keyRow(k, canManage) {
+  const used = k.lastUsedAt ? `last used ${ago(k.lastUsedAt)} ago` : "never used";
+  const sub = html`<span class="mono">${k.prefix}…</span> · made ${ago(k.createdAt)} ago · ${k.revokedAt ? `revoked ${ago(k.revokedAt)} ago` : used}`;
+  const value = k.revokedAt ? pill("Revoked", "neutral")
+    : html`${pill("Active", "ok")}${canManage ? button("Revoke", "secondary", { attrs: String(html`data-revoke="${k.id}" data-name="${k.name}"`) }) : ""}`;
+  return html`<div class="set-row" data-key="${k.id}"><div class="set-label"><span>${k.name}</span><span class="set-sub">${sub}</span></div><div class="set-value">${value}</div></div>`;
+}
+
+async function mountCloud(ctx, main) {
+  const box = main.querySelector("[data-keys]");
+  const account = main.querySelector("[data-account]");
+
+  cloud.me().then((me) => {
+    if (!ctx.isCurrent()) return;
+    account.innerHTML = String(html`<div class="set-row"><div class="set-label"><span>Signed in as</span>${me.user.name && me.user.name !== me.user.email ? html`<span class="set-sub">${me.user.name}</span>` : ""}</div><div class="set-value"><span class="mono t2">${me.user.email}</span></div></div>
+      <div class="set-row"><div class="set-label"><span>Your role</span><span class="set-sub">Owners make and revoke keys</span></div><div class="set-value">${pill(me.project.role === "owner" ? "Owner" : "Member")}</div></div>
+      <div class="set-row"><div class="set-label"><span>Sign out</span><span class="set-sub">Everywhere ends your sessions in every browser</span></div>
+        <div class="set-value"><form method="post" action="${CLOUD_PAGES.signOut}"><button type="submit" class="btn btn-secondary">Sign out</button></form><form method="post" action="${CLOUD_PAGES.signOutEverywhere}"><button type="submit" class="btn btn-secondary">Sign out everywhere</button></form></div></div>
+      <div class="set-row"><div class="set-label"><span>Projects</span><span class="set-sub">Every project you are a member of</span></div><div class="set-value"><a class="btn btn-secondary" href="${CLOUD_PAGES.projects}">All projects</a></div></div>`);
+  }, (e) => { if (ctx.isCurrent()) account.innerHTML = String(errorState("the account", e)); });
+
+  async function load() {
+    let data;
+    try { data = await cloud.keys(); } catch (e) {
+      if (ctx.isCurrent()) box.innerHTML = String(errorState("the access keys", e));
+      return;
+    }
+    if (!ctx.isCurrent()) return;
+    const form = data.canManage ? html`<form class="key-create" data-key-create>
+        <label class="sr-only" for="key-name">Key name</label>
+        <input class="field" id="key-name" name="name" maxlength="60" placeholder="Name it after who pushes: ci, claude-code" autocomplete="off" required>
+        <button type="submit" class="btn btn-primary">Make a key</button></form>`
+      : html`<p class="set-empty">Only an owner of this project can make or revoke keys.</p>`;
+    box.innerHTML = String(html`${form}${data.keys.length ? data.keys.map((k) => keyRow(k, data.canManage)) : html`<p class="set-empty">No keys yet.</p>`}`);
+  }
+
+  box.addEventListener("submit", async (e) => {
+    const form = e.target.closest("[data-key-create]");
+    if (!form) return;
+    e.preventDefault();
+    const submit = form.querySelector("button[type=submit]");
+    submit.disabled = true;
+    try {
+      const { secret, key } = await cloud.createKey(form.elements.name.value.trim());
+      if (!ctx.isCurrent()) return;
+      await load();
+      showSecret(key.name, secret);
+    } catch (err) {
+      ctx.toast(`Couldn’t make the key: ${err.message}`);
+      submit.disabled = false;
+    }
+  });
+  box.addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-revoke]");
+    if (!b) return;
+    if (!confirm(`Revoke the key “${b.dataset.name}”? Pushes that use it stop working at once. This cannot be undone.`)) return;
+    b.disabled = true;
+    try {
+      await cloud.revokeKey(b.dataset.revoke);
+      ctx.toast(`Revoked “${b.dataset.name}”`);
+      await load();
+    } catch (err) {
+      ctx.toast(`Couldn’t revoke the key: ${err.message}`);
+      b.disabled = false;
+    }
+  });
+  await load();
+}
+
+/** The new key, once: nothing this page can read keeps it after the dialog closes. */
+function showSecret(name, secret) {
+  const before = document.activeElement;
+  const box = document.createElement("div");
+  box.className = "key-dialog-backdrop";
+  box.innerHTML = String(html`<div class="key-dialog" role="dialog" aria-modal="true" aria-labelledby="key-dialog-h" aria-describedby="key-dialog-p">
+    <h2 id="key-dialog-h">Copy the key “${name}” now</h2>
+    <p id="key-dialog-p">It is shown this once: Imitor Cloud keeps only a hash of it. If it is lost, revoke it and make another.</p>
+    ${codeBlock([secret])}
+    <p>Push a run with it, from the app’s folder or a CI job (keep it in the CI’s secrets):</p>
+    ${codeBlock([`IMITOR_CLOUD_URL=${location.origin} IMITOR_TOKEN=${secret} npx imitor push`])}
+    <div class="key-dialog-actions">${button("Done", "primary", { attrs: "data-key-done" })}</div>
+  </div>`);
+  const close = () => {
+    box.remove();
+    document.removeEventListener("keydown", onKey);
+    if (before && document.contains(before)) before.focus();
+  };
+  const onKey = (e) => { if (e.key === "Escape") close(); };
+  box.addEventListener("click", (e) => { if (e.target.closest("[data-key-done]")) close(); });
+  document.addEventListener("keydown", onKey);
+  document.body.append(box);
+  box.querySelector(".copy-btn")?.focus();
 }
