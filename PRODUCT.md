@@ -35,8 +35,8 @@ It is an imitation and says so. Every shot and preview states what was rendered,
 
 ## Capabilities and Constraints
 
-- Works today: Metro plugin with stand-ins (SQLite via sql.js, Skia box, inert), scripted flows (tap, fill, shot), devices and light/dark, HTML report with problems and stand-in labels.
-- Planned, not built: an agent interface (MCP server and CLI) so agents can build, run flows, take screenshots and record videos without the app; an app with onboarding, runs, captures, problems and agent connection screens; live preview shell with device frame and controls (device, light/dark, text size, language), "pretend iOS / Android" mode, real Skia on web, seeded data states, Android widget renders, Apple surfaces on macOS.
+- Works today: Metro plugin with stand-ins (SQLite via sql.js, Skia box, inert), scripted flows (tap, fill, shot), devices and light/dark, HTML report with problems and stand-in labels; an MCP server with seven tools and the same operations as JSON CLI commands; the review interface (`imitor app`) with runs, captures, problems, agents, a live preview and phone layouts; `imitor export` as a read-only static site; a public demo with invented data; a public site (landing page, How to use, For agents).
+- Planned, not built: text size and language controls in the live preview, "pretend iOS / Android" mode, real Skia on web, seeded data states, Android widget renders, Apple surfaces on macOS. A hosted service with sign-in is not built and not promised; `app.<domain>` is reserved for it if one is made.
 - Known limits the interface must state: native navigation chrome, keyboard, exact fonts, entering animations, platform-specific code paths, widgets and notifications.
 - Terminology: "stand-in" (a replaced native module), "flow", "shot", "device", "scheme".
 - Undecided: hosted service versus self-hosted only; visual diffs between commits.

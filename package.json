@@ -14,7 +14,8 @@
   "engines": { "node": ">=20" },
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "demo": "node demo/build.mjs"
+    "demo": "node demo/build.mjs",
+    "site": "node site/build.mjs"
   },
   "dependencies": {
     "sql.js": "^1.13.0"
