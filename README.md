@@ -29,8 +29,6 @@ preview/
 
 In the app's folder, install Imitor and Playwright with its Chromium.
 
-**Not on npm yet:** until the first release is published, install from GitHub instead: `npm i -D github:joseamijares/imitor playwright`.
-
 ```bash
 npm i -D imitor playwright
 npx playwright install chromium
