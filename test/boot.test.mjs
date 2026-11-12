@@ -119,8 +119,9 @@ test("describe and the review interface list canvaskit as genuine and skia as a 
 async function openBuild(appDir) {
   const { chromium } = require("playwright");
   const server = await serve(appDir);
-  const b = await chromium.launch();
+  let b = null;
   try {
+    b = await chromium.launch(); // inside the try, so a failed launch still closes the server
     const page = await b.newPage();
     const errors = [];
     const requests = [];
@@ -133,7 +134,7 @@ async function openBuild(appDir) {
     await page.waitForTimeout(100); // nothing else runs after a failed boot
     return { events: await page.evaluate(() => window.events || []), errors, requests, bootError: await page.evaluate(() => window.__imitorBootError ?? null) };
   } finally {
-    await b.close();
+    await b?.close();
     await server.close();
   }
 }
