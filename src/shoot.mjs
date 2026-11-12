@@ -109,7 +109,7 @@ export async function shoot(root, config, baseUrl) {
               const file = `screens/${flow.name}-${step.shot}-${device.name}-${scheme}.png`;
               await page.screenshot({ path: path.join(outDir, file), fullPage: step.fullPage === true });
               const stubs = await visibleStandIns(page);
-              shots.push({ file, flow: flow.name, shot: step.shot, device: device.name, platform: device.platform, width: device.width, height: device.height, scheme, route: new URL(page.url()).pathname, stubs });
+              shots.push({ file, flow: flow.name, shot: step.shot, step: index, device: device.name, platform: device.platform, width: device.width, height: device.height, scheme, route: new URL(page.url()).pathname, stubs });
               lastGoodShot = file;
             }
           } catch (error) {

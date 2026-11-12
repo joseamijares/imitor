@@ -204,9 +204,14 @@ The gate checks the web imitation only. It does not test the native build; it st
 ### GitHub Actions
 
 ```yaml
+on: pull_request
+
 jobs:
   imitor:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write       # push the screenshots to the imitor-shots branch
+      pull-requests: write  # post and update the comment
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -225,6 +230,28 @@ jobs:
 ```
 
 The action installs Chromium, runs the gate, and uploads the report as an artifact whether it passes or fails. Its outputs are `passed`, `shots`, `failed-flows`, `page-errors` and `stand-ins`. Your app needs `imitor` and `playwright` in its dev dependencies, as in Set up.
+
+#### The pull-request comment
+
+On `pull_request` events the action also posts the run on the pull request as one comment, so a reviewer sees the shots without downloading anything, on a phone too. The comment has the verdict, a line of counts, each failed flow with the step it stopped at, the error and the screenshot of where it stopped, and then the shots of each flow in step order as small images (tap one for full size), each with its step name and a note when it contains a stand-in. It shows one device and scheme (the first configured) and at most `max-shots` shots per flow (default 12), and says how many more are in the full report. On every push the same comment is updated in place (it is found by a hidden `<!-- imitor-comment -->` line); the action never posts a second one.
+
+| Input | Default | |
+| --- | --- | --- |
+| `comment` | `"true"` | `"false"` turns the comment off. Ignored on events other than `pull_request`. |
+| `shots-branch` | `imitor-shots` | The branch that holds the images |
+| `max-shots` | `12` | Most shots per flow in the comment |
+
+Where the images live: GitHub only shows images in a comment on a private repository when they come from somewhere the viewer can already read, so the action commits the run's screenshots (and its `manifest.json`) to a separate branch of the same repository, `imitor-shots`, under `pr-<number>/<short commit>/`, using the job's own `GITHUB_TOKEN`. No other service and no secret is involved. The screenshots of your app are therefore stored in your repository and stay exactly as private as the repository is: anyone who can read the repository can open them. On a private repository viewers must be signed in to GitHub with read access to see the images (GitHub's rule for images in comments; the links have the form `https://github.com/<owner>/<repo>/blob/imitor-shots/<path>?raw=true`). Whether the GitHub mobile app shows them has not been checked yet.
+
+The branch has no shared history with your code and never touches your working branch. On every push it keeps only the newest 3 commits' folders per pull request and is rewritten as a single commit, so it does not grow with history (Git hosts can still keep unreferenced old images for a while before cleaning them up). Folders of closed pull requests stay until removed; deleting the branch at any time is safe, the next run creates it again.
+
+The workflow needs the `permissions:` block above: `contents: write` to push the branch and `pull-requests: write` for the comment. Without them (and always for a pull request from a fork, whose token is read-only) the action prints a notice naming the missing permission and carries on: the comment falls back to file paths, or is skipped, and the job's result is still the gate's.
+
+Turn it off with `comment: "false"`. To delete what was stored, delete the `imitor-shots` branch.
+
+The same comment is available locally. `imitor comment` prints it for the last run, with file paths in a table; `--image-base <url>` makes it use images at that address instead (the shot's path is added to the end, or before a `?query`). `--max-shots`, `--device`, `--scheme` and `--fail-on` change what it shows, and `--json` prints the data instead. `imitor publish-shots` is the push the action does; it refuses to run outside GitHub Actions unless given `--force`.
+
+Nobody has seen this comment on a real pull request yet: the Markdown is tested, and publishing is tested against local Git repositories, but the action's publish and comment steps have not run on GitHub.
 
 ### EAS Workflows
 
