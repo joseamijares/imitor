@@ -42,7 +42,9 @@ const define = (o, k, v) => Object.defineProperty(o, k, { value: v, enumerable: 
 export function redact(value, { secrets = [] } = {}) {
   const exact = new Set([...fillValues(value), ...secrets].map(String).filter((s) => s && s !== BLANK));
   // Also as JSON writes them inside a string, since errors quote steps with JSON.stringify ({"value":"say \"hi\""}).
-  const words = [...new Set([...exact].filter((s) => s.length >= MIN_SECRET).flatMap((s) => [s, JSON.stringify(s).slice(1, -1)]))].sort((a, b) => b.length - a.length);
+  // And URL-encoded, as an address carries them (a route "/u/a%20b", a query "?q=a%40b"), in both cases of hex digits.
+  const encoded = (s) => [encodeURI(s), encodeURIComponent(s)].flatMap((e) => [e, e.replace(/%[0-9A-F]{2}/g, (h) => h.toLowerCase())]);
+  const words = [...new Set([...exact].filter((s) => s.length >= MIN_SECRET).flatMap((s) => [s, JSON.stringify(s).slice(1, -1), ...encoded(s)]))].sort((a, b) => b.length - a.length);
   const pattern = words.length ? new RegExp(words.map(escape).join("|"), "g") : null;
   const scrub = (s, key) => (KEEP.has(key) ? s : exact.has(s) ? BLANK : pattern ? s.replace(pattern, BLANK) : s);
 

@@ -16,6 +16,7 @@ import { exportSite } from "../src/export.mjs";
 import { evaluate, formatMarkdown, formatText, reportToGitHub } from "../src/gate.mjs";
 import { createServer } from "../src/mcp.mjs";
 import { publishShots } from "../src/publish.mjs";
+import { buildUpload } from "../src/push.mjs";
 import { writeReport } from "../src/report.mjs";
 import { HIDDEN, checkSecrets, publicStep, refuseSecretRefs, resolveValue, scrub, scrubForRoot, secretValues, secretsUsed } from "../src/secrets.mjs";
 import { serve } from "../src/serve.mjs";
@@ -62,6 +63,11 @@ test("publicStep hides every fill value; scrub removes secret values from any te
   assert.equal(scrub(JSON.stringify({ password: 'ab"cd-ef' }), ['ab"cd-ef']), `{"password":"${HIDDEN}"}`, "JSON-escaped forms too");
   assert.deepEqual(scrub({ file: "screens/alpha-secret.png", route: "/u/alpha-secret" }, values), { file: "screens/alpha-secret.png", route: `/u/${HIDDEN}` }, "paths stay valid");
   assert.deepEqual(scrub({ fill: { value: { env: "A" } } }, values), { fill: { value: { env: "A" } } }, "a reference is kept");
+  const spaced = ["pass word@x"];
+  assert.equal(scrub("/u/pass%20word@x", spaced), `/u/${HIDDEN}`, "URL-encoded as in a path");
+  assert.equal(scrub("?q=pass%20word%40x&r=pass%20word%40X", spaced), `?q=${HIDDEN}&r=pass%20word%40X`, "URL-encoded as in a query");
+  assert.equal(scrub("?q=pass%20word%40x".toLowerCase(), spaced), `?q=${HIDDEN}`, "lower-case hex too");
+  assert.equal(scrub(new URL("https://e.test/u/" + spaced[0]).pathname, spaced), `/u/${HIDDEN}`, "the pathname Imitor records");
   assert.throws(() => refuseSecretRefs([{ tap: "x" }, { fill: { placeholder: "P", value: { env: "PW" } } }]), /step 2: values from the environment can only be used in flows in imitor.config.json/);
   refuseSecretRefs([{ fill: { placeholder: "P", value: "literal" } }]);
   refuseSecretRefs(undefined);
@@ -266,6 +272,12 @@ test("no value a flow types reaches a file, a result, a log, the comment, the ex
   assert.ok(scanned > 10, `scanned ${scanned} files`);
   for (const f of branchFiles) findCanaries(git(remote, "show", `imitor-shots:${f}`), `imitor-shots:${f}`);
   findCanaries(git(remote, "log", "-p", "imitor-shots"), "the shots branch history");
+
+  // A cloud upload built later, with the variables no longer set, still holds no typed value: the run was scrubbed when
+  // it was captured, not only when it is pushed.
+  delete process.env.IMITOR_TEST_EMAIL;
+  delete process.env.IMITOR_TEST_PASSWORD;
+  findCanaries(JSON.stringify(buildUpload(root).body), "a cloud upload built with the variables unset");
 
   // Both fields were filled from secrets and are masked, the password field too ("show password" could reveal it).
   const { chromium } = require("playwright");
