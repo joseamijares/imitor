@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { startAppServer } from "../src/appserver.mjs";
+import { patchHtml } from "../src/build.mjs";
 import { loadConfig } from "../src/config.mjs";
 import { TOOLS } from "../src/mcp.mjs";
 import { appendActivity, appendCapture, recordRun } from "../src/store.mjs";
@@ -68,7 +69,8 @@ test("API: project, runs, one run, captures, problems, agents", async (t) => {
   assert.deepEqual(project.devices.map((d) => d.name), ["pixel-9", "iphone-16", "iphone-se", "small-android"]);
   assert.deepEqual(project.devices[0], { name: "pixel-9", width: 412, height: 915, platform: "android" });
   assert.deepEqual(project.schemes, ["light", "dark"]);
-  assert.deepEqual(project.flows[0].steps, [{ index: 1, action: "shot", label: "01-welcome" }, { index: 2, action: "tap", label: "Continue" }, { index: 3, action: "fill", label: "Plant name" }, { index: 4, action: "shot", label: "02-today" }]);
+  assert.deepEqual(project.flows[0].steps.map(({ step, ...rest }) => rest), [{ index: 1, action: "shot", label: "01-welcome" }, { index: 2, action: "tap", label: "Continue" }, { index: 3, action: "fill", label: "Plant name" }, { index: 4, action: "shot", label: "02-today" }]);
+  assert.deepEqual(project.flows[0].steps[2].step, { fill: { placeholder: "Plant name", value: "Fern" } }, "the step as configured, for replaying it in the live preview");
   assert.deepEqual(project.standIns, [{ module: "expo-sqlite", kind: "sqljs", fidelity: "genuine" }, { module: "@shopify/react-native-skia", kind: "skia", fidelity: "stand-in" }]);
   assert.ok(project.notCovered.length > 3);
 
@@ -154,7 +156,7 @@ test("static: /files/ rejects paths that escape the output folder", async (t) =>
   assert.equal((await request(server.url, "GET", "/files/captures/missing.png")).status, 404);
 });
 
-test("static: /preview/ serves the build with single-page fallback; other paths serve the app page", async (t) => {
+test("static: other paths serve the app page; the preview build is not mixed into the interface's origin", async (t) => {
   const f = fixture();
   const appDir = path.join(f.root, "fake-app");
   fs.mkdirSync(appDir);
@@ -162,22 +164,47 @@ test("static: /preview/ serves the build with single-page fallback; other paths 
   fs.writeFileSync(path.join(appDir, "app.css"), "body{}");
   const server = await startAppServer(f.root, { port: 0, appDir });
   t.after(() => server.close());
-
-  const deep = await request(server.url, "GET", "/preview/plants/fern");
-  assert.equal(deep.status, 200);
-  assert.match(deep.body, /<title>fernwood<\/title>/);
-  assert.match(deep.body, /history\.replaceState/, "the preview routes as if served at the root");
-  assert.equal((await request(server.url, "GET", "/preview/_expo/a.js")).status, 200);
-  assert.equal((await request(server.url, "GET", "/_expo/a.js")).body, "console.log('fernwood')", "root-relative preview assets resolve");
-  assert.equal((await request(server.url, "GET", "/preview/missing.js")).status, 404);
-
-  for (const p of ["/", "/runs/abc/shots", "/agents"]) {
+  for (const p of ["/", "/runs/abc/shots", "/agents", "/runs/abc/live", "/onboarding/stand-ins"]) {
     const r = await request(server.url, "GET", p);
     assert.equal(r.status, 200, p);
     assert.match(r.body, /<div id=app>/);
   }
   assert.equal((await request(server.url, "GET", "/app.css")).type, "text/css");
   assert.equal((await request(server.url, "GET", "/nope.js")).status, 404);
+  assert.equal((await request(server.url, "GET", "/_expo/a.js")).status, 404);
+});
+
+test("preview: its own origin, single-page fallback, the live driver, reloads keep the app", async (t) => {
+  const f = fixture();
+  const server = await startAppServer(f.root, { port: 0, appDir: path.join(f.root, "no-app") });
+  t.after(() => server.close());
+  const project = (await request(server.url, "GET", "/api/project")).json();
+  assert.equal(project.previewUrl, server.previewUrl);
+  assert.match(project.previewUrl, /^http:\/\/127\.0\.0\.1:\d+$/);
+  assert.notEqual(project.previewUrl, server.url);
+  assert.match(project.builtAt, /^\d{4}-\d\d-\d\dT/);
+  assert.equal(project.previewAppearance, false, "the fixture's build predates the scheme override");
+
+  for (const p of ["/", "/plants/fern", "/plants/fern?x=1"]) {
+    const r = await request(project.previewUrl, "GET", p);
+    assert.equal(r.status, 200, p);
+    assert.match(r.body, /<title>fernwood<\/title>/, `${p} serves the app itself, so a reload inside the frame keeps it`);
+    assert.match(r.body, /__imitorLive=\{"parents":\["http:\/\/127\.0\.0\.1:\d+","http:\/\/localhost:\d+"\]\}/);
+    assert.ok(r.body.includes(`__imitorLive={"parents":["${server.url}",`), "the driver obeys only the interface's origin");
+  }
+  assert.equal((await request(project.previewUrl, "GET", "/_expo/a.js")).body, "console.log('fernwood')");
+  const driver = await request(project.previewUrl, "GET", "/__imitor_live/driver.js");
+  assert.equal(driver.status, 200);
+  assert.match(driver.type, /javascript/);
+  assert.match(driver.body, /step-done/);
+  assert.equal((await request(project.previewUrl, "GET", "/missing.js")).status, 404);
+  assert.notEqual((await request(project.previewUrl, "GET", "/../secret.txt")).body, "outside the output folder");
+  assert.equal((await request(server.url, "GET", "/preview/plants/fern")).body.includes("fernwood</title>"), false, "/preview/ is gone");
+
+  // A build with the override reports it.
+  const index = path.join(f.out, "app", "index.html");
+  fs.writeFileSync(index, patchHtml(fs.readFileSync(index, "utf8"), { boot: false }));
+  assert.equal((await request(server.url, "GET", "/api/project")).json().previewAppearance, true);
 });
 
 test("static: a placeholder page when src/app is not there yet", async (t) => {

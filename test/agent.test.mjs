@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { describe, readProblems, recordVideo, runFlow, screenshot } from "../src/agent.mjs";
+import { describe, readProblems, recordVideo, runFlow, screenshot, uniqueSuffix } from "../src/agent.mjs";
 import { createServer, TOOLS } from "../src/mcp.mjs";
 
 // A stand-in for a built preview: one static page with a button, so no Expo build is needed.
@@ -69,10 +69,32 @@ test("runFlow reports each step and where a flow failed", browser, async () => {
   await assert.rejects(() => runFlow(root, { flow: "nope" }), /unknown flow "nope"/);
 });
 
+test("captures taken twice with the same route, flow, device and scheme keep separate files", browser, async () => {
+  const root = fixture();
+  const a = await screenshot(root, { route: "/", device: "pixel-9", scheme: "dark" });
+  const b = await screenshot(root, { route: "/", device: "pixel-9", scheme: "dark" });
+  assert.match(a.file, /captures[\\/]root-pixel-9-dark-[a-z0-9]{6,}\.png$/);
+  assert.notEqual(a.file, b.file);
+  assert.ok(fs.existsSync(path.join(root, a.file)) && fs.existsSync(path.join(root, b.file)));
+  const f1 = await runFlow(root, { flow: "welcome" });
+  const f2 = await runFlow(root, { flow: "welcome" });
+  assert.notEqual(f1.shots[0].file, f2.shots[0].file);
+  assert.ok(f1.shots.every((s) => fs.existsSync(path.join(root, s.file))));
+  const bad1 = await runFlow(root, { flow: "broken" });
+  const bad2 = await runFlow(root, { flow: "broken" });
+  assert.notEqual(bad1.failureShot, bad2.failureShot);
+});
+
+test("uniqueSuffix differs between calls in the same millisecond", () => {
+  const seen = new Set(Array.from({ length: 50 }, () => uniqueSuffix(1794424939715)));
+  assert.ok(seen.size > 40);
+  assert.match(uniqueSuffix(), /^[a-z0-9]{8,}$/);
+});
+
 test("recordVideo writes a webm", browser, async () => {
   const root = fixture();
   const r = await recordVideo(root, { flow: "welcome", holdMs: 100 });
-  assert.match(r.file, /welcome-iphone-16-light\.webm$/);
+  assert.match(r.file, /welcome-iphone-16-light-[a-z0-9]{6,}\.webm$/);
   assert.ok(r.bytes > 1000);
   assert.equal(r.passed, true);
 });

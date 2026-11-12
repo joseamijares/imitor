@@ -66,6 +66,7 @@ export async function mount(ctx) {
     if (!flows.length) { content.innerHTML = String(html`<div class="state"><h2>No shots in this run</h2><p>The run finished without taking any shots. Check the flows in imitor.config.json.</p></div>`); return; }
     if (!list.length) { content.innerHTML = String(html`<p class="placeholder-page">No flows ran on ${deviceName(device)} in the ${scheme} scheme.</p>`); return; }
     content.innerHTML = String(html`<div class="flows">${list.map(flowSection)}</div>`);
+    content.querySelectorAll(".flows .tiles").forEach(edgeFade);
   }
 
   function render() {
@@ -89,6 +90,18 @@ export async function mount(ctx) {
   render();
 }
 
+// A flow's tile row scrolls sideways; fade the edge that has more tiles behind it.
+function edgeFade(el) {
+  const update = () => {
+    const max = el.scrollWidth - el.clientWidth;
+    el.classList.toggle("more-right", el.scrollLeft < max - 1);
+    el.classList.toggle("more-left", el.scrollLeft > 1);
+  };
+  el.addEventListener("scroll", update, { passive: true });
+  new ResizeObserver(update).observe(el);
+  update();
+}
+
 // Attribute values passed through `attrs` are raw, so escape them here.
 function escAttr(s) { return String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;"); }
 
@@ -102,7 +115,7 @@ function flowSection(f) {
       <div class="flow-title">${statusMark(f.status)}<h2>${humanize(f.name)}</h2><span class="mono t3">${plural(f.steps.length, "step")}</span></div>
       <span class="mono t3">${meta}</span>
     </div>
-    <div class="tiles">${f.steps.map((s) => tile(f, s))}</div>
+    <div class="tiles" role="region" tabindex="0" aria-label="${humanize(f.name)} shots, scroll sideways for more">${f.steps.map((s) => tile(f, s))}</div>
   </section>`;
 }
 
@@ -122,7 +135,7 @@ function problemsTab(problems) {
   if (!problems.length) return html`<p class="placeholder-page">No problems in this run.</p>`;
   return html`<div class="run-problem-list">${problems.map((p) => html`<a class="problem-row" href="/problems/${encodeURIComponent(p.id)}">
       ${statusMark(p.kind === "flow-failed" ? "failed" : p.kind === "stand-in" ? "standin" : "off")}
-      <div style="min-width:0"><div class="title">${p.title}</div><div class="sub">${deviceName(p.device)} · ${schemeName(p.scheme)}</div></div>
+      <div style="min-width:0"><div class="title">${p.title}</div><div class="sub">${[deviceName(p.device), schemeName(p.scheme)].filter(Boolean).join(" · ") || (p.detail?.shots?.length ? plural(p.detail.shots.length, "shot") : "")}</div></div>
       <div class="side-col"><span class="mono">${ago(p.at)}</span>${p.seen ? "" : html`<span class="unseen-dot" title="Not seen yet"></span>`}</div>
     </a>`)}</div>`;
 }

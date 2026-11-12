@@ -13,7 +13,7 @@ export async function mount(ctx) {
   const { main, params } = ctx;
   document.title = "Problems · Imitor";
   const q = ctx.url.searchParams;
-  let show = SHOW.some((s) => s.value === q.get("show")) ? q.get("show") : "all";
+  let show = SHOW.some((s) => s.value === q.get("show")) ? q.get("show") : "open";
   let kind = q.get("kind") || "";
   let flow = q.get("flow") || "";
   let selected = params.id || null;
@@ -32,7 +32,7 @@ export async function mount(ctx) {
 
   function syncUrl() {
     const u = new URLSearchParams();
-    if (show !== "all") u.set("show", show);
+    if (show !== "open") u.set("show", show);
     if (kind) u.set("kind", kind);
     if (flow) u.set("flow", flow);
     const s = u.toString();
@@ -59,7 +59,7 @@ export async function mount(ctx) {
       </div>
       ${problems.length ? html`<div class="split">
         <div class="problem-list" role="list">${list.length ? list.map((p) => row(p, p === current)) : html`<p class="placeholder-page">${show === "open" ? "No open problems." : "No problems match these filters."}</p>`}</div>
-        <div class="problem-detail">${current ? detail(current) : html`<p class="detail-empty">Select a problem to see what happened.</p>`}</div>
+        <div class="problem-detail">${current ? detail(current, ctx.state?.project) : html`<p class="detail-empty">Select a problem to see what happened.</p>`}</div>
       </div>` : html`<div class="state"><h2>No problems</h2><p>Nothing failed, errored or needed a new stand-in in the last 20 runs.</p></div>`}`);
     if (current) labelSteps(main, current, ctx);
   }
@@ -110,22 +110,45 @@ export async function mount(ctx) {
 }
 
 const runRef = (r) => html`${r?.pr != null ? html`<span class="mono">#${r.pr}</span>` : ""}${r?.commit ? html`<span class="mono">${r.commit}</span>` : ""}`;
+/** "iPhone 16 · Dark", or "" when the problem has neither (stand-in problems cover a whole run). */
+const placeOf = (p) => [deviceName(p.device), schemeName(p.scheme)].filter(Boolean).join(" · ");
+/** Join the non-empty parts with quiet dots. */
+const joinDots = (parts) => parts.filter((x) => x != null && String(x) !== "").map((x, i) => html`${i ? html`<span class="t3">·</span>` : ""}<span class="sub-part">${x}</span>`);
+/** /files/runs/<id>/screens/first-run-09-today-iphone-16-dark.png -> first-run-09-today-iphone-16-dark */
+const shotName = (u) => decodeURIComponent(String(u).split("/").pop() || "").replace(/\.png$/i, "");
+/** stand-in kind -> native module, from the project (e.g. skia -> @shopify/react-native-skia). */
+const standInModules = (project) => Object.fromEntries((project?.standIns || []).map((s) => [s.kind, s.module]));
+/** "first-run-09-today-iphone-16-dark" -> "iPhone 16 · Dark", from the project's device names; else the file name. */
+function shotLabel(name, project) {
+  const m = name.match(/^(.*)-(light|dark)$/);
+  if (!m) return name;
+  const dev = (project?.devices || []).map((d) => d.name).sort((a, b) => b.length - a.length).find((d) => m[1].endsWith(`-${d}`));
+  return dev ? `${deviceName(dev)} · ${schemeName(m[2])}` : schemeName(m[2]);
+}
+function standInSummary(d, modules) {
+  const kind = d.standIn || String(d.message || "").replace(/ stand-in$/, "") || "a";
+  const mod = modules[kind];
+  const n = d.shots?.length || 0;
+  return `The ${kind} stand-in${mod ? ` (replacing ${mod})` : ""} is on ${n === 1 ? "1 shot" : `${n} shots`} in this run. What it covers is not drawn like the real app: those parts of the shots are placeholders, so check them on a device before trusting them.`;
+}
 
 function row(p, active) {
   return html`<a role="listitem" class="problem-row${active ? " is-active" : ""}" href="/problems/${encodeURIComponent(p.id)}" data-problem="${p.id}"${active ? raw(' aria-current="true"') : ""}>
     ${statusMark(markFor(p), KINDS[p.kind])}
     <div style="min-width:0"><div class="title">${p.title}</div>
-      <div class="sub">${runRef(p.run)}<span class="t3">·</span><span>${deviceName(p.device)} · ${schemeName(p.scheme)}</span></div></div>
+      <div class="sub">${joinDots([runRef(p.run), placeOf(p), p.kind === "stand-in" && p.detail?.shots?.length ? `${p.detail.shots.length} shots` : null])}</div></div>
     <div class="side-col"><span class="mono">${ago(p.at)}</span>${p.seen ? "" : html`<span class="unseen-dot" title="Not seen yet"></span>`}</div>
   </a>`;
 }
 
-function detail(p) {
+function detail(p, project) {
+  const modules = standInModules(project);
   const d = p.detail || {};
   const run = p.run || {};
   const runHref = run.id ? `/runs/${encodeURIComponent(run.id)}` : null;
   const step = d.step != null ? String(d.step) : null;
   const shots = [];
+  if (p.kind === "stand-in" && d.shots?.length) shots.push(...d.shots.map((u) => { const name = shotName(u); return html`<div class="detail-shot" title="${name}"><div class="label">${shotLabel(name, project)}</div>${thumb(u, "stand-in", { small: true, alt: name })}</div>`; }));
   if (d.lastGoodShot) shots.push(html`<div class="detail-shot"><div class="label">Last good step<span class="t3" data-step-label="good"></span></div>${thumb(d.lastGoodShot, "ok", { alt: "Last good step" })}</div>`);
   if (d.failureShot) shots.push(html`<div class="detail-shot${p.kind === "flow-failed" ? " is-failed" : ""}"><div class="label">${p.kind === "flow-failed" ? "Where it stopped" : "Shot"}<span data-step-label="stop">${d.step != null ? `step ${d.step}` : ""}</span></div>${thumb(d.failureShot, p.kind === "flow-failed" ? "failed" : p.kind === "stand-in" ? "stand-in" : "ok", { alt: p.kind === "flow-failed" ? "Where it stopped" : "Shot" })}</div>`);
 
@@ -133,7 +156,7 @@ function detail(p) {
   const summary = {
     "flow-failed": `${where ? `${cap(where)} could not finish` : "The flow could not finish"} on ${deviceName(p.device)} in the ${p.scheme} scheme.${d.stepConfig ? ` The step was ${describeStep(d.stepConfig)}.` : ""}`,
     "page-error": `The page reported an error${where ? ` during ${where}` : ""} on ${deviceName(p.device)} in the ${p.scheme} scheme.`,
-    "stand-in": d.message || "A stand-in replaced a native module on these shots.",
+    "stand-in": standInSummary(d, modules),
   }[p.kind] || d.message || "";
 
   const lines = [];
@@ -146,7 +169,7 @@ function detail(p) {
   return html`<div class="detail-title">${statusMark(markFor(p), KINDS[p.kind])}<h2>${p.title}</h2></div>
     <div class="detail-meta">
       <span>Run</span>${runHref ? html`<a href="${runHref}" class="t2" style="display:inline-flex;gap:6px">${runRef({ pr: run.pr })}<span>${run.title || run.id}</span></a>` : ""}${run.commit ? chip(run.commit) : ""}
-      <span class="t3">·</span><span>${deviceName(p.device)} · ${schemeName(p.scheme)}</span><span class="t3">·</span><span>${ago(p.at)} ago</span>
+      ${placeOf(p) ? html`<span class="t3">·</span><span>${placeOf(p)}</span>` : ""}<span class="t3">·</span><span>${ago(p.at)} ago</span>
       ${p.seen ? html`<span class="t3">·</span><span class="t3">Seen</span>` : ""}
     </div>
     <div class="detail-body">
@@ -202,7 +225,7 @@ export function agentText(list, project) {
     const d = p.detail || {};
     const r = p.run || {};
     const out = [`${i + 1}. ${p.title}`,
-      `   Kind: ${p.kind}. Device: ${p.device}, scheme: ${p.scheme}.`,
+      `   Kind: ${p.kind}.${p.device ? ` Device: ${p.device}.` : ""}${p.scheme ? ` Scheme: ${p.scheme}.` : ""}${p.kind === "stand-in" && d.standIn ? ` Stand-in: ${d.standIn} on ${d.shots?.length || 0} shots.` : ""}`,
       `   Run: ${r.pr != null ? `#${r.pr} ` : ""}${r.commit || ""} "${r.title || r.id || ""}" (${r.id || "unknown run"})`];
     if (d.flow) out.push(`   Flow: ${d.flow}${d.step != null ? `, step ${d.step}` : ""}${d.stepConfig ? `: ${JSON.stringify(d.stepConfig)}` : ""}`);
     if (d.message) out.push(`   ${p.kind === "stand-in" ? "Note" : "Error"}: ${String(d.message).replace(/\n\s*/g, " ")}`);

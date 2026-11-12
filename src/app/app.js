@@ -6,7 +6,12 @@ import { html, icon, logo, navItem, toNode, safeUrl } from "./components.js";
 import * as runsPage from "./pages/runs.js";
 import * as runPage from "./pages/run.js";
 import * as problemsPage from "./pages/problems.js";
+import * as capturesPage from "./pages/captures.js";
+import * as agentsPage from "./pages/agents.js";
+import * as settingsPage from "./pages/settings.js";
 import * as placeholder from "./pages/placeholder.js";
+import * as livePage from "./pages/live.js";
+import * as onboardingPage from "./pages/onboarding.js";
 
 const DOCS_URL = "https://github.com/joseamijares/imitor#readme";
 
@@ -16,14 +21,16 @@ const routes = [
   { path: "/", page: runsPage, nav: "runs" },
   { path: "/runs", page: runsPage, nav: "runs" },
   { path: "/runs/:id", page: runPage, nav: "runs" },
+  { path: "/runs/:id/live", page: livePage, nav: null, bare: true },
   { path: "/runs/:id/:tab", page: runPage, nav: "runs" },
+  { path: "/live", page: livePage, nav: null, bare: true },
   { path: "/problems", page: problemsPage, nav: "problems" },
   { path: "/problems/:id", page: problemsPage, nav: "problems" },
-  { path: "/captures", page: placeholder, nav: "captures", title: "Captures", line: "Captures are coming next: screenshots and videos taken by agents and people will be listed here." },
-  { path: "/agents", page: placeholder, nav: "agents", title: "Agents", line: "Agents are coming next: connect commands, tool switches and recent agent activity." },
-  { path: "/settings", page: placeholder, nav: "settings", title: "Settings", line: "Settings are coming next." },
-  { path: "/onboarding", page: placeholder, nav: null, title: "Add Imitor", line: "Onboarding is coming next." },
-  { path: "/onboarding/:step", page: placeholder, nav: null, title: "Add Imitor", line: "Onboarding is coming next." },
+  { path: "/captures", page: capturesPage, nav: "captures" },
+  { path: "/agents", page: agentsPage, nav: "agents" },
+  { path: "/settings", page: settingsPage, nav: "settings" },
+  { path: "/onboarding", page: onboardingPage, nav: null, bare: true },
+  { path: "/onboarding/:step", page: onboardingPage, nav: null, bare: true },
 ];
 
 /* ---------- Theme: follows the system unless the person picked one ---------- */
@@ -36,6 +43,7 @@ function setTheme(t) {
   if (t === "system") delete document.documentElement.dataset.theme;
   else document.documentElement.dataset.theme = t;
   renderThemeToggle();
+  document.dispatchEvent(new CustomEvent("imitor:theme", { detail: t }));
 }
 function renderThemeToggle() {
   const b = document.querySelector("[data-action=theme]");
@@ -82,6 +90,9 @@ function sidebar() {
 }
 
 function renderSidebar() {
+  // Full-width pages (live preview, onboarding) have no sidebar.
+  app.classList.toggle("is-bare", !!current.bare);
+  if (current.bare) { app.querySelector(".side")?.remove(); return; }
   const old = app.querySelector(".side");
   const node = toNode(sidebar());
   if (old) old.replaceWith(node); else app.prepend(node);
@@ -107,7 +118,7 @@ let generation = 0;
 const router = createRouter(routes, (m, url) => {
   const gen = ++generation;
   const route = m?.route;
-  current = { nav: route ? route.nav : null };
+  current = { nav: route ? route.nav : null, bare: !!route?.bare };
   renderSidebar();
   const main = document.createElement("main");
   main.className = "main";
@@ -120,7 +131,7 @@ const router = createRouter(routes, (m, url) => {
     isCurrent: () => gen === generation,
     navigate: router.navigate,
     reload: () => router.resolve(),
-    refreshCounts, toast, copy,
+    refreshCounts, toast, copy, getTheme, setTheme,
     projectName: () => state.project?.name || "this project",
     projectReady: () => projectReady,
   };
@@ -154,14 +165,16 @@ function toast(message) {
 }
 
 let lastFocus = null;
-function openLightbox(src, alt) {
+// opts: { video: play the file in a <video controls> player, copyLink: add a "Copy link" button }
+function openLightbox(src, alt, opts = {}) {
   const url = safeUrl(src);
   if (!url) return;
   closeLightbox();
   lastFocus = document.activeElement;
-  const box = toNode(html`<div class="lightbox" role="dialog" aria-modal="true" aria-label="${alt || "Shot"}" data-action="lightbox-backdrop">
-    <img src="${url}" alt="${alt || ""}">
+  const box = toNode(html`<div class="lightbox${opts.video ? " is-video" : ""}" role="dialog" aria-modal="true" aria-label="${alt || "Shot"}" data-action="lightbox-backdrop">
+    ${opts.video ? html`<video src="${url}" controls autoplay playsinline preload="auto" aria-label="${alt || "Video"}"></video>` : html`<img src="${url}" alt="${alt || ""}">`}
     <div class="lightbox-bar"><span>${alt || ""}</span>
+      ${opts.copyLink ? html`<button type="button" class="btn btn-secondary" data-copy="${location.origin + url}" data-copy-toast="Link copied">${icon("copy", 14)}Copy link</button>` : ""}
       <a class="btn btn-secondary" href="${url}" target="_blank" rel="noopener">${icon("external", 14)}Open in new tab</a>
       <button type="button" class="btn btn-secondary" data-action="lightbox-close">${icon("close", 14)}Close</button></div>
   </div>`);
@@ -187,7 +200,7 @@ document.addEventListener("click", async (e) => {
     return;
   }
   const shot = t.closest("[data-open-shot]");
-  if (shot) { openLightbox(shot.dataset.openShot, shot.dataset.alt); return; }
+  if (shot) { openLightbox(shot.dataset.openShot, shot.dataset.alt, { video: shot.dataset.video === "1", copyLink: "copyLink" in shot.dataset }); return; }
   const action = t.closest("[data-action]")?.dataset.action;
   if (action === "theme") { const i = THEMES.indexOf(getTheme()); setTheme(THEMES[(i + 1) % THEMES.length]); return; }
   if (action === "retry") { router.resolve(); return; }

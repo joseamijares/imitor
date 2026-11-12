@@ -28,4 +28,6 @@ export const api = {
   run: (id) => request("GET", `/api/runs/${encodeURIComponent(id)}`),
   problems: () => request("GET", "/api/problems"),
   setSeen: (id, seen) => request("POST", `/api/problems/${encodeURIComponent(id)}/seen`, { seen }),
+  captures: () => request("GET", "/api/captures"),
+  agents: () => request("GET", "/api/agents"),
 };

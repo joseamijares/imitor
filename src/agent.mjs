@@ -6,6 +6,11 @@ import { serve } from "./serve.mjs";
 import { doStep, loadPlaywright, settle, visibleStandIns } from "./shoot.mjs";
 
 const slug = (s) => String(s).replace(/^\/+|\/+$/g, "").replace(/[^a-zA-Z0-9]+/g, "-") || "root";
+/**
+ * A short suffix that differs between calls (time in base 36 plus two random characters), so a capture taken again
+ * with the same route, flow, device and scheme gets its own file and older captures/index.jsonl lines keep their image.
+ */
+export const uniqueSuffix = (now = Date.now()) => now.toString(36) + Math.random().toString(36).slice(2, 4).padEnd(2, "0");
 
 function resolveDevice(config, name) {
   if (!name) return config.devices[0];
@@ -98,7 +103,7 @@ export async function screenshot(root, opts = {}) {
     }
     await settle(page, config.settleMs);
     const route = new URL(page.url()).pathname;
-    const name = opts.name || `${slug(flow ? flow.name : route)}-${device.name}-${scheme}`;
+    const name = opts.name || `${slug(flow ? flow.name : route)}-${device.name}-${scheme}-${uniqueSuffix()}`;
     const file = path.join(dir, `${slug(name)}.png`);
     await page.screenshot({ path: file, fullPage: opts.fullPage === true });
     return { file: path.relative(root, file), route, standIns: await visibleStandIns(page), failedAt: run.failedAt, failedStep: run.failedAt ? run.steps.at(-1) : null };
@@ -111,18 +116,19 @@ export async function runFlow(root, opts = {}) {
   const flow = findFlow(config, opts.flow);
   const dir = path.join(root, config.out, "captures", slug(flow.name));
   fs.mkdirSync(dir, { recursive: true });
+  const suffix = uniqueSuffix();
   return withPage(root, config, opts, async ({ page, device, scheme, baseUrl }) => {
     await page.goto(baseUrl + (flow.start || "/"));
     await settle(page, config.settleMs);
     const shots = [];
     const run = await runSteps(page, flow.steps || [], baseUrl, config, async (step) => {
-      const file = path.join(dir, `${slug(step.shot)}-${device.name}-${scheme}.png`);
+      const file = path.join(dir, `${slug(step.shot)}-${device.name}-${scheme}-${suffix}.png`);
       await page.screenshot({ path: file, fullPage: step.fullPage === true });
       shots.push({ shot: step.shot, file: path.relative(root, file), route: new URL(page.url()).pathname, standIns: await visibleStandIns(page) });
     });
     let failureShot = null;
     if (run.failedAt) {
-      const file = path.join(dir, `FAILED-step-${run.failedAt}-${device.name}-${scheme}.png`);
+      const file = path.join(dir, `FAILED-step-${run.failedAt}-${device.name}-${scheme}-${suffix}.png`);
       await page.screenshot({ path: file }).catch(() => {});
       failureShot = path.relative(root, file);
     }
@@ -146,7 +152,7 @@ export async function recordVideo(root, opts = {}) {
       await settle(page, config.settleMs);
       const run = await runSteps(page, flow.steps || [], baseUrl, config, async () => page.waitForTimeout(opts.holdMs ?? 700));
       await page.waitForTimeout(opts.holdMs ?? 700);
-      return { flow: flow.name, passed: !run.failedAt, failedAt: run.failedAt, seconds: Math.round((Date.now() - started) / 100) / 10, name: `${slug(flow.name)}-${device.name}-${scheme}` };
+      return { flow: flow.name, passed: !run.failedAt, failedAt: run.failedAt, seconds: Math.round((Date.now() - started) / 100) / 10, name: `${slug(flow.name)}-${device.name}-${scheme}-${uniqueSuffix()}` };
     });
     const file = path.join(dir, `${result.name}.webm`);
     fs.copyFileSync(await video.path(), file);

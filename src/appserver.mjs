@@ -1,12 +1,16 @@
-// The local server behind `imitor app`: the review interface (src/app/), a JSON API under /api/,
-// the output folder under /files/, and the built web preview under /preview/. Binds to 127.0.0.1 only.
+// The local server behind `imitor app`: the review interface (src/app/), a JSON API under /api/ and the output folder
+// under /files/. The built web preview gets a second server on its own port (GET /api/project names it as previewUrl),
+// so it lives at the root of its own origin like the real app, and its router and reloads work inside the live
+// preview's <iframe>. Both bind to 127.0.0.1 only.
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe } from "./agent.mjs";
+import { MEDIA_MARKER } from "./build.mjs";
 import { DEVICES, loadConfig, NOT_COVERED } from "./config.mjs";
 import { TOOLS } from "./mcp.mjs";
+import { serve } from "./serve.mjs";
 import { agentsData, gitInfo, listCaptures, listProblems, listRuns, readRun, setSeen } from "./store.mjs";
 
 const APP_DIR = fileURLToPath(new URL("./app", import.meta.url));
@@ -60,22 +64,24 @@ function sendFile(req, res, file, extraHeaders = {}) {
   fs.createReadStream(file).pipe(res);
 }
 
-// The preview is built for the site root (its scripts load from /_expo/..., its router reads location.pathname).
-// Served under /preview/, its HTML first rewrites the address to the route alone, so the app routes as if at the root.
-const PREVIEW_SHIM = `<script>(function(){var p=location.pathname.replace(/^\\/preview(?=\\/|$)/,"")||"/";history.replaceState(history.state,"",p+location.search+location.hash)})()</script>`;
+const DRIVER = fs.readFileSync(fileURLToPath(new URL("./live-driver.js", import.meta.url)), "utf8");
+export const DRIVER_PATH = "/__imitor_live/driver.js";
 
-function sendPreview(req, res, appDir, rel) {
-  let found = inside(appDir, rel);
-  if (found.escaped) return json(res, 403, { error: "path escapes the preview folder" });
-  if (!found.file) found = inside(appDir, rel + ".html");
-  if (!found.file) found = inside(appDir, path.join(rel, "index.html"));
-  if (!found.file && !path.extname(rel)) found = inside(appDir, "index.html"); // single-page fallback
-  if (!found.file) return notFound(res, rel ? `no file ${rel} in the preview build` : "no preview build. Run: imitor build");
-  if (path.extname(found.file) !== ".html") return sendFile(req, res, found.file);
-  const html = fs.readFileSync(found.file, "utf8");
-  const patched = /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (m) => m + PREVIEW_SHIM) : PREVIEW_SHIM + html;
-  res.writeHead(200, { "content-type": TYPES[".html"], "cache-control": "no-store" });
-  res.end(req.method === "HEAD" ? undefined : patched);
+/** Every preview page gets the live preview's driver, which obeys only the interface's own origins. */
+function withDriver(parents) {
+  const tag = `<script>window.__imitorLive=${JSON.stringify({ parents }).replace(/</g, "\\u003c")}</script><script src="${DRIVER_PATH}" defer></script>`;
+  return (html) => (/<\/head>/i.test(html) ? html.replace(/<\/head>/i, (m) => tag + m) : html + tag);
+}
+
+/** When the preview was built, and whether its pages carry the scheme and motion override (builds before it do not). */
+function previewInfo(out) {
+  const index = path.join(out, "app", "index.html");
+  try {
+    const stat = fs.statSync(index);
+    return { builtAt: stat.mtime.toISOString(), previewAppearance: fs.readFileSync(index, "utf8").includes(MEDIA_MARKER) };
+  } catch {
+    return { builtAt: null, previewAppearance: false };
+  }
 }
 
 function stepLabel(step) {
@@ -89,7 +95,7 @@ function stepLabel(step) {
   return String(value);
 }
 
-export function projectData(root) {
+export function projectData(root, { previewUrl = null } = {}) {
   const config = loadConfig(root);
   const info = gitInfo(root);
   let name = path.basename(root);
@@ -102,9 +108,11 @@ export function projectData(root) {
     branch: info.branch,
     commit: info.commit,
     built: describe(root).built,
+    previewUrl,
+    ...previewInfo(path.join(root, config.out)),
     devices: [...config.devices, ...builtIn].map((d) => ({ name: d.name, width: d.width, height: d.height, platform: d.platform || null })),
     schemes: config.schemes,
-    flows: config.flows.map((f) => ({ name: f.name, start: f.start || "/", steps: (f.steps || []).map((step, i) => ({ index: i + 1, action: Object.keys(step)[0], label: stepLabel(step) })) })),
+    flows: config.flows.map((f) => ({ name: f.name, start: f.start || "/", steps: (f.steps || []).map((step, i) => ({ index: i + 1, action: Object.keys(step)[0], label: stepLabel(step), step })) })),
     standIns: Object.entries(config.shims).map(([module, kind]) => ({ module, kind, fidelity: kind === "sqljs" ? "genuine" : "stand-in" })),
     notCovered: NOT_COVERED,
   };
@@ -122,9 +130,9 @@ function readBody(req) {
   });
 }
 
-async function api(req, res, root, out, route) {
+async function api(req, res, root, out, route, previewUrl) {
   const get = req.method === "GET" || req.method === "HEAD";
-  if (get && route === "/api/project") return json(res, 200, projectData(root));
+  if (get && route === "/api/project") return json(res, 200, projectData(root, { previewUrl }));
   if (get && route === "/api/runs") return json(res, 200, { runs: listRuns(out) });
   let m = /^\/api\/runs\/([^/]+)$/.exec(route);
   if (get && m) {
@@ -150,8 +158,12 @@ async function api(req, res, root, out, route) {
   return notFound(res, `no endpoint ${req.method} ${route}`);
 }
 
-/** Start the app server on `port` (0 for any free port). Returns { url, port, close }. */
-export function startAppServer(root, { port = 4173, appDir = APP_DIR } = {}) {
+/**
+ * Start the app server on `port` (0 for any free port), and the preview server on any free port.
+ * Returns { url, port, previewUrl, close }.
+ */
+export async function startAppServer(root, { port = 4173, appDir = APP_DIR } = {}) {
+  let previewUrl = null;
   const server = http.createServer(async (req, res) => {
     try {
       // Decode without normalising, so "/files/..%2f.." is seen for what it is and rejected.
@@ -164,20 +176,17 @@ export function startAppServer(root, { port = 4173, appDir = APP_DIR } = {}) {
       }
       if (route.includes("\0")) return json(res, 400, { error: "bad url" });
       const out = path.join(root, loadConfig(root).out);
-      if (route === "/api" || route.startsWith("/api/")) return await api(req, res, root, out, route);
+      if (route === "/api" || route.startsWith("/api/")) return await api(req, res, root, out, route, previewUrl);
       if (req.method !== "GET" && req.method !== "HEAD") return json(res, 405, { error: "method not allowed" });
       if (route.startsWith("/files/")) {
         const found = inside(out, route.slice("/files/".length));
         if (found.escaped) return json(res, 403, { error: "path escapes the output folder" });
         return found.file ? sendFile(req, res, found.file, { "cache-control": "no-cache" }) : notFound(res);
       }
-      const appBuild = path.join(out, "app");
-      if (route === "/preview" || route.startsWith("/preview/")) return sendPreview(req, res, appBuild, route.slice("/preview".length).replace(/^\/+/, ""));
       const rel = route.replace(/^\/+/, "");
-      // The interface's own files, then the preview build's root-relative assets (/_expo/..., /assets/...), then the interface's page.
-      for (const dir of [appDir, appBuild]) {
-        if (!rel || path.basename(rel) === "index.html") continue;
-        const found = inside(dir, rel);
+      // The interface's own files, then its page for every other path (the interface routes with the History API).
+      if (rel && path.basename(rel) !== "index.html") {
+        const found = inside(appDir, rel);
         if (found.escaped) return json(res, 403, { error: "path escapes the folder" });
         if (found.file) return sendFile(req, res, found.file);
       }
@@ -190,11 +199,19 @@ export function startAppServer(root, { port = 4173, appDir = APP_DIR } = {}) {
       else res.destroy();
     }
   });
-  return new Promise((resolve, reject) => {
+  const actual = await new Promise((resolve, reject) => {
     server.once("error", reject);
-    server.listen(port, "127.0.0.1", () => {
-      const actual = server.address().port;
-      resolve({ url: `http://127.0.0.1:${actual}`, port: actual, close: () => new Promise((done) => { server.closeAllConnections?.(); server.close(() => done()); }) });
-    });
+    server.listen(port, "127.0.0.1", () => resolve(server.address().port));
   });
+  const closeApp = () => new Promise((done) => { server.closeAllConnections?.(); server.close(() => done()); });
+  let preview;
+  try {
+    const parents = [`http://127.0.0.1:${actual}`, `http://localhost:${actual}`];
+    preview = await serve(path.join(root, loadConfig(root).out, "app"), { html: withDriver(parents), files: { [DRIVER_PATH]: { type: "text/javascript", body: DRIVER } } });
+  } catch (error) {
+    await closeApp();
+    throw error;
+  }
+  previewUrl = preview.url;
+  return { url: `http://127.0.0.1:${actual}`, port: actual, previewUrl, close: () => Promise.all([closeApp(), preview.close()]).then(() => {}) };
 }

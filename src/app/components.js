@@ -141,16 +141,22 @@ export function navItem({ href, iconName, label, active, count, external }) {
 
 /* ---------- Agent avatar ---------- */
 const AGENT_FILES = { "Claude Code": "claude", Claude: "claude", Cursor: "cursor", "GitHub Actions": "githubactions" };
-/** Official logo on a neutral tile for Claude Code, Cursor and GitHub Actions; an initial for anyone else. */
-export function avatar(name, size = 16) {
-  const n = String(name || "?");
-  const file = AGENT_FILES[n];
+/**
+ * Pass the `by` object ({ name, kind }). Official logo on a neutral tile for Claude Code, Cursor and
+ * GitHub Actions, but only when kind is "agent" or "ci": a person named "Claude" gets an initial.
+ * A bare name string is treated as an agent (for client pickers that name an agent directly).
+ */
+export function avatar(by, size = 16) {
+  const isObj = by != null && typeof by === "object";
+  const n = String((isObj ? by.name : by) || "?");
+  const kind = isObj ? by.kind : "agent";
+  const file = kind === "agent" || kind === "ci" ? AGENT_FILES[n] : null;
   const cls = size >= 24 ? "avatar lg" : "avatar";
   if (file === "cursor") return html`<span class="${cls}" aria-hidden="true"><span class="glyph-mask" style="--glyph:url(/assets/agents/cursor.svg)"></span></span>`;
   if (file) return html`<span class="${cls}" aria-hidden="true"><img src="/assets/agents/${file}.svg" alt=""></span>`;
   return html`<span class="${cls}" aria-hidden="true">${n.trim().charAt(0).toUpperCase() || "?"}</span>`;
 }
-export const who = (by) => html`<span class="who">${avatar(by?.name)}<span>${by?.name || "Unknown"}</span></span>`;
+export const who = (by) => html`<span class="who">${avatar(by || {})}<span>${by?.name || "Unknown"}</span></span>`;
 
 /* ---------- Screen thumbnail ---------- */
 /**

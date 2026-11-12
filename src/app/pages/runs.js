@@ -25,7 +25,9 @@ export async function mount(ctx) {
   const content = main.querySelector(".content");
   if (!runs.length) {
     await ctx.projectReady();
-    if (ctx.isCurrent()) content.innerHTML = String(noRuns(ctx.projectName()));
+    if (!ctx.isCurrent()) return;
+    content.innerHTML = String(noRuns(ctx.projectName()));
+    content.querySelector(".state")?.insertAdjacentHTML("beforeend", String(button("Set up step by step", "secondary", { href: "/onboarding", icon: "chevron" })));
     return;
   }
 
