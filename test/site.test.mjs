@@ -1,6 +1,7 @@
 // The public site (site/) must say only what the README and the code say: every command it shows exists, every MCP
 // tool it names is real, and the documentation pages carry the README sections they are built from.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -66,4 +67,15 @@ test("demo material on the landing page is labelled as demo data", () => {
   assert.match(landing, /fernwood, an invented app/);
   assert.match(landing, /Demo data: fernwood is an invented app/);
   assert.doesNotMatch(landing, /(Imitor|it) is a simulator|replaces? (the )?(final )?check on a real phone/i);
+});
+
+test("the site builds with an empty environment and never reads it (its Vercel project also holds the cloud's secrets)", () => {
+  const run = spawnSync(process.execPath, [path.join(ROOT, "site", "build.mjs")], { cwd: ROOT, env: {}, encoding: "utf8" });
+  assert.equal(run.status, 0, run.stderr);
+  const built = (dir, f) => (dir === "site" && f.startsWith("dist")) || (dir === "demo" && f.startsWith("site"));
+  for (const dir of ["site", "demo"]) {
+    const files = fs.readdirSync(path.join(ROOT, dir), { recursive: true }).filter((f) => /\.(mjs|cjs|js|html)$/.test(f) && !built(dir, f));
+    assert.ok(files.length, dir);
+    for (const f of files) assert.doesNotMatch(fs.readFileSync(path.join(ROOT, dir, f), "utf8"), /process\.env/, `${dir}/${f}`);
+  }
 });

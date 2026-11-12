@@ -1,9 +1,25 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "installCommand": "echo 'The site has no dependencies'",
+  "installCommand": "npm ci --prefix cloud --omit=dev --ignore-scripts",
   "buildCommand": "node site/build.mjs",
   "outputDirectory": "site/dist",
   "trailingSlash": true,
-  "rewrites": [{ "source": "/demo/((?!api/|files/|assets/)[^.]*)", "destination": "/demo/index.html" }]
+  "functions": {
+    "api/*.mjs": { "maxDuration": 30, "includeFiles": "{src/**,cloud/src/**,design/tokens.css}" }
+  },
+  "redirects": [
+    {
+      "source": "/((?!p/|v1/|login|logout|auth/|projects|static/|api/).+)",
+      "has": [{ "type": "host", "value": "imitor-app.vercel.app" }],
+      "destination": "https://imitor.vercel.app/$1",
+      "permanent": false
+    }
+  ],
+  "rewrites": [
+    { "source": "/", "has": [{ "type": "host", "value": "imitor-app.vercel.app" }], "destination": "/api/cloud?__imitor_path=/" },
+    { "source": "/:first(p|v1|login|logout|auth|projects|static)/:rest*", "has": [{ "type": "host", "value": "imitor-app.vercel.app" }], "destination": "/api/cloud?__imitor_path=/:first/:rest*" },
+    { "source": "/demo/((?!api/|files/|assets/)[^.]*)", "destination": "/demo/index.html" }
+  ],
+  "crons": [{ "path": "/api/cron-retention", "schedule": "17 4 * * *" }]
 }

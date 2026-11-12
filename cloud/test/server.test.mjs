@@ -35,7 +35,7 @@ function postChunked(url, headers, total) {
   });
 }
 
-test("a chunked body without a content-length is cut off at 8 MB with 413, through server.mjs", async (t) => {
+test("a chunked body without a content-length is cut off at 4 MB with 413, through server.mjs", async (t) => {
   const deps = { db: memoryDb(), storage: memoryStorage(), log: () => {} };
   const server = await startServer({ port: 0, deps });
   t.after(() => server.close());
@@ -45,7 +45,7 @@ test("a chunked body without a content-length is cut off at 8 MB with 413, throu
 
   const res = await postChunked(`${server.url}/v1/runs`, auth, 64 * 1024 * 1024);
   assert.equal(res.status, 413);
-  assert.match(res.body.error, /the body is larger than 8 MB/);
+  assert.match(res.body.error, /the body is larger than 4 MB/);
   assert.ok(res.written < 3 * MAX_BODY_BYTES, `the server answered after ${res.written} bytes, not at the end of 64 MB`);
   assert.equal(res.headers.connection, "close", "the rest of the body is not read");
   assert.deepEqual(await deps.db.listRuns(project.id), []);

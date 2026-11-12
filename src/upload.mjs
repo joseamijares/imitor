@@ -5,7 +5,8 @@ export const MAX_RUN_BYTES = 300 * 1024 * 1024;
 export const MAX_FILES = 5000;
 export const MAX_LINES = 1000;
 /** The body itself (run.json, manifest.json and the file list), as JSON. */
-export const MAX_BODY_BYTES = 8 * 1024 * 1024;
+// Under the 4.5 MB a Vercel function accepts, so a body is refused with this sentence rather than by the platform.
+export const MAX_BODY_BYTES = 4 * 1024 * 1024;
 export const MAX_DEPTH = 64;
 /** The only files a run upload may carry, by extension. Nothing a browser would run (HTML, JS, SVG). */
 export const UPLOAD_TYPES = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webm": "video/webm", ".json": "application/json" };
