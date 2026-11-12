@@ -88,7 +88,7 @@ test("head reads the object and hashes it, so complete can compare the SHA-256; 
   const bytes = Buffer.from("the bytes of a screenshot");
   const { sdk, calls } = fakeSdk(new Map([["prj/run/a.png", { bytes, contentType: "image/png" }], ["prj/run/m.json", { bytes, contentType: "application/json; charset=utf-8" }]]));
   const storage = blobStorage({ token: TOKEN, sdk });
-  assert.deepEqual(await storage.head("prj/run/a.png"), { size: bytes.length, contentType: "image/png", sha256: createHash("sha256").update(bytes).digest("hex") });
+  assert.deepEqual(await storage.head("prj/run/a.png"), { size: bytes.length, contentType: "image/png", sha256: createHash("sha256").update(bytes).digest("hex"), etag: null });
   assert.equal((await storage.head("prj/run/m.json")).contentType, "application/json");
   assert.equal(await storage.head("prj/run/none.png"), null);
   assert.deepEqual(calls.got[0].opts, { access: "private", token: TOKEN, useCache: false });
@@ -98,7 +98,7 @@ test("list pages through every object under a prefix; delete sends pathnames in 
   const objects = new Map(["p/r/a", "p/r/b", "p/r/c", "p/other/d"].map((k) => [k, { bytes: Buffer.from(k), contentType: "image/png" }]));
   const { sdk, calls } = fakeSdk(objects);
   const storage = blobStorage({ token: TOKEN, sdk });
-  assert.deepEqual(await storage.list("p/r/"), [{ key: "p/r/a", size: 5 }, { key: "p/r/b", size: 5 }, { key: "p/r/c", size: 5 }]);
+  assert.deepEqual(await storage.list("p/r/"), [{ key: "p/r/a", size: 5, etag: null }, { key: "p/r/b", size: 5, etag: null }, { key: "p/r/c", size: 5, etag: null }]);
   assert.equal(calls.listed.length, 2);
   await storage.delete([]);
   assert.equal(calls.deleted.length, 0);
@@ -146,4 +146,20 @@ test("the API version sent with uploads is the one the installed @vercel/blob se
   const dist = SDK_DIST;
   const source = fs.readdirSync(dist).filter((f) => f.endsWith(".js")).map((f) => fs.readFileSync(new URL(f, dist), "utf8")).join("\n");
   assert.match(source, new RegExp(`BLOB_API_VERSION = ${BLOB_API_VERSION};`));
+});
+
+test("deleteIfUnchanged deletes each object only at its etag; one that changed or is gone is left alone", async () => {
+  const { sdk, calls } = fakeSdk();
+  class BlobPreconditionFailedError extends Error {}
+  class BlobNotFoundError extends Error {}
+  sdk.del = async (urls, opts) => {
+    calls.deleted.push({ urls, opts });
+    if (urls === "p/r/changed") throw new BlobPreconditionFailedError("Precondition failed: ETag mismatch.");
+    if (urls === "p/r/gone") throw new BlobNotFoundError("not found");
+    if (urls === "p/r/broken") throw new Error("Vercel is down");
+  };
+  const storage = blobStorage({ token: TOKEN, sdk });
+  await storage.deleteIfUnchanged([{ key: "p/r/a", etag: "e1" }, { key: "p/r/changed", etag: "e2" }, { key: "p/r/gone", etag: "e3" }]);
+  assert.deepEqual(calls.deleted.map((d) => [d.urls, d.opts.ifMatch, d.opts.token]), [["p/r/a", "e1", TOKEN], ["p/r/changed", "e2", TOKEN], ["p/r/gone", "e3", TOKEN]]);
+  await assert.rejects(storage.deleteIfUnchanged([{ key: "p/r/broken", etag: "e4" }]), /Vercel is down/);
 });

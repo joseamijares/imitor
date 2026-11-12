@@ -130,6 +130,29 @@ test("pushing the same run again returns the same id, and only the files not yet
   assert.match(changed.body.error, /already pushed to this project with different files/);
 });
 
+test("a slow re-push never deletes a file another push has since verified, nor signs a URL for a run that became ready", async () => {
+  const s = await setup();
+  const first = await call(s, "POST", "/v1/runs", { body: runBody() });
+  const [webm, ...pngs] = [...first.body.uploads].sort((a, b) => (a.path.endsWith(".webm") ? -1 : 1));
+  await putAll(s, pngs);
+  const key = `${s.fernwood.id}/${first.body.id}/${webm.path}`;
+  s.storage.objects.set(key, { body: Buffer.from("cut"), contentType: "video/webm", etag: "cut-off" });
+
+  // This push lists the cut-off object; before it deletes it, another push uploads the file and completes the run.
+  const list = s.storage.list;
+  s.storage.list = async (prefix) => {
+    const listed = await list(prefix);
+    s.storage.objects.set(key, { body: Buffer.from(DEFAULT_FILES[webm.path]), contentType: "video/webm", etag: "verified" });
+    await s.db.updateRun(first.body.id, { status: "ready" });
+    return listed;
+  };
+  const slow = await call(s, "POST", "/v1/runs", { body: runBody() });
+  s.storage.list = list;
+  assert.equal(slow.status, 200);
+  assert.deepEqual(slow.body.uploads, [], "no URL for a run that is ready");
+  assert.equal(s.storage.objects.get(key)?.etag, "verified", "the verified file is still there");
+});
+
 test("refuses file types, sizes and paths it does not take, before storing anything", async () => {
   const s = await setup();
   const file = (path, contentType, size = 10) => ({ path, size, sha256: "a".repeat(64), contentType });

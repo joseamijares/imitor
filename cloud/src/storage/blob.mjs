@@ -99,7 +99,7 @@ export function blobStorage({ token, sdk = null, now = () => Date.now() }) {
         hash.update(chunk);
       }
       const contentType = (found.blob.contentType || "").split(";")[0].trim() || null;
-      return { size, contentType, sha256: hash.digest("hex") };
+      return { size, contentType, sha256: hash.digest("hex"), etag: found.blob.etag || null };
     },
     async list(prefix) {
       const b = await blob();
@@ -107,7 +107,7 @@ export function blobStorage({ token, sdk = null, now = () => Date.now() }) {
       let cursor;
       do {
         const page = await b.list({ prefix, cursor, limit: 1000, token });
-        for (const o of page.blobs) objects.push({ key: o.pathname, size: o.size });
+        for (const o of page.blobs) objects.push({ key: o.pathname, size: o.size, etag: o.etag || null });
         cursor = page.hasMore ? page.cursor : undefined;
       } while (cursor);
       return objects;
@@ -120,8 +120,22 @@ export function blobStorage({ token, sdk = null, now = () => Date.now() }) {
       // Pathnames, as del() takes them; deleting one that has no object is not an error for Blob.
       await mapLimit(batches, (batch) => b.del(batch, { token }), 4);
     },
+    /** One call per object, since Blob takes ifMatch only for a single pathname. */
+    async deleteIfUnchanged(objects) {
+      const b = await blob();
+      await mapLimit(objects, async ({ key, etag }) => {
+        try {
+          await b.del(key, { token, ifMatch: etag });
+        } catch (error) {
+          if (!UNCHANGED_MISS.has(error?.constructor?.name)) throw error;
+        }
+      });
+    },
   };
 }
+
+/** Errors that mean the object changed or is already gone: left alone, as deleteIfUnchanged promises. */
+const UNCHANGED_MISS = new Set(["BlobPreconditionFailedError", "BlobNotFoundError"]);
 
 /** Blob storage from BLOB_READ_WRITE_TOKEN (set by Vercel when a Blob store is connected); null without it. */
 export function blobFromEnv(env = process.env) {

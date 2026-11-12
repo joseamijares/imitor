@@ -108,19 +108,32 @@ async function missingFiles(storage, run) {
 }
 
 async function listMissing(storage, run) {
-  const found = new Map((await storage.list(runPrefix(run))).map((o) => [o.key, o.size]));
-  const missing = run.files.filter((f) => found.get(f.key) !== f.size);
-  return { missing, stale: missing.filter((f) => found.has(f.key)).map((f) => f.key) };
+  const found = new Map((await storage.list(runPrefix(run))).map((o) => [o.key, o]));
+  const missing = run.files.filter((f) => found.get(f.key)?.size !== f.size);
+  return { missing, stale: missing.filter((f) => found.has(f.key)).map((f) => found.get(f.key)) };
+}
+
+/**
+ * Delete objects only if they are still the ones that were listed or read ({ key, etag }), where the store can say so
+ * (deleteIfUnchanged): a request that was slow to get here must not delete a file another request has since
+ * uploaded and verified. Without that support (or an etag), a plain delete.
+ */
+async function removeIfUnchanged(storage, objects) {
+  if (!objects.length) return;
+  if (storage.deleteIfUnchanged && objects.every((o) => o.etag)) return storage.deleteIfUnchanged(objects);
+  return storage.delete(objects.map((o) => o.key));
 }
 
 /**
  * Files to upload again for a run pushed a second time. An object of the wrong size (an upload cut off) is deleted
  * first: a store that refuses overwrites (the Blob adapter does, so a verified file cannot be replaced afterwards)
- * would otherwise refuse the new upload.
+ * would otherwise refuse the new upload. If the run became ready meanwhile (another push completed it), no URL is
+ * signed at all.
  */
-async function filesToUpload(storage, run) {
-  const { missing, stale } = await listMissing(storage, run);
-  if (stale.length) await storage.delete(stale);
+async function filesToUpload(deps, run) {
+  const { missing, stale } = await listMissing(deps.storage, run);
+  if (stale.length) await removeIfUnchanged(deps.storage, stale);
+  if ((await deps.db.getRun(run.id))?.status !== "uploading") return [];
   return missing;
 }
 
@@ -129,7 +142,7 @@ async function unverifiedFiles(deps, files) {
   const checked = await mapLimit(files, async (f) => {
     const o = await deps.storage.head(f.key);
     const sum = o?.sha256 === f.sha256 || (o?.sha256 == null && deps.allowUnverified === true);
-    return o && o.size === f.size && o.contentType === f.contentType && sum ? null : f;
+    return o && o.size === f.size && o.contentType === f.contentType && sum ? null : { file: f, etag: o?.etag ?? null };
   });
   return checked.filter(Boolean);
 }
@@ -171,7 +184,7 @@ async function createRun(request, deps, key) {
     return fail(409, `run ${clean.clientRunId} was already pushed to this project with different files; push it again under a new run`, { id: run.id });
   }
   if (run.status === "ready") return json(200, { id: run.id, status: run.status, uploads: [], complete: `/v1/runs/${run.id}/complete`, url: await runUrl(deps, run) });
-  return json(200, { id: run.id, status: run.status, uploads: await uploadsFor(storage, await filesToUpload(storage, run)), complete: `/v1/runs/${run.id}/complete` });
+  return json(200, { id: run.id, status: run.status, uploads: await uploadsFor(storage, await filesToUpload(deps, run)), complete: `/v1/runs/${run.id}/complete` });
 }
 
 async function completeRun(deps, key, id) {
@@ -188,9 +201,10 @@ async function completeRun(deps, key, id) {
   if (run.status !== "ready") {
     const missing = await missingFiles(storage, run);
     const present = run.files.filter((f) => !missing.includes(f));
-    const wrong = await unverifiedFiles(deps, present);
-    // Deleted, so the next push lists them as missing and uploads them again.
-    if (wrong.length) await storage.delete(wrong.map((f) => f.key)).catch((error) => deps.log?.(error));
+    const checked = await unverifiedFiles(deps, present);
+    const wrong = checked.map((c) => c.file);
+    // Deleted (if unchanged since it was read), so the next push lists them as missing and uploads them again.
+    if (checked.length) await removeIfUnchanged(storage, checked.map((c) => ({ key: c.file.key, etag: c.etag }))).catch((error) => deps.log?.(error));
     const bad = [...missing, ...wrong];
     if (bad.length) {
       const names = bad.slice(0, 5).map((f) => f.path).join(", ");
