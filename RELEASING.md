@@ -33,6 +33,29 @@ How to publish `imitor` to npm. Only the owner publishes.
 
 ## Publish
 
+There are two ways. Both publish the same thing.
+
+### From GitHub Actions (preferred)
+
+`.github/workflows/publish.yml` publishes when a version tag is pushed. It checks that the tag matches `package.json`, that the version is not on npm yet, runs the full test suite including the browser tests, and publishes with a provenance statement.
+
+One-time set-up: give the repository an npm token as the `NPM_TOKEN` Actions secret. The token must be able to publish a new package (an automation token, or a granular token with read and write access to all packages or to `imitor`) and must not ask for a one-time code. To copy it from 1Password without it touching the clipboard or a file:
+
+```bash
+op read "op://<vault>/<item>/credential" | gh secret set NPM_TOKEN --repo joseamijares/imitor
+```
+
+Rehearse first: run the workflow by hand from the Actions tab. A manual run is a dry run: it does everything except upload, and needs no token.
+
+Then tag the commit on `main` whose `package.json` has the version to publish:
+
+```bash
+git tag v<version>
+git push origin v<version>
+```
+
+### From your own machine
+
 From the repository's root (`git rev-parse --show-toplevel`), on clean `main`:
 
 ```bash
@@ -40,12 +63,14 @@ npm login
 npm publish --access public
 ```
 
-## Tag
+Then tag it:
 
 ```bash
 git tag v<version>
 git push origin v<version>
 ```
+
+Pushing the tag starts the workflow, which will stop at "This version is not on npm yet" because you already published it. That failure is expected in this case.
 
 Then make a GitHub release from the tag. The GitHub Action is used as `joseamijares/imitor@main` in the README; tag-pinned use (`@v<version>`) works once the tag exists.
 

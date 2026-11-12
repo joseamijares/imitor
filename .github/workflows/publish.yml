@@ -1,0 +1,79 @@
+name: publish
+
+# Publishes the package to npm when a version tag is pushed (v0.1.0, v0.2.0, ...).
+# Run it by hand from the Actions tab to rehearse: that is a dry run and uploads nothing.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # lets npm attach a provenance statement linking the package to this commit
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: The tag matches package.json
+        if: github.event_name == 'push'
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          if [ "$TAG" != "v$version" ]; then
+            echo "::error::Tag $TAG does not match package.json version $version. Tag the commit whose package.json has the version you mean to publish."
+            exit 1
+          fi
+
+      - name: This version is not on npm yet
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          if npm view "imitor@$version" version > /dev/null 2>&1; then
+            echo "::error::imitor@$version is already on npm. npm never lets a version be reused: bump the version in package.json and package-lock.json."
+            exit 1
+          fi
+          echo "imitor@$version is free to publish."
+
+      - run: npm install --no-audit --no-fund
+      # The browser tests skip themselves without Playwright, so install it to run them before publishing.
+      - run: npm install --no-save --no-audit --no-fund playwright
+      - run: npx playwright install --with-deps chromium
+      - run: npm test
+
+      - name: What will be published
+        run: npm pack --dry-run
+
+      - name: Rehearsal (manual runs publish nothing)
+        if: github.event_name == 'workflow_dispatch'
+        run: npm publish --dry-run --access public
+
+      - name: The npm token is set
+        if: github.event_name == 'push'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::error::The NPM_TOKEN secret is not set on this repository. Add an npm token that can publish (see RELEASING.md), then re-run this job."
+            exit 1
+          fi
+
+      - name: Publish
+        if: github.event_name == 'push'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --provenance --access public
