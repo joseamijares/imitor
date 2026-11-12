@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { flowChain, prepareContext, readSeedProblems, stateInfo } from "./state.mjs";
 
 // Prefer the app's own playwright, then Imitor's, then a global install.
 export function loadPlaywright(root) {
@@ -62,6 +63,12 @@ export function watchDialogs(page, onDialog) {
 export const visibleStandIns = (page) =>
   page.evaluate(() => [...new Set([...document.querySelectorAll("[data-imitor-stub]")].map((n) => n.getAttribute("data-imitor-stub")))]);
 
+/** Where a step run before a flow's own steps is: "in "onboarding", which this flow runs after, step 3", or "opening /x". */
+export function afterWhere(pre, flowName) {
+  if (pre.flow === flowName) return `opening its start ${pre.step.goto}, after the flows it runs after`;
+  return `in "${pre.flow}", which this flow runs after, ${pre.index ? `step ${pre.index}` : `opening ${pre.step.goto}`}`;
+}
+
 export async function shoot(root, config, baseUrl) {
   const { chromium } = loadPlaywright(root);
   const outDir = path.resolve(root, config.out);
@@ -86,6 +93,9 @@ export async function shoot(root, config, baseUrl) {
             isMobile: true,
             hasTouch: true,
           });
+          const setup = await prepareContext(context, flow);
+          const { state, seeded, clock } = stateInfo(flow);
+          const chain = flowChain(config, flow);
           const page = await context.newPage();
           const errors = [];
           page.on("pageerror", (e) => errors.push(String(e.message).split("\n")[0]));
@@ -96,9 +106,16 @@ export async function shoot(root, config, baseUrl) {
           let index = 0; // 1-based index of the step being run; 0 while opening the start route
           watchDialogs(page, (message) => problems.push({ where, kind: "dialog", message, ...at, step: index }));
           let lastGoodShot = null;
+          let pre = null; // the step of a flow this one runs after ("after"), while those run
           try {
-            await page.goto(baseUrl + (flow.start || "/"));
+            await page.goto(baseUrl + chain.start);
             await settle(page, config.settleMs);
+            for (const b of chain.before) {
+              pre = b;
+              await doStep(page, b.step, baseUrl);
+              if (!b.step.wait) await settle(page, 150);
+            }
+            pre = null;
             for (const step of steps) {
               index++;
               if (await doStep(page, step, baseUrl)) {
@@ -109,15 +126,18 @@ export async function shoot(root, config, baseUrl) {
               const file = `screens/${flow.name}-${step.shot}-${device.name}-${scheme}.png`;
               await page.screenshot({ path: path.join(outDir, file), fullPage: step.fullPage === true });
               const stubs = await visibleStandIns(page);
-              shots.push({ file, flow: flow.name, shot: step.shot, device: device.name, platform: device.platform, width: device.width, height: device.height, scheme, route: new URL(page.url()).pathname, stubs });
+              shots.push({ file, flow: flow.name, shot: step.shot, step: index, device: device.name, platform: device.platform, width: device.width, height: device.height, scheme, route: new URL(page.url()).pathname, stubs, state, seeded, clock });
               lastGoodShot = file;
             }
           } catch (error) {
             const file = `screens/${flow.name}-FAILED-${device.name}-${scheme}.png`;
             await page.screenshot({ path: path.join(outDir, file) }).catch(() => {});
             const notReached = steps.slice(Math.max(0, index - 1)).filter((s) => s.shot).map((s) => s.shot);
-            problems.push({ where, kind: "flow-failed", message: String(error.message).split("\n")[0], file, ...at, step: index, stepConfig: steps[index - 1] ?? null, lastGoodShot, notReached });
+            const message = String(error.message).split("\n")[0];
+            if (pre) problems.push({ where, kind: "flow-failed", message: `${afterWhere(pre, flow.name)}: ${message}`, error: message, file, ...at, step: 0, stepConfig: pre.step, after: { flow: pre.flow, step: pre.index }, lastGoodShot, notReached });
+            else problems.push({ where, kind: "flow-failed", message, file, ...at, step: index, stepConfig: steps[index - 1] ?? null, lastGoodShot, notReached });
           }
+          for (const message of await readSeedProblems(page, setup)) problems.push({ where, kind: "seed-failed", message, ...at });
           for (const message of [...new Set(errors)]) problems.push({ where, kind: "page-error", message, ...at });
           await context.close();
         }

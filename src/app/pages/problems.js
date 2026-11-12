@@ -6,7 +6,7 @@ import { ago, deviceName, schemeName, humanize, stepLabel } from "../format.js";
 import { pageHeader } from "./common.js";
 
 const SHOW = [{ value: "open", label: "Open" }, { value: "seen", label: "Seen" }, { value: "all", label: "All" }];
-const KINDS = { "flow-failed": "Flow failed", "page-error": "Page error", "stand-in": "Stand-in", dialog: "Dialog" };
+const KINDS = { "flow-failed": "Flow failed", "page-error": "Page error", "stand-in": "Stand-in", dialog: "Dialog", "seed-failed": "Seed problem" };
 const isPhone = () => matchMedia("(max-width: 700px)").matches; // the phone layout in app.css
 const markFor = (p) => (p.kind === "flow-failed" ? "failed" : p.kind === "stand-in" ? "standin" : "off");
 

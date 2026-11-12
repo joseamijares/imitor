@@ -2,6 +2,7 @@ import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { NOT_COVERED } from "./config.mjs";
+import { stateInfo } from "./state.mjs";
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
@@ -23,6 +24,8 @@ export function writeReport(root, config, result) {
     generatedAt: new Date().toISOString(),
     renderer: "react-native-web in headless Chromium",
     shims: config.shims,
+    // What each flow started from: the flow it runs after, the state label its stand-ins read, whether it was seeded, the clock.
+    flows: config.flows.map((f) => ({ name: f.name, ...stateInfo(f) })),
     shots: result.shots,
     problems: result.problems,
     notCovered: NOT_COVERED,
@@ -38,7 +41,7 @@ export function writeReport(root, config, result) {
   const sections = [...groups].map(([title, shots]) => `
     <section><h2>${esc(title)}</h2><div class="row">${shots.map((s) => `
       <figure><a href="${esc(s.file)}"><img loading="lazy" src="${esc(s.file)}" width="${s.width}" height="${s.height}" alt="${esc(title)} ${esc(s.device)} ${esc(s.scheme)}"></a>
-      <figcaption>${esc(s.device)} · ${esc(s.scheme)}${s.stubs.length ? ` <span class="warn">stand-in: ${esc(s.stubs.join(", "))}</span>` : ""}</figcaption></figure>`).join("")}
+      <figcaption>${esc(s.device)} · ${esc(s.scheme)}${s.stubs.length ? ` <span class="warn">stand-in: ${esc(s.stubs.join(", "))}</span>` : ""}${s.state || s.seeded ? ` <span class="made" title="Invented data, not the real app's">${[s.state ? `state: ${esc(s.state)}` : "", s.seeded ? "seeded" : ""].filter(Boolean).join(" · ")}</span>` : ""}</figcaption></figure>`).join("")}
     </div></section>`).join("");
   const problems = result.problems.length ? `<section><h2>Problems (${result.problems.length})</h2><ul class="problems">${result.problems.map((p) => `<li><b>${esc(p.kind)}</b> ${esc(p.where)}: ${esc(p.message)}</li>`).join("")}</ul></section>` : "";
 
@@ -51,7 +54,7 @@ body{margin:0;padding:24px 16px 64px;background:var(--bg);color:var(--fg);font:1
 main{max-width:1200px;margin:0 auto}h1{font-size:22px;margin:0 0 4px}h2{font-size:15px;margin:32px 0 12px;padding-top:16px;border-top:1px solid var(--line)}
 .meta,figcaption{color:var(--mut);font-size:13px}.row{display:flex;gap:16px;overflow-x:auto;padding-bottom:8px}
 figure{margin:0;flex:none}img{display:block;width:240px;height:auto;border-radius:22px;border:1px solid var(--line)}
-figcaption{margin-top:6px;max-width:240px}.warn{color:var(--warn)}.problems{padding-left:18px;font-size:13px}
+figcaption{margin-top:6px;max-width:240px}.warn{color:var(--warn)}.made{color:var(--mut);border:1px dashed var(--line);border-radius:4px;padding:0 4px}.problems{padding-left:18px;font-size:13px}
 details{margin-top:12px;font-size:13px;color:var(--mut)}
 </style><main>
 <h1>${esc(app)} preview</h1>
