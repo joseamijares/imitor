@@ -60,17 +60,19 @@ export function sizeProblem(value) {
 
 /**
  * Every file the body points at, as { at, path, holder, key, optional } with holder[key] === path. An optional one may
- * be left out (a failure screenshot that could not be taken); a shot's file may not.
+ * be left out (a failure screenshot that could not be taken); a shot's file may not. Parts of the wrong shape are
+ * skipped, so it can run before checkUpload.
  */
 export function fileRefs(body) {
   const refs = [];
+  const list = (v) => (Array.isArray(v) ? v : []);
   const add = (holder, key, at, optional = true) => {
     if (isObject(holder) && holder[key] != null) refs.push({ at: `${at}.${key}`, path: holder[key], holder, key, optional });
   };
-  body.manifest.shots.forEach((s, i) => add(s, "file", `manifest.shots[${i}]`, false));
-  body.manifest.problems.forEach((p, i) => ["file", "lastGoodShot"].forEach((k) => add(p, k, `manifest.problems[${i}]`)));
-  body.run.flows.forEach((f, i) => f.steps.forEach((s, j) => add(s, "shot", `run.flows[${i}].steps[${j}]`)));
-  (body.captures || []).forEach((c, i) => add(c, "file", `captures[${i}]`));
+  list(body?.manifest?.shots).forEach((s, i) => add(s, "file", `manifest.shots[${i}]`, false));
+  list(body?.manifest?.problems).forEach((p, i) => ["file", "lastGoodShot"].forEach((k) => add(p, k, `manifest.problems[${i}]`)));
+  list(body?.run?.flows).forEach((f, i) => list(f?.steps).forEach((s, j) => add(s, "shot", `run.flows[${i}].steps[${j}]`)));
+  list(body?.captures).forEach((c, i) => add(c, "file", `captures[${i}]`));
   return refs;
 }
 
