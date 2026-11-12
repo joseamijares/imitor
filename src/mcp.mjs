@@ -15,7 +15,7 @@ const target = { device: { type: "string", description: "Device name, e.g. iphon
 export const TOOLS = [
   { name: "imitor_describe", description: "List the flows, devices and stand-ins configured for this app, and whether a preview build exists. Call this first.", inputSchema: { type: "object", properties: {} } },
   { name: "imitor_build", description: "Build the web preview of the app as it is on disk now. Takes about a minute. Needed before any other tool, and again after code changes.", inputSchema: { type: "object", properties: {} } },
-  { name: "imitor_screenshot", description: "Take one screenshot and return it as an image. Reach the screen with `route` (deep link), with `flow` (runs that flow's steps first), with inline `steps`, or a combination. Each call starts from a fresh, empty app state. The result lists stand-ins visible in the shot: parts that are NOT rendered like the real app.", inputSchema: { type: "object", properties: { route: { type: "string", description: "Path to open, e.g. /settings" }, flow: { type: "string", description: "Name of a configured flow to run before the shot" }, steps: { type: "array", description: 'Extra steps to run before the shot, e.g. [{"tap":"Continue"},{"fill":{"placeholder":"Name","value":"Ada"}}]', items: { type: "object" } }, ...target, fullPage: { type: "boolean", description: "Capture the whole scroll height" }, name: { type: "string", description: "File name for the capture, without extension" } } } },
+  { name: "imitor_screenshot", description: "Take one screenshot and return it as an image. Reach the screen with `route` (deep link), with `flow` (runs that flow's steps first), with inline `steps`, or a combination. Each call starts from a fresh app state: empty, or the flow's (else the config's) after/state/seed/clock settings. The result lists stand-ins visible in the shot: parts that are NOT rendered like the real app.", inputSchema: { type: "object", properties: { route: { type: "string", description: "Path to open, e.g. /settings" }, flow: { type: "string", description: "Name of a configured flow to run before the shot" }, steps: { type: "array", description: 'Extra steps to run before the shot, e.g. [{"tap":"Continue"},{"fill":{"placeholder":"Name","value":"Ada"}}]', items: { type: "object" } }, ...target, fullPage: { type: "boolean", description: "Capture the whole scroll height" }, state: { type: "string", description: "The state label handed to the app's stand-ins (globalThis.__imitor.state), in place of the flow's or the config's" }, name: { type: "string", description: "File name for the capture, without extension" } } } },
   { name: "imitor_run_flow", description: "Run one configured flow step by step. Returns each step's result, the shots it took, and where it failed if it did (with a screenshot of that moment).", inputSchema: { type: "object", properties: { flow: { type: "string" }, ...target }, required: ["flow"] } },
   { name: "imitor_record_video", description: "Record a .webm video of one configured flow as it plays, with animations on. Returns the file path.", inputSchema: { type: "object", properties: { flow: { type: "string" }, ...target }, required: ["flow"] } },
   { name: "imitor_read_problems", description: "Read the problems (failed steps, page errors), stand-ins seen and coverage limits from the last full run.", inputSchema: { type: "object", properties: {} } },
@@ -46,19 +46,19 @@ export function createServer(root) {
       const result = await screenshot(root, { ...args, scale: 1 });
       recordCaptures(out(), root, "screenshot", { ...result, flow: args.flow || null }, by());
       const image = fs.readFileSync(path.join(root, result.file)).toString("base64");
-      return { content: [text(result), { type: "image", data: image, mimeType: "image/png" }], summary: `took a screenshot of ${result.route} on ${result.device}${result.failedAt ? `, but step ${result.failedAt} failed on the way` : ""}` };
+      return { content: [text(result), { type: "image", data: image, mimeType: "image/png" }], summary: `took a screenshot of ${result.route} on ${result.device}${result.failedAt !== null ? `, but ${result.failedIn ? `step ${result.failedAt} of ${result.failedIn}` : `step ${result.failedAt}`} failed on the way` : ""}` };
     },
     imitor_run_flow: async (args) => {
       const result = await runFlow(root, args);
       recordCaptures(out(), root, "flow", result, by());
       const total = (loadConfig(root).flows.find((f) => f.name === result.flow)?.steps || []).length;
-      const passed = result.steps.filter((s) => s.ok).length;
-      return { content: [text(result)], summary: `ran ${result.flow}, ${passed} of ${plural(total, "step")} passed${result.failedAt ? `; failed at step ${result.failedAt}` : ""}` };
+      const passed = result.steps.filter((s) => s.ok && !s.after).length;
+      return { content: [text(result)], summary: `ran ${result.flow}, ${passed} of ${plural(total, "step")} passed${result.failedAt !== null ? `; failed at step ${result.failedAt}${result.failedIn && result.failedIn !== result.flow ? ` of ${result.failedIn}, which it runs after` : ""}` : ""}${result.seedErrors?.length ? `; ${plural(result.seedErrors.length, "seed problem")}` : ""}` };
     },
     imitor_record_video: async (args) => {
       const result = await recordVideo(root, args);
       recordCaptures(out(), root, "record", result, by());
-      return { content: [text(result)], summary: `recorded ${result.flow} (${result.seconds} s)${result.passed ? "" : `; failed at step ${result.failedAt}`}` };
+      return { content: [text(result)], summary: `recorded ${result.flow} (${result.seconds} s)${result.passed ? "" : result.failedAt !== null ? `; failed at step ${result.failedAt}${result.failedIn && result.failedIn !== result.flow ? ` of ${result.failedIn}` : ""}` : "; the seed had problems"}` };
     },
     imitor_read_problems: async () => {
       const result = readProblems(root);

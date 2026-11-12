@@ -30,14 +30,17 @@ export function evaluate(manifest, { failOn = "flows" } = {}) {
     shot: p.file || null,
   }));
   const pageErrors = problems.filter((p) => p.kind === "page-error").map((p) => ({ where: p.flow ? `${p.flow} on ${p.device}, ${p.scheme}` : p.where, message: p.message }));
+  const seedProblems = problems.filter((p) => p.kind === "seed-failed").map((p) => ({ where: p.flow ? `${p.flow} on ${p.device}, ${p.scheme}` : p.where, message: p.message }));
   const standIns = [...new Set(shots.flatMap((s) => s.stubs || []))].sort();
   const shotsWithStandIns = shots.filter((s) => (s.stubs || []).length).length;
   const reasons = [];
   if (failedFlows.length) reasons.push(`${failedFlows.length} flow${failedFlows.length === 1 ? "" : "s"} failed`);
+  // A flow whose seed failed did not run from the data it was configured with, so it counts like a failed flow.
+  if (seedProblems.length) reasons.push(`${seedProblems.length} seed problem${seedProblems.length === 1 ? "" : "s"}`);
   if (failOn !== "flows" && pageErrors.length) reasons.push(`${pageErrors.length} page error${pageErrors.length === 1 ? "" : "s"}`);
   if (failOn === "stand-ins" && shotsWithStandIns) reasons.push(`${shotsWithStandIns} shot${shotsWithStandIns === 1 ? "" : "s"} with a stand-in`);
   if (!shots.length && !failedFlows.length) reasons.push("no shots were taken (no flows configured?)");
-  return { passed: reasons.length === 0, reasons, failOn, commit: manifest.commit || null, shots: shots.length, failedFlows, pageErrors, standIns, shotsWithStandIns };
+  return { passed: reasons.length === 0, reasons, failOn, commit: manifest.commit || null, shots: shots.length, failedFlows, seedProblems, pageErrors, standIns, shotsWithStandIns };
 }
 
 /** Plain text for the terminal and logs. */
@@ -45,6 +48,7 @@ export function formatText(v, report) {
   const lines = [`Imitor gate: ${v.passed ? "PASSED" : "BLOCKED"}${v.passed ? "" : ` (${v.reasons.join("; ")})`}`];
   lines.push(`  ${v.shots} shots, ${v.failedFlows.length} failed flows, ${v.pageErrors.length} page errors${v.standIns.length ? `, stand-ins seen: ${v.standIns.join(", ")}` : ""}`);
   for (const f of v.failedFlows) lines.push(`  x ${f.where}: stopped at step ${f.step ?? "?"} while ${f.doing}. ${f.message}${f.shot ? ` (see ${f.shot})` : ""}`);
+  for (const e of v.seedProblems || []) lines.push(`  x ${e.where}: ${e.message}`);
   for (const e of v.pageErrors) lines.push(`  ! ${e.where}: ${e.message}`);
   if (report) lines.push(`  report: ${report}`);
   lines.push(v.passed ? "  This checks the web imitation only. It does not test the native build." : "  Fix these before spending a native build.");
@@ -86,6 +90,7 @@ export function reportToGitHub(v, report, env = process.env, write = (s) => proc
   }
   if (env.GITHUB_ACTIONS === "true") {
     const esc = (s) => String(s).replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
+    for (const e of v.seedProblems || []) write(`::error title=Imitor: seed problem::${esc(`${e.where}: ${e.message}`)}\n`);
     for (const f of v.failedFlows) write(`::error title=Imitor: flow failed::${esc(`${f.where} stopped at step ${f.step ?? "?"} while ${f.doing}. ${f.message}`)}\n`);
     if (v.failOn !== "flows") for (const e of v.pageErrors) write(`::error title=Imitor: page error::${esc(`${e.where}: ${e.message}`)}\n`);
     wrote.push("annotations");

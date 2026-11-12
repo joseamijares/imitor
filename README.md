@@ -112,7 +112,7 @@ npx imitor record --flow first-run
 npx imitor problems
 ```
 
-Screenshots and videos from these land in `preview/captures/`. Each call starts from a fresh, empty app state, so use a flow (or inline steps) to get past setup screens.
+Screenshots and videos from these land in `preview/captures/`. Each call starts from a fresh app state: empty, or the state the flow (or the config) sets up (see [Start a flow from a state](#start-a-flow-from-a-state)). A screenshot without `--flow` takes the top-level settings, and `--state <label>` (or `state` in the MCP tool) overrides the state label for that one call. Results say which `state` and `seeded` data a capture started from, and list `seedErrors`.
 
 ## The app
 
@@ -124,7 +124,7 @@ npx imitor app            # http://127.0.0.1:4173 (or --port n)
 
 It reads plain files from the output folder: `runs/` (the last 50 full runs), `captures/index.jsonl`, `activity.jsonl` (one line per MCP tool call) and `state.json`, which the CLI and the MCP server write as they work. It binds to 127.0.0.1 only, so it is reachable from this machine and nowhere else.
 
-The live preview (`/live`, or Live on a run) shows the built app itself, running in a device frame. `imitor app` serves the build on a second port of its own, so the app's router and reloads work as at a site root, and adds a small driver script to its pages so the interface can replay a flow inside the frame up to the shot you pick: taps, fills and waits, as the runs do in headless Chromium. Reload starts the app again from an empty state (stored data cleared).
+The live preview (`/live`, or Live on a run) shows the built app itself, running in a device frame. `imitor app` serves the build on a second port of its own, so the app's router and reloads work as at a site root, and adds a small driver script to its pages so the interface can replay a flow inside the frame up to the shot you pick: taps, fills and waits, as the runs do in headless Chromium, after the steps of any flow it runs `after`. Each replay clears what the app stored, then opens the app with `?imitor-flow=<name>`, so the page starts with that flow's `state` and `seed` (the Flow state panel lists them). Reload starts again from the first flow's state.
 
 The Appearance and Reduce motion controls rely on an override that `imitor build` adds to every page of the build: with `?imitor-scheme=dark|light` or `?imitor-motion=reduce|no-preference` in the address, the app's `matchMedia` answers `prefers-color-scheme` and `prefers-reduced-motion` accordingly (it is kept for the browser tab's session; `auto` clears it). Builds made before this have no override: the live preview says so and the app follows the computer's settings until you run `imitor build` again. An app that ignores the system scheme (for example `userInterfaceStyle: "light"` and no `useColorScheme`) looks the same in both.
 
@@ -148,7 +148,7 @@ The site holds the app's screenshots and videos. Publish it only where those may
 
 | Value | Replaces | Behaviour |
 | --- | --- | --- |
-| `sqljs` | `expo-sqlite` | Real SQLite (sql.js, wasm) in memory, including the synchronous API. Mirrored to `sessionStorage` so a reload keeps data. |
+| `sqljs` | `expo-sqlite` | Real SQLite (sql.js, wasm) in memory, including the synchronous API. Mirrored to `sessionStorage` so a reload keeps data. A flow's `seed.sql` runs in it. |
 | `skia` | `@shopify/react-native-skia` | `<Canvas>` keeps its box but draws nothing. Shots containing one are labelled in the report. |
 | `inert` | any module | Every export exists and does nothing. Components render nothing. |
 | `./path/to/file.js` | any module | Your own stand-in. Inside it, `require` of the module it replaces gets the real one, so a stand-in can re-export most of a package and replace one function (for example a backend client's `createClient`, to show signed-in screens with invented data). |
@@ -177,9 +177,63 @@ errors on web) never appear in a screenshot. Imitor dismisses them and records
 their text as a `dialog` problem with the step that raised it; `imitor flow`,
 `screenshot` and `record` list them under `dialogs`.
 
-Other config keys: `locale` (default `en-US`), `timezone` (`UTC`), `settleMs` (`600`),
+Other config keys: `after`, `state`, `seed` and `clock` ([Start a flow from a state](#start-a-flow-from-a-state)), `locale` (default `en-US`), `timezone` (`UTC`), `settleMs` (`600`),
 `reducedMotion` (`true`), `out` (`preview`). Devices: `iphone-16`, `iphone-se`,
 `pixel-9`, `small-android`, or `{ "name", "width", "height", "scale" }`.
+
+## Start a flow from a state
+
+Most of an app sits behind onboarding or sign-in, and screens that show today's date change every day. Four optional keys set what a flow starts from. Each works on a flow, or at the top level of `imitor.config.json` as the default for every flow; a flow's own value wins, and `null` on a flow opts out of the default.
+
+```json
+{
+  "shims": { "expo-sqlite": "sqljs", "@supabase/supabase-js": "./imitor-stand-ins/supabase.js" },
+  "state": "signed-in",
+  "clock": "2026-03-14T09:30:00Z",
+  "flows": [
+    { "name": "welcome", "state": "signed-out", "steps": [{ "shot": "first" }, { "tap": "Continue" }] },
+    { "name": "name", "after": "welcome", "state": "signed-out", "steps": [{ "fill": { "placeholder": "Your name", "value": "Ada" } }, { "shot": "named" }] },
+    {
+      "name": "today",
+      "start": "/today",
+      "seed": {
+        "storage": { "onboarding-done": "true", "settings": "{\"units\":\"metric\"}" },
+        "sql": "imitor-seed/garden.sql",
+        "database": "garden.db"
+      },
+      "steps": [{ "shot": "today" }]
+    }
+  ]
+}
+```
+
+| Key | What it does |
+| --- | --- |
+| `"after": "<flow>"` | Runs that flow's steps first (its shots are skipped), then this flow's. Chains may nest. The chain starts at the first flow's `start`; a later flow's own `start`, if it has one, is opened after the flows before it (a full reload, so in-memory state is lost). Unknown names and cycles are errors when the config loads. A top-level `after` does not apply to the flow it names, nor to the flows that one runs after. |
+| `"state": "<label>"` | A free-form label handed to the app's stand-ins before any app code runs, as `globalThis.__imitor.state` (a string, or `null`). |
+| `"seed"` | Data put in place before the app's first script runs: `storage` and `sql`, below. |
+| `"clock": "<ISO date-time>"` | Starts the page's clock at that instant, so screens that show today's date look the same whichever day the run happens. |
+
+A run of a flow uses that flow's `state`, `seed` and `clock` (its own, else the top level's) for the whole chain; the flows named in `after` contribute only their start and steps.
+
+**State.** Use it in place of ad-hoc switches in the address: an app-local stand-in branches on the label. For example, a backend client's stand-in returns a signed-in session unless the flow says otherwise:
+
+```js
+// imitor-stand-ins/backend.js
+const signedOut = (globalThis.__imitor && globalThis.__imitor.state) === "signed-out";
+```
+
+**`seed.storage`** is an object of key to string written to `localStorage` before the app runs. `@react-native-async-storage/async-storage` on web (checked with 2.2.0) reads and writes `window.localStorage` directly with the key unchanged, no prefix, so `"onboarding-done": "true"` is what `AsyncStorage.getItem("onboarding-done")` returns. Values must be strings: write objects as JSON, as AsyncStorage callers do.
+
+**`seed.sql`** needs the `sqljs` stand-in. It is an array of SQL texts, or the path of a `.sql` file relative to the app folder. The app's code has not created its schema before it runs, so the seed cannot wait for it: the statements run when the app first opens the seed's `database` (a file name as the app passes it to `openDatabaseSync` / `openDatabaseAsync`; by default the first database it opens, other than `":memory:"`), immediately after it is opened and before the open call returns. The app's own `CREATE TABLE IF NOT EXISTS` and migrations then run on top, so the seed creates the tables it fills, and an app that tracks migrations with `PRAGMA user_version` needs the seed to set it too. Each entry (an array item, or the file) runs statement by statement; the first statement that fails stops the rest of that entry, and every failure is a `seed-failed` problem naming the statement. A seed whose database the app never opens is a problem too. Both fail the flow (and block the gate).
+
+The seed is applied once per browser session: a reload or a `goto` step keeps what the app has done since (the stand-in mirrors the database to `sessionStorage`, and a marker there stops the seed running again). Each flow runs in a fresh browser, so each starts from its seed.
+
+**Clock.** Runs, `flow`, `screenshot` and `record` use Playwright's clock (`clock.install`): `Date`, `performance`, timers and `requestAnimationFrame` start at the instant and then run at normal speed, so animations and timers behave as usual and the time on screen moves on by the seconds the flow takes. A run on 12 November and one with the machine's date set to 20 January gave byte-identical shots. Imitor does not freeze the time outright: a frozen `Date` stops React Native's `Animated` timing animations, which measure progress with `Date.now()`; on a real app a card that fades in stayed invisible. In the live preview there is no Playwright: only `Date` is moved to the clock (and runs on from it); timers and animations run as usual.
+
+The run's `manifest.json` lists each flow's `after`, `state`, `seeded` and `clock` under `flows`, and each shot carries `state` and `seeded`, so a reviewer can tell a shot came from invented data. The review interface marks those shots next to the stand-in marker, and `imitor describe` and `GET /api/project` show each flow's settings. Invented data is not the real app's data: treat seeded screens like stand-ins.
+
+`imitor build` from this version is needed for `seed.sql` (the stand-in in the bundle applies it); `state`, `seed.storage` and `clock` also work on older builds.
 
 ## Gate your native builds
 
@@ -193,7 +247,7 @@ It builds the preview, runs every flow, prints a verdict and exits non-zero when
 
 | `--fail-on` | Blocks when |
 | --- | --- |
-| `flows` (default) | A flow could not be completed |
+| `flows` (default) | A flow could not be completed, or its seed failed |
 | `errors` | Also when the page threw an uncaught error |
 | `stand-ins` | Also when any shot contains a stand-in |
 
@@ -263,7 +317,6 @@ This follows the EAS Workflows syntax but has not been run on EAS. Check how you
 - Text size and language controls in the live preview (device, scheme and motion are there)
 - "Pretend iOS / Android" mode so platform-specific styles render
 - Real Skia drawing on web (CanvasKit) instead of an empty box
-- Seeded data states, so flows don't have to click through setup
 - The review interface (runs, captures, problems, agents), designed in `design/`
 - Android widget and notification renders on a plain JVM
 - Bare React Native (no Expo) adapter

@@ -34,7 +34,7 @@ Usage (run in the app's folder):
 
 For agents and scripts (each prints JSON):
   imitor describe           flows, devices and stand-ins configured for this app
-  imitor screenshot         one screenshot: --route /x | --flow name  [--device d] [--scheme light|dark] [--full-page] [--name n]
+  imitor screenshot         one screenshot: --route /x | --flow name  [--device d] [--scheme light|dark] [--full-page] [--name n] [--state s]
   imitor flow               run one flow and report each step: --flow name [--device d] [--scheme s]
   imitor record             record a .webm video of a flow: --flow name [--device d] [--scheme s]
   imitor problems           problems and stand-ins from the last full run
@@ -118,7 +118,7 @@ export async function main(args) {
       return;
     }
     console.log(`imitor: ${result.shots.length} shots, ${result.problems.length} problems -> ${report}`);
-    if (result.problems.some((p) => p.kind === "flow-failed")) process.exitCode = 1;
+    if (result.problems.some((p) => p.kind === "flow-failed" || p.kind === "seed-failed")) process.exitCode = 1;
   } finally {
     server.close();
   }

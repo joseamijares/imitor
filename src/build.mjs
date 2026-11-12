@@ -17,7 +17,7 @@ function htmlFiles(dir, acc = []) {
 // Load sql.js first, then the app's own scripts in their original order.
 function bootLoader(scripts) {
   return `<script>(function(){var q=${JSON.stringify(scripts)};function l(u){return new Promise(function(ok,no){var s=document.createElement("script");s.src=u;s.onload=ok;s.onerror=function(){no(new Error("failed to load "+u))};document.head.appendChild(s)})}
-l("/_imitor/sql-wasm.js").then(function(){return initSqlJs({locateFile:function(f){return "/_imitor/"+f}})}).then(function(SQL){globalThis.__imitor={SQL:SQL};return q.reduce(function(p,u){return p.then(function(){return l(u)})},Promise.resolve())}).catch(function(e){console.error("[imitor] boot failed",e)})})()</script>`;
+l("/_imitor/sql-wasm.js").then(function(){return initSqlJs({locateFile:function(f){return "/_imitor/"+f}})}).then(function(SQL){globalThis.__imitor=Object.assign(globalThis.__imitor||{},{SQL:SQL});return q.reduce(function(p,u){return p.then(function(){return l(u)})},Promise.resolve())}).catch(function(e){console.error("[imitor] boot failed",e)})})()</script>`;
 }
 
 /**
