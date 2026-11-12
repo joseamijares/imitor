@@ -65,9 +65,11 @@ runs:
       env:
         IMITOR_FAIL_ON: ${{ inputs.fail-on }}
       run: npx imitor gate --fail-on "$IMITOR_FAIL_ON"
+    # The gate sets its "report" output only once this run has written its report. A manifest left in the output
+    # folder by an earlier run is never published or commented on as if it were this commit's.
     - name: Publish the shots for the comment
       id: shots
-      if: always() && inputs.comment == 'true' && github.event_name == 'pull_request' && steps.gate.outcome != 'skipped'
+      if: always() && inputs.comment == 'true' && github.event_name == 'pull_request' && steps.gate.outputs.report != ''
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
@@ -89,7 +91,9 @@ runs:
         IMITOR_FAIL_ON: ${{ inputs.fail-on }}
         IMITOR_MAX_SHOTS: ${{ inputs.max-shots }}
         IMITOR_IMAGE_BASE: ${{ steps.shots.outputs.image-base }}
+        IMITOR_REPORT: ${{ steps.gate.outputs.report }}
         IMITOR_PR: ${{ github.event.pull_request.number }}
+        IMITOR_SHA: ${{ github.event.pull_request.head.sha }}
         IMITOR_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       run: |
         # Never fails the job: the gate's own result stays the job's result.
@@ -97,7 +101,13 @@ runs:
         body="$(mktemp)"
         args=(--fail-on "$IMITOR_FAIL_ON" --max-shots "$IMITOR_MAX_SHOTS" --report-url "$IMITOR_RUN_URL")
         if [ -n "$IMITOR_IMAGE_BASE" ]; then args+=(--image-base "$IMITOR_IMAGE_BASE"); fi
-        npx imitor comment "${args[@]}" > "$body" || notice "There is no run to comment on (did the build fail?)."
+        if [ -n "$IMITOR_REPORT" ]; then
+          npx imitor comment "${args[@]}" > "$body" || notice "Could not write the comment for this run."
+        else
+          # This run wrote no report (the build or the run stopped first): say so, never show an earlier run's verdict.
+          printf '%s\n' '<!-- imitor-comment -->' '### ❌ Imitor gate: no report' '' \
+            "The gate stopped before it wrote a report for commit \`${IMITOR_SHA:0:7}\` (did the build fail?), so there are no shots. See [the job log]($IMITOR_RUN_URL)." > "$body"
+        fi
         # The one comment to update is found by its hidden marker line.
         existing="$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$IMITOR_PR/comments" \
           --jq '.[] | select((.body // "") | startswith("<!-- imitor-comment -->")) | .id')" \
@@ -111,7 +121,7 @@ runs:
             || notice "Could not post the Imitor comment. The workflow needs 'permissions: pull-requests: write' (a pull request from a fork never gets it)."
         fi
     - name: Upload the report
-      if: always() && inputs.upload-report == 'true'
+      if: always() && inputs.upload-report == 'true' && steps.gate.outputs.report != ''
       uses: actions/upload-artifact@v4
       with:
         name: ${{ inputs.artifact-name }}
