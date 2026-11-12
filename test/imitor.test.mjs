@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import test from "node:test";
-import { patchHtml } from "../src/build.mjs";
+import { MEDIA_OVERRIDE, patchHtml } from "../src/build.mjs";
 
 const require = createRequire(import.meta.url);
 
@@ -11,7 +11,55 @@ test("patchHtml moves app scripts behind the boot loader, in order", () => {
   assert.ok(!out.includes('<script src="/_expo/static/js/web/a.js"'));
   assert.ok(out.includes('["/_expo/static/js/web/a.js","/_expo/static/js/web/b.js"]'));
   assert.ok(out.includes('<script src="https://x/other.js"></script>'));
-  assert.equal(patchHtml("<html><body></body></html>"), "<html><body></body></html>");
+  assert.ok(out.startsWith(MEDIA_OVERRIDE), "the scheme override runs before anything else");
+  assert.equal(patchHtml(out), out, "patching twice changes nothing");
+});
+
+test("patchHtml adds the scheme override to every page, with or without the boot loader", () => {
+  const html = `<html><head><title>x</title></head><body><script src="/_expo/a.js" defer></script></body></html>`;
+  const out = patchHtml(html, { boot: false });
+  assert.equal(out, html.replace("<head>", "<head>" + MEDIA_OVERRIDE), "app scripts stay where they were");
+  assert.equal(patchHtml("<body></body>", { boot: false }), MEDIA_OVERRIDE + "<body></body>");
+});
+
+/** Run the override in a fake window with the given address and session storage. */
+function runOverride(href, stored = {}) {
+  const store = new Map(Object.entries(stored));
+  const listeners = [];
+  const realMql = (q) => ({ media: q, matches: q.includes("light"), addEventListener: (t, f) => listeners.push(f), addListener: (f) => listeners.push(f) });
+  const win = {
+    location: new URL(href),
+    sessionStorage: { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) },
+    matchMedia: realMql,
+    history: { state: null, replaceState(_s, _t, url) { win.location = new URL(url, win.location.href); } },
+  };
+  const src = MEDIA_OVERRIDE.replace(/^<script>|<\/script>$/g, "");
+  new Function("window", "location", "history", "URL", src.replace(/location\.href/g, "window.location.href"))(win, win.location, win.history, URL);
+  return { win, store, listeners };
+}
+
+test("scheme override: ?imitor-scheme answers prefers-color-scheme and survives reloads; motion likewise", () => {
+  const { win, store, listeners } = runOverride("http://127.0.0.1:5000/today?imitor-scheme=dark&imitor-motion=reduce&tab=2");
+  assert.deepEqual(win.__imitorMedia, { version: 1, scheme: "dark", motion: "reduce" });
+  assert.equal(win.location.href, "http://127.0.0.1:5000/today?tab=2", "the parameters leave the address before the app reads it");
+  assert.equal(win.matchMedia("(prefers-color-scheme: dark)").matches, true);
+  assert.equal(win.matchMedia("(prefers-color-scheme: light)").matches, false);
+  assert.equal(win.matchMedia("(prefers-reduced-motion: reduce)").matches, true);
+  assert.equal(win.matchMedia("(prefers-reduced-motion)").matches, true);
+  const mql = win.matchMedia("(prefers-color-scheme: dark)");
+  mql.addEventListener("change", () => {});
+  mql.addListener(() => {});
+  assert.equal(listeners.length, 0, "change listeners on an overridden query never reach the real one");
+  assert.equal(win.matchMedia("(min-width: 400px)").media, "(min-width: 400px)", "other queries pass through");
+  assert.equal(store.get("imitor-scheme"), "dark");
+
+  const reload = runOverride("http://127.0.0.1:5000/", Object.fromEntries(store));
+  assert.equal(reload.win.matchMedia("(prefers-color-scheme: dark)").matches, true, "a reload keeps the stored scheme");
+  const cleared = runOverride("http://127.0.0.1:5000/?imitor-scheme=auto", Object.fromEntries(store));
+  assert.equal(cleared.win.__imitorMedia.scheme, null);
+  assert.equal(cleared.win.matchMedia("(prefers-color-scheme: light)").matches, true, "auto hands the question back to the system");
+  const none = runOverride("http://127.0.0.1:5000/");
+  assert.deepEqual(none.win.__imitorMedia, { version: 1, scheme: null, motion: null });
 });
 
 test("inert stand-in: any export is callable, components render nothing", () => {

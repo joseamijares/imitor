@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Imitor</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/imitor-icon-32.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Instrument+Serif:ital@1&display=swap">
+  <link rel="stylesheet" href="/app.css">
+  <script>
+    // Apply a saved manual theme before first paint; without one the system setting decides.
+    try { const t = localStorage.getItem("imitor.theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}
+  </script>
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <div id="app" class="app">
+    <noscript>Imitor needs JavaScript to show runs, shots and problems.</noscript>
+  </div>
+</body>
+</html>

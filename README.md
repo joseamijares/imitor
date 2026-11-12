@@ -108,6 +108,22 @@ npx imitor problems
 
 Screenshots and videos from these land in `preview/captures/`. Each call starts from a fresh, empty app state, so use a flow (or inline steps) to get past setup screens.
 
+## The app
+
+`npx imitor app` starts the local review interface, where a person looks over what agents and CI produced: runs and their shots, captures, problems, and which agents are connected.
+
+```bash
+npx imitor app            # http://127.0.0.1:4173 (or --port n)
+```
+
+It reads plain files from the output folder: `runs/` (the last 50 full runs), `captures/index.jsonl`, `activity.jsonl` (one line per MCP tool call) and `state.json`, which the CLI and the MCP server write as they work. It binds to 127.0.0.1 only, so it is reachable from this machine and nowhere else.
+
+The live preview (`/live`, or Live on a run) shows the built app itself, running in a device frame. `imitor app` serves the build on a second port of its own, so the app's router and reloads work as at a site root, and adds a small driver script to its pages so the interface can replay a flow inside the frame up to the shot you pick: taps, fills and waits, as the runs do in headless Chromium. Reload starts the app again from an empty state (stored data cleared).
+
+The Appearance and Reduce motion controls rely on an override that `imitor build` adds to every page of the build: with `?imitor-scheme=dark|light` or `?imitor-motion=reduce|no-preference` in the address, the app's `matchMedia` answers `prefers-color-scheme` and `prefers-reduced-motion` accordingly (it is kept for the browser tab's session; `auto` clears it). Builds made before this have no override: the live preview says so and the app follows the computer's settings until you run `imitor build` again. An app that ignores the system scheme (for example `userInterfaceStyle: "light"` and no `useColorScheme`) looks the same in both.
+
+The iPhone status bar and the Android camera are drawn above the app, not over it: the web build has no safe-area insets, so drawing them on top would hide what the shots show.
+
 ## Stand-ins
 
 | Value | Replaces | Behaviour |
@@ -149,7 +165,7 @@ Other config keys: `locale` (default `en-US`), `timezone` (`UTC`), `settleMs` (`
 
 ## Roadmap
 
-- Live preview shell: the app in a device frame with toggles for device, scheme, text size and language
+- Text size and language controls in the live preview (device, scheme and motion are there)
 - "Pretend iOS / Android" mode so platform-specific styles render
 - Real Skia drawing on web (CanvasKit) instead of an empty box
 - Seeded data states, so flows don't have to click through setup
