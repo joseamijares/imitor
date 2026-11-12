@@ -1,13 +1,14 @@
 // The pre-build gate: decide from a run's manifest whether a paid native build should go ahead,
 // and say why in the forms a CI system reads (a text summary, a Markdown job summary, outputs, annotations).
 import fs from "node:fs";
+import { publicStep } from "./secrets.mjs";
 
 export const FAIL_ON = ["flows", "errors", "stand-ins"];
 
 const describeStep = (config) => {
   if (!config) return "opening the start route";
   const [action] = Object.keys(config);
-  const target = config[action];
+  const target = publicStep(config)[action]; // a manifest from before fill values were hidden still has them
   const what = typeof target === "string" ? `"${target}"` : JSON.stringify(target);
   return { tap: `tapping ${what}`, fill: `filling ${what}`, goto: `going to ${what}`, waitFor: `waiting for ${what}`, shot: `taking shot ${what}` }[action] || `${action} ${what}`;
 };

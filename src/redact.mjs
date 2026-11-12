@@ -29,7 +29,7 @@ function* entries(value) {
 
 /** Every fill value in `value` (a config, a manifest, a step list), as strings. */
 export function fillValues(value, found = new Set()) {
-  for (const [v, key] of entries(value)) if (isFill(key, v) && v.value != null) found.add(String(v.value));
+  for (const [v, key] of entries(value)) if (isFill(key, v) && v.value != null && typeof v.value !== "object") found.add(String(v.value)); // { env } is a reference, not a value
   return found;
 }
 

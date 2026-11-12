@@ -141,7 +141,11 @@
 
   async function doStep(step) {
     if (step.tap !== undefined) await tap(await find(step.tap, 10000, true));
-    else if (step.fill) fill(await find(step.fill, 10000, true), String(step.fill.value));
+    else if (step.fill) {
+      // A value from the environment ({ env: NAME }) is never sent to the page; the interface stops before such a step.
+      if (step.fill.value !== null && typeof step.fill.value === "object") throw new Error("this step fills a value from the environment, which the live preview does not replay");
+      fill(await find(step.fill, 10000, true), String(step.fill.value));
+    }
     else if (step.wait) await sleep(Number(step.wait));
     else if (step.waitFor) await find(step.waitFor, 15000, false);
     else if (step.scroll) scroll(Number(step.scroll));

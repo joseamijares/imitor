@@ -195,7 +195,12 @@ function createLive(ctx, project, detail) {
         st.busy = { ...st.busy, label: describeStep(s) };
         renderStatus();
         if (s.action === "goto") await openApp(s.step.goto);
-        else if (s.action !== "shot") {
+        else if (s.action === "fill" && s.step.fill && (typeof s.step.fill.value === "object" || s.step.fill.value === "\u2022\u2022\u2022")) {
+          // Secrets stay with the command line and CI, and an exported site has no typed values: the replay stops here.
+          const fromEnv = s.step.fill.value !== null && typeof s.step.fill.value === "object";
+          st.error = { flow: flow.name, index: s.index, in: s.flow && s.flow !== flow.name ? s.flow : null, message: fromEnv ? `it fills ${s.step.fill.value.env || "a value"} from the environment, which the live preview does not replay. Runs and the command line do.` : "an exported site does not include the values flows type, so the replay stops here. imitor app replays it.", step: s };
+          break;
+        } else if (s.action !== "shot") {
           const r = await send({ imitor: "step", step: s.step }, STEP_TIMEOUT).catch((e) => ({ ok: false, error: e.message }));
           if (mine !== token) return;
           if (!r.ok) { st.error = { flow: flow.name, index: s.index, in: s.flow && s.flow !== flow.name ? s.flow : null, message: r.error, step: s }; break; }

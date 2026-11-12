@@ -197,7 +197,7 @@ What can still differ from a phone:
 | --- | --- |
 | `{ "shot": "name" }` | Screenshot. Add `"fullPage": true` for the whole scroll height of the page. Most React Native Web screens scroll inside a `ScrollView`, not the page, and then get the viewport only: use `scroll` steps and more shots. |
 | `{ "tap": "Visible text" }` | Tap by exact text. Also `{ "tap": { "testId" \| "label" \| "text" \| "css": ... } }`. |
-| `{ "fill": { "placeholder" \| "label" \| "testId": ..., "value": "..." } }` | Type into a field. |
+| `{ "fill": { "placeholder" \| "label" \| "testId": ..., "value": "..." } }` | Type into a field. The value can also come from an environment variable, `"value": { "env": "TEST_PASSWORD" }` ([Sign in with a test account](#sign-in-with-a-test-account)). |
 | `{ "goto": "/route" }` | Navigate (full reload). |
 | `{ "waitFor": "Visible text" }`, `{ "wait": 500 }`, `{ "scroll": 400 }` | Wait or scroll (the wheel, in the middle of the screen). |
 
@@ -211,7 +211,12 @@ errors on web) never appear in a screenshot. Imitor dismisses them and records
 their text as a `dialog` problem with the step that raised it; `imitor flow`,
 `screenshot` and `record` list them under `dialogs`.
 
-Other config keys: `after`, `state`, `seed` and `clock` ([Start a flow from a state](#start-a-flow-from-a-state)), `locale` (default `en-US`), `timezone` (`UTC`), `settleMs` (`600`),
+What a flow types never leaves the run: in manifests, the runs store, results, the gate's
+text, the pull-request comment and an exported site, every `fill` value is shown as `•••`
+(or, for a value from the environment, as its `{ "env": "NAME" }`). Only `imitor app` on
+your machine has the literal values, because its live preview replays them.
+
+Other config keys: `after`, `state`, `seed` and `clock` ([Start a flow from a state](#start-a-flow-from-a-state)), `secrets` ([Sign in with a test account](#sign-in-with-a-test-account)), `locale` (default `en-US`), `timezone` (`UTC`), `settleMs` (`600`),
 `reducedMotion` (`true`), `out` (`preview`). Devices: `iphone-16`, `iphone-se`,
 `pixel-9`, `small-android`, or `{ "name", "width", "height", "scale" }`.
 
@@ -268,6 +273,62 @@ The seed is applied once per browser session: a reload or a `goto` step keeps wh
 The run's `manifest.json` lists each flow's `after`, `state`, `seeded` and `clock` under `flows`, and each shot carries `state` and `seeded`, so a reviewer can tell a shot came from invented data. The review interface marks those shots next to the stand-in marker, and `imitor describe` and `GET /api/project` show each flow's settings. Invented data is not the real app's data: treat seeded screens like stand-ins.
 
 `imitor build` from this version is needed for `seed.sql` (the stand-in in the bundle applies it); `state`, `seed.storage` and `clock` also work on older builds.
+
+## Sign in with a test account
+
+Invented data ([Start a flow from a state](#start-a-flow-from-a-state)) shows signed-in screens without any credentials, and is what Imitor is built around. When you need the real thing (real server responses, real permissions), a flow can sign in to a real backend with a test account. Imitor takes the credentials from environment variables and does not read any secret store itself, so they can come from 1Password, another secret manager or plain CI secrets.
+
+List the variables a flow may use under `secrets`, and refer to them in `fill` steps:
+
+```json
+{
+  "secrets": ["TEST_EMAIL", "TEST_PASSWORD"],
+  "flows": [
+    {
+      "name": "sign-in",
+      "steps": [
+        { "fill": { "placeholder": "Email", "value": { "env": "TEST_EMAIL" } } },
+        { "fill": { "placeholder": "Password", "value": { "env": "TEST_PASSWORD" } } },
+        { "tap": "Sign in" },
+        { "waitFor": "Today" },
+        { "shot": "today" }
+      ]
+    }
+  ]
+}
+```
+
+Then run Imitor with those variables set. With 1Password's CLI, `op run` resolves `op://` references, or a whole [1Password Environment](https://www.1password.dev/environments/), into the environment of the command it starts:
+
+```bash
+# .env.imitor (committed: it holds references, not secrets)
+TEST_EMAIL=op://Imitor test/test account/username
+TEST_PASSWORD=op://Imitor test/test account/password
+
+op run --env-file .env.imitor -- npx imitor flow sign-in
+op run --environment <environment id> -- npx imitor   # or from a 1Password Environment
+```
+
+In GitHub Actions, [`1password/load-secrets-action`](https://www.1password.dev/ci-cd/github-actions/) with `export-env: true` (and a service account token stored as a repository secret) does the same for later steps; a repository secret passed as `env:` works too.
+
+What Imitor does with them:
+
+- The value is read at the moment the field is filled. The step itself keeps the reference, so manifests, results and logs show `{ "env": "TEST_PASSWORD" }` and never the value.
+- Error messages, page errors and dialogs are searched for the values of the listed variables, and any found are replaced with `•••` (values shorter than 4 characters are not searched for). This covers an app that echoes what was typed, such as `alert("Wrong password …")`.
+- In screenshots, a field filled from a variable is covered by a solid box, unless it is a password field (which already draws dots).
+- A variable that is listed but not set fails the step with its name. A reference to a variable not listed in `secrets` is an error when the config loads.
+- Only flows in `imitor.config.json` can use them. Steps passed to `imitor screenshot --steps` or the `imitor_screenshot` tool cannot, so an agent cannot type an arbitrary variable into a field and screenshot it.
+- `imitor record` and `imitor_record_video` refuse a flow that uses them (or runs `after` one that does): a video shows every frame, and the masks do not reach it.
+- The live preview in `imitor app` stops before such a step and says so. The interface never receives the values.
+- Shots, flows, `describe` and the project data list the variables a flow uses under `secrets`, so a reviewer can tell those shots show a real backend.
+
+What it cannot do: **whatever the signed-in app shows is in the screenshots.** The account's name, email and data are on screen, and so in the report, the runs, the artifact, the `imitor-shots` branch and the comment, and an exported site. Masks cover the fields Imitor typed into, not the screens that follow. Nor can it stop an agent that can run shell commands in the same session from reading the variables directly (`env`). Treat these as limits of the feature, not settings.
+
+So, before you use it:
+
+- **Use a test project, never production.** Make it a separate backend project (for example, a second Supabase project) whose data is entirely invented, so a screenshot that leaks shows nothing private.
+- **Limit the account.** Give it access only to its own seeded rows, read-only where the app allows it, and keep a script that resets its data. An agent driving a flow can tap anything a person could, including "Delete account".
+- **Keep it out of the default gate.** Run the sign-in flows locally under `op run`, or in a separate job on a runner you trust, and keep the pull-request gate on invented state. GitHub does not pass secrets to workflows run for pull requests from forks, so such a job does not run for those. Each flow runs once per device and colour scheme, and each run signs in again: expect your auth provider's rate limits.
 
 ## Gate your native builds
 

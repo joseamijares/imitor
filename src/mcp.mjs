@@ -7,6 +7,7 @@ import { describe, readProblems, recordVideo, runFlow, screenshot } from "./agen
 import { build } from "./build.mjs";
 import { formatInit, init } from "./init.mjs";
 import { loadConfig } from "./config.mjs";
+import { scrubForRoot } from "./secrets.mjs";
 import { serve } from "./serve.mjs";
 import { appendActivity, recordCaptures, resolveBy } from "./store.mjs";
 
@@ -16,7 +17,7 @@ const target = { device: { type: "string", description: "Device name, e.g. iphon
 export const TOOLS = [
   { name: "imitor_describe", description: "List the flows, devices and stand-ins configured for this app, and whether a preview build exists. Call this first.", inputSchema: { type: "object", properties: {} } },
   { name: "imitor_build", description: "Build the web preview of the app as it is on disk now. Takes about a minute. Needed before any other tool, and again after code changes.", inputSchema: { type: "object", properties: {} } },
-  { name: "imitor_screenshot", description: "Take one screenshot and return it as an image. Reach the screen with `route` (deep link), with `flow` (runs that flow's steps first), with inline `steps`, or a combination. Each call starts from a fresh app state: empty, or the flow's (else the config's) after/state/seed/clock settings. The result lists stand-ins visible in the shot: parts that are NOT rendered like the real app.", inputSchema: { type: "object", properties: { route: { type: "string", description: "Path to open, e.g. /settings" }, flow: { type: "string", description: "Name of a configured flow to run before the shot" }, steps: { type: "array", description: 'Extra steps to run before the shot, e.g. [{"tap":"Continue"},{"fill":{"placeholder":"Name","value":"Ada"}}]', items: { type: "object" } }, ...target, fullPage: { type: "boolean", description: "Capture the whole scroll height" }, state: { type: "string", description: "The state label handed to the app's stand-ins (globalThis.__imitor.state), in place of the flow's or the config's" }, name: { type: "string", description: "File name for the capture, without extension" } } } },
+  { name: "imitor_screenshot", description: "Take one screenshot and return it as an image. Reach the screen with `route` (deep link), with `flow` (runs that flow's steps first), with inline `steps`, or a combination. Each call starts from a fresh app state: empty, or the flow's (else the config's) after/state/seed/clock settings. The result lists stand-ins visible in the shot: parts that are NOT rendered like the real app.", inputSchema: { type: "object", properties: { route: { type: "string", description: "Path to open, e.g. /settings" }, flow: { type: "string", description: "Name of a configured flow to run before the shot" }, steps: { type: "array", description: 'Extra steps to run before the shot, e.g. [{"tap":"Continue"},{"fill":{"placeholder":"Name","value":"Ada"}}]. Values from the environment ({"env": ...}) are refused here; only flows in imitor.config.json can use them.', items: { type: "object" } }, ...target, fullPage: { type: "boolean", description: "Capture the whole scroll height" }, state: { type: "string", description: "The state label handed to the app's stand-ins (globalThis.__imitor.state), in place of the flow's or the config's" }, name: { type: "string", description: "File name for the capture, without extension" } } } },
   { name: "imitor_run_flow", description: "Run one configured flow step by step. Returns each step's result, the shots it took, and where it failed if it did (with a screenshot of that moment).", inputSchema: { type: "object", properties: { flow: { type: "string" }, ...target }, required: ["flow"] } },
   { name: "imitor_record_video", description: "Record a .webm video of one configured flow as it plays, with animations on. Returns the file path.", inputSchema: { type: "object", properties: { flow: { type: "string" }, ...target }, required: ["flow"] } },
   { name: "imitor_read_problems", description: "Read the problems (failed steps, page errors), stand-ins seen and coverage limits from the last full run.", inputSchema: { type: "object", properties: {} } },
@@ -109,9 +110,10 @@ export function createServer(root) {
         if (!noLog) log(params.name, summary, true);
         return reply({ content });
       } catch (error) {
-        const reason = String(error.message).split("\n")[0].slice(0, 160);
+        const message = scrubForRoot(root, String(error.message));
+        const reason = message.split("\n")[0].slice(0, 160);
         if (params.name !== "imitor_init") log(params.name, `tried to ${FAILED[params.name]}: ${reason}`, false);
-        return reply({ content: [text(String(error.message))], isError: true });
+        return reply({ content: [text(message)], isError: true });
       }
     }
     if (id === undefined) return null; // a notification we do not act on

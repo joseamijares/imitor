@@ -3,7 +3,8 @@
 // File links are built with a URL prefix, "/files/" by default (the local server's file route).
 import crypto from "node:crypto";
 import path from "node:path";
-import { stateInfo } from "./state.mjs";
+import { publicStep } from "./secrets.mjs";
+import { flowSecrets, stateInfo } from "./state.mjs";
 
 /** The run.json format written by this version. A run.json without schemaVersion is version 1. */
 export const SCHEMA_VERSION = 1;
@@ -44,7 +45,7 @@ export function flowDetail(config, manifest) {
           return { index, name: step.shot, status: "not-reached", shot: null, route: null, standIns: [] };
         });
         const status = failure ? "failed" : steps.some((s) => s.status === "stand-in") ? "stand-ins" : "passed";
-        flows.push({ name: flow.name, status, device: device.name, scheme, ...stateInfo(flow), steps });
+        flows.push({ name: flow.name, status, device: device.name, scheme, ...stateInfo(flow), secrets: flowSecrets(config, flow), steps });
       }
     }
   }
@@ -105,7 +106,7 @@ export function runProblems(loaded, previous, prefix = "/files/") {
         message: p.message,
         flow,
         step: failed ? p.step ?? null : null,
-        stepConfig: failed ? p.stepConfig ?? null : null,
+        stepConfig: failed ? publicStep(p.stepConfig ?? null) : null, // older manifests kept fill values
         lastGoodShot: failed ? url(p.lastGoodShot) : null,
         failureShot: failed ? url(p.file) : null,
       },

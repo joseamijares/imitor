@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { flowChain, prepareContext, readSeedProblems, stateInfo } from "./state.mjs";
+import { publicStep, resolveValue, scrub, secretValues } from "./secrets.mjs";
+import { flowChain, flowSecrets, prepareContext, readSeedProblems, stateInfo } from "./state.mjs";
 
 // Prefer the app's own playwright, then Imitor's, then a global install.
 export function loadPlaywright(root) {
@@ -29,10 +30,28 @@ export async function settle(page, ms) {
   await page.waitForTimeout(ms);
 }
 
-/** Perform one non-screenshot step. Returns false for a shot step (the caller handles those). */
-export async function doStep(page, step, baseUrl) {
+// Fields filled from a secret on each page, masked in that page's screenshots (unless they are password fields, which
+// already draw dots).
+const masked = new WeakMap();
+
+/** Screenshot options for `page`: `extra`, plus a mask over every field filled from a secret. */
+export const shotOptions = (page, extra = {}) => ({ ...extra, mask: masked.get(page) || [] });
+
+/**
+ * Perform one non-screenshot step. Returns false for a shot step (the caller handles those). `secrets` is the config's
+ * list of names a fill may take its value from ({ "env": "NAME" }).
+ */
+export async function doStep(page, step, baseUrl, secrets = []) {
   if (step.tap !== undefined) await locate(page, step.tap).click({ timeout: 10000 });
-  else if (step.fill) await locate(page, step.fill).fill(String(step.fill.value), { timeout: 10000 });
+  else if (step.fill) {
+    const field = locate(page, step.fill);
+    const fromEnv = step.fill.value !== null && typeof step.fill.value === "object";
+    await field.fill(resolveValue(step.fill.value, secrets), { timeout: 10000 });
+    if (fromEnv) {
+      const password = await field.evaluate((el) => el.matches("input[type=password]") || Boolean(el.querySelector && el.querySelector("input[type=password]"))).catch(() => false);
+      if (!password) masked.set(page, [...(masked.get(page) || []), field]);
+    }
+  }
   else if (step.goto) await page.goto(baseUrl + step.goto);
   else if (step.wait) await page.waitForTimeout(step.wait);
   else if (step.waitFor) await locate(page, step.waitFor).waitFor({ timeout: 15000 });
@@ -44,7 +63,7 @@ export async function doStep(page, step, baseUrl) {
     await page.mouse.wheel(0, step.scroll);
   }
   else if (step.shot) return false;
-  else throw new Error(`unknown step ${JSON.stringify(step)}`);
+  else throw new Error(`unknown step ${JSON.stringify(publicStep(step))}`);
   return true;
 }
 
@@ -79,6 +98,7 @@ export async function shoot(root, config, baseUrl) {
   const browser = await chromium.launch();
   const shots = [];
   const problems = [];
+  const secrets = config.secrets || [];
   try {
     for (const flow of config.flows) {
       for (const device of config.devices) {
@@ -95,6 +115,7 @@ export async function shoot(root, config, baseUrl) {
           });
           const setup = await prepareContext(context, flow);
           const { state, seeded, clock } = stateInfo(flow);
+          const usesSecrets = flowSecrets(config, flow);
           const chain = flowChain(config, flow);
           const page = await context.newPage();
           const errors = [];
@@ -112,30 +133,30 @@ export async function shoot(root, config, baseUrl) {
             await settle(page, config.settleMs);
             for (const b of chain.before) {
               pre = b;
-              await doStep(page, b.step, baseUrl);
+              await doStep(page, b.step, baseUrl, secrets);
               if (!b.step.wait) await settle(page, 150);
             }
             pre = null;
             for (const step of steps) {
               index++;
-              if (await doStep(page, step, baseUrl)) {
+              if (await doStep(page, step, baseUrl, secrets)) {
                 if (!step.wait) await settle(page, 150);
                 continue;
               }
               await settle(page, config.settleMs);
               const file = `screens/${flow.name}-${step.shot}-${device.name}-${scheme}.png`;
-              await page.screenshot({ path: path.join(outDir, file), fullPage: step.fullPage === true });
+              await page.screenshot(shotOptions(page, { path: path.join(outDir, file), fullPage: step.fullPage === true }));
               const stubs = await visibleStandIns(page);
-              shots.push({ file, flow: flow.name, shot: step.shot, step: index, device: device.name, platform: device.platform, width: device.width, height: device.height, scheme, route: new URL(page.url()).pathname, stubs, state, seeded, clock });
+              shots.push({ file, flow: flow.name, shot: step.shot, step: index, device: device.name, platform: device.platform, width: device.width, height: device.height, scheme, route: new URL(page.url()).pathname, stubs, state, seeded, clock, ...(usesSecrets.length ? { secrets: usesSecrets } : {}) });
               lastGoodShot = file;
             }
           } catch (error) {
             const file = `screens/${flow.name}-FAILED-${device.name}-${scheme}.png`;
-            await page.screenshot({ path: path.join(outDir, file) }).catch(() => {});
+            await page.screenshot(shotOptions(page, { path: path.join(outDir, file) })).catch(() => {});
             const notReached = steps.slice(Math.max(0, index - 1)).filter((s) => s.shot).map((s) => s.shot);
             const message = String(error.message).split("\n")[0];
-            if (pre) problems.push({ where, kind: "flow-failed", message: `${afterWhere(pre, flow.name)}: ${message}`, error: message, file, ...at, step: 0, stepConfig: pre.step, after: { flow: pre.flow, step: pre.index }, lastGoodShot, notReached });
-            else problems.push({ where, kind: "flow-failed", message, file, ...at, step: index, stepConfig: steps[index - 1] ?? null, lastGoodShot, notReached });
+            if (pre) problems.push({ where, kind: "flow-failed", message: `${afterWhere(pre, flow.name)}: ${message}`, error: message, file, ...at, step: 0, stepConfig: publicStep(pre.step), after: { flow: pre.flow, step: pre.index }, lastGoodShot, notReached });
+            else problems.push({ where, kind: "flow-failed", message, file, ...at, step: index, stepConfig: publicStep(steps[index - 1] ?? null), lastGoodShot, notReached });
           }
           for (const message of await readSeedProblems(page, setup)) problems.push({ where, kind: "seed-failed", message, ...at });
           for (const message of [...new Set(errors)]) problems.push({ where, kind: "page-error", message, ...at });
@@ -146,5 +167,6 @@ export async function shoot(root, config, baseUrl) {
   } finally {
     await browser.close();
   }
-  return { shots, problems };
+  // Errors, page errors and dialogs can echo what was typed: take every secret value out of them.
+  return { shots, problems: scrub(problems, secretValues(secrets)) };
 }

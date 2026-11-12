@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { checkSecrets } from "./secrets.mjs";
 
 export const DEVICES = {
   "iphone-16": { width: 393, height: 852, scale: 2, platform: "ios" },
@@ -30,6 +31,8 @@ export function loadConfig(root) {
     return { name: d, ...DEVICES[d] };
   });
   const shims = raw.shims || {};
+  // Names of environment variables flows may fill from ({ "env": "NAME" }); checked against every flow's fill steps.
+  const secrets = checkSecrets(raw, raw.flows || []);
   return {
     shims,
     devices,
@@ -42,6 +45,7 @@ export function loadConfig(root) {
     // The top-level state settings, for screenshots taken without a flow.
     defaults: { after: raw.after ?? null, state: raw.state ?? null, seed: normaliseSeed(raw.seed ?? null, root), clock: raw.clock ? new Date(raw.clock).toISOString() : null },
     out: raw.out || "preview",
+    secrets,
   };
 }
 

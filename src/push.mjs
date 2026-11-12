@@ -7,6 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { loadConfig } from "./config.mjs";
 import { fillValues, redact } from "./redact.mjs";
+import { secretValues } from "./secrets.mjs";
 import { listRuns, schemaVersionOf } from "./store.mjs";
 import { checkUpload, extension, fileRefs, UPLOAD_TYPES } from "./upload.mjs";
 
@@ -59,7 +60,8 @@ export function buildUpload(root, runId = null) {
   // Checked before redaction, so a run too deep or too odd to copy is refused with a sentence, not a stack overflow.
   const problem = checkUpload(raw);
   if (problem) throw new Error(`run ${id} cannot be pushed: ${problem}`);
-  const body = redact(raw, { secrets: [...fillValues(config)] });
+  // Also the values of the environment variables flows fill from ("secrets"), in case a page echoed one.
+  const body = redact(raw, { secrets: [...fillValues(config), ...secretValues(config.secrets)] });
   return { body, dir, skipped };
 }
 
