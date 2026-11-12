@@ -8,7 +8,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe } from "./agent.mjs";
 import { MEDIA_MARKER } from "./build.mjs";
-import { DEVICES, loadConfig, NOT_COVERED } from "./config.mjs";
+import { DEVICES, fidelityOf, loadConfig, NOT_COVERED } from "./config.mjs";
 import { TOOLS } from "./mcp.mjs";
 import { serve } from "./serve.mjs";
 import { agentsData, gitInfo, listCaptures, listProblems, listRuns, readRun, setSeen } from "./store.mjs";
@@ -114,7 +114,7 @@ export function projectData(root, { previewUrl = null, git = null } = {}) {
     devices: [...config.devices, ...builtIn].map((d) => ({ name: d.name, width: d.width, height: d.height, platform: d.platform || null })),
     schemes: config.schemes,
     flows: config.flows.map((f) => ({ name: f.name, start: f.start || "/", steps: (f.steps || []).map((step, i) => ({ index: i + 1, action: Object.keys(step)[0], label: stepLabel(step), step })) })),
-    standIns: Object.entries(config.shims).map(([module, kind]) => ({ module, kind, fidelity: kind === "sqljs" ? "genuine" : "stand-in" })),
+    standIns: Object.entries(config.shims).map(([module, kind]) => ({ module, kind, fidelity: fidelityOf(kind) })),
     notCovered: NOT_COVERED,
   };
 }

@@ -17,6 +17,10 @@ export const NOT_COVERED = [
   "iOS widgets, Live Activities, watch, Android widgets and notifications",
 ];
 
+/** Built-in kinds that run the real library on the web, so what they show is genuine; every other kind is a stand-in. */
+export const GENUINE_KINDS = ["sqljs", "canvaskit"];
+export const fidelityOf = (kind) => (GENUINE_KINDS.includes(kind) ? "genuine" : "stand-in");
+
 export function loadConfig(root) {
   const file = path.join(root, "imitor.config.json");
   const raw = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : {};

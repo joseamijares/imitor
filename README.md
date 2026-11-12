@@ -150,12 +150,25 @@ The site holds the app's screenshots and videos. Publish it only where those may
 | --- | --- | --- |
 | `sqljs` | `expo-sqlite` | Real SQLite (sql.js, wasm) in memory, including the synchronous API. Mirrored to `sessionStorage` so a reload keeps data. |
 | `skia` | `@shopify/react-native-skia` | `<Canvas>` keeps its box but draws nothing. Shots containing one are labelled in the report. |
+| `canvaskit` | `@shopify/react-native-skia` | Real Skia drawing: the package's own web build, drawing with CanvasKit (Skia compiled to WebAssembly). Not a stand-in, so shots are not labelled. See [Real Skia drawing](#real-skia-drawing). |
 | `inert` | any module | Every export exists and does nothing. Components render nothing. |
 | `./path/to/file.js` | any module | Your own stand-in. Inside it, `require` of the module it replaces gets the real one, so a stand-in can re-export most of a package and replace one function (for example a backend client's `createClient`, to show signed-in screens with invented data). |
 
 A key matches the module name as the app imports it (`"some-sdk"` also covers `"some-sdk/sub/path"`), before path aliases are resolved.
 
 Stand-ins only apply to the web build Imitor makes (`IMITOR=1`). Your iOS and Android builds are untouched.
+
+### Real Skia drawing
+
+With `"@shopify/react-native-skia": "canvaskit"`, Imitor bundles the real React Native Skia and draws every `<Canvas>` with CanvasKit, as React Native Skia does on any website. Nothing in the app changes: `imitor build` copies CanvasKit from the app's own `canvaskit-wasm` (the copy `@shopify/react-native-skia` depends on, so the versions match) into the build, and loads it before the app's scripts. If the app already calls `LoadSkiaWeb` itself, that call finds CanvasKit loaded and does nothing. If `canvaskit-wasm` cannot be found, the build stops and says which version to install.
+
+What can still differ from a phone:
+
+- The first load is heavier: CanvasKit's `.wasm` is about 8 MB (8,001,100 bytes for canvaskit-wasm 0.40.0, 3.2 MB gzipped), loaded before the app starts. Use `skia` when you only need the layout.
+- Fonts: on the web, Skia has no system fonts (`Skia.FontMgr.System()` is an empty font provider), so text drawn inside a `<Canvas>` with a font found by system name (`matchFont`) finds no typeface and draws nothing. Fonts the app loads from files with `useFont` or `useFonts` are drawn. Text drawn by React Native around the canvas is not affected.
+- Pixel ratio: the canvas is drawn at the device's `scale` in Imitor (2 for every built-in device), not at the phone's own (3 on recent iPhones), so fine lines and edges are a little softer than on the phone.
+- Animation: shots catch whatever frame is on screen. With `reducedMotion` on (the default) an app that stops its animations for reduced motion gives the same shot every run; with it off, a looping animation (waves, bubbles) is in a different place each run. Imitor does not freeze the clock.
+- GPU: headless Chromium draws WebGL in software (SwiftShader). Antialiasing and gradients may differ slightly from the phone's GPU; Chromium also logs performance warnings ("GPU stall due to ReadPixels"), which are not counted as page errors.
 
 ## Flow steps
 
@@ -262,7 +275,6 @@ This follows the EAS Workflows syntax but has not been run on EAS. Check how you
 
 - Text size and language controls in the live preview (device, scheme and motion are there)
 - "Pretend iOS / Android" mode so platform-specific styles render
-- Real Skia drawing on web (CanvasKit) instead of an empty box
 - Seeded data states, so flows don't have to click through setup
 - The review interface (runs, captures, problems, agents), designed in `design/`
 - Android widget and notification renders on a plain JVM
