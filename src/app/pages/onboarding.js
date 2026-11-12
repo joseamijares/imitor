@@ -118,7 +118,7 @@ function agentPanel() {
 
 function handPanel() {
   const steps = [
-    { title: "Install it (not on npm yet), with Playwright and its Chromium", code: ["npm i -D github:joseamijares/imitor playwright", "npx playwright install chromium"] },
+    { title: "Install it, with Playwright and its Chromium", code: ["npm i -D imitor playwright", "npx playwright install chromium"] },
     { title: "Wrap your Metro config. It does nothing unless Imitor is running the build", code: ["// metro.config.js", 'module.exports = require("imitor/metro").withImitor(config);'] },
     { title: "Add imitor.config.json next to package.json: stand-ins, devices, schemes and flows", code: ["{", '  "shims": { "expo-sqlite": "sqljs", "@shopify/react-native-skia": "skia" },', '  "devices": ["iphone-16"],', '  "flows": [{ "name": "first-run", "start": "/", "steps": [{ "shot": "home" }] }]', "}"] },
     { title: "Run it in the app’s folder", code: ["npx imitor"] },

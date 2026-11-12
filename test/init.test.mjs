@@ -308,15 +308,14 @@ test("an app config it cannot evaluate may use the fingerprint, so .gitignore an
   assert.ok(plain.changes.some((c) => c.file === ".gitignore"));
 });
 
-test("while Imitor is not on npm, the GitHub install comes before any imitor command, in init's output and the README", () => {
+test("the npm install comes before any imitor command, in init's output and the README", () => {
   const printed = formatInitOf(init(app(), { dryRun: true }));
   const next = printed.slice(printed.indexOf("\nNext:\n"));
-  assert.match(next, /^\nNext:\n {2}1\. npm i -D imitor playwright\n {5}\(imitor is not on npm yet: until it is, install it with github:joseamijares\/imitor in place of imitor\.\)\n {2}2\. npx playwright install chromium\n/);
-  assert.equal(printed.split("not on npm yet").length, 2, "said once");
+  assert.match(next, /^\nNext:\n {2}1\. npm i -D imitor playwright\n {2}2\. npx playwright install chromium\n/);
   const readme = fs.readFileSync(new URL("../README.md", import.meta.url), "utf8");
-  const github = readme.indexOf("npm i -D github:joseamijares/imitor playwright");
-  assert.ok(github > 0 && github < readme.indexOf("npx imitor init"), "the GitHub install comes first");
-  assert.equal(readme.split("github:joseamijares/imitor").length, 2, "the README gives the GitHub install once");
+  const install = readme.indexOf("npm i -D imitor playwright");
+  assert.ok(install > 0 && install < readme.indexOf("npx imitor init"), "the install comes first");
+  assert.ok(!/not on npm|github:joseamijares\/imitor/.test(printed + readme), "no GitHub-install note is left");
 });
 
 test("diff shows a new file and an edit", () => {

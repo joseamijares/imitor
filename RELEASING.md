@@ -48,9 +48,3 @@ git push origin v<version>
 ```
 
 Then make a GitHub release from the tag. The GitHub Action is used as `joseamijares/imitor@main` in the README; tag-pinned use (`@v<version>`) works once the tag exists.
-
-## After the first publish
-
-- In `README.md`, under Set up, remove the line marked **Not on npm yet**.
-- In `src/init.mjs`, remove `UNPUBLISHED_NOTE` and its one use in `formatInit`.
-- On the landing page (`site/index.html`), change the install command to `npm i -D imitor playwright`.
