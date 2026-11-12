@@ -12,6 +12,7 @@ import * as settingsPage from "./pages/settings.js";
 import * as placeholder from "./pages/placeholder.js";
 import * as livePage from "./pages/live.js";
 import * as onboardingPage from "./pages/onboarding.js";
+import { withBase } from "./base.js";
 
 const DOCS_URL = "https://github.com/joseamijares/imitor#readme";
 
@@ -110,7 +111,7 @@ function phoneTop() {
   const p = state.project;
   const home = current.page === "/" || current.page === "/runs";
   return html`<header class="m-top">
-    <a class="m-brand" href="/runs" aria-label="Runs">${logo(24)}</a>
+    <a class="m-brand" href="${withBase(`/runs`)}" aria-label="Runs">${logo(24)}</a>
     ${home ? html`<span class="wordmark">Imitor</span><span class="m-divider" aria-hidden="true"></span>
       <button type="button" class="m-project" data-action="more" aria-haspopup="dialog" title="${p?.name || ""}"><span>${p?.name || (state.projectError ? "Project" : "…")}</span>${icon("down", 12)}</button>`
       : html`<span class="m-title">${phoneTitle()}</span>`}
@@ -122,7 +123,7 @@ function phoneTop() {
 function phoneTabs() {
   const tab = (href, name, label, count) => {
     const on = current.nav === name;
-    return html`<a class="m-tab${on ? " is-active" : ""}" href="${href}"${on ? raw(' aria-current="page"') : ""}${count ? html` aria-label="${label}, ${count} open"` : ""}>
+    return html`<a class="m-tab${on ? " is-active" : ""}" href="${withBase(href)}"${on ? raw(' aria-current="page"') : ""}${count ? html` aria-label="${label}, ${count} open"` : ""}>
       <span class="m-tab-icon">${icon(name, 20)}${count ? html`<span class="m-count" aria-hidden="true">${count}</span>` : ""}</span><span class="m-tab-label">${label}</span></a>`;
   };
   return html`<nav class="m-tabs" aria-label="Pages">
@@ -140,7 +141,7 @@ function phoneSheet() {
         <button type="button" class="m-icon-btn" data-action="more-close" aria-label="Close">${icon("close", 16)}</button></div>
       ${p ? html`<dl class="m-sheet-facts"><dt>Branch</dt><dd class="mono">${p.branch || "—"}</dd><dt>Commit</dt><dd class="mono">${p.commit || "—"}</dd><dt>Preview</dt><dd>${p.built ? "Built" : "Not built yet"}</dd></dl>` : ""}
       <nav class="m-sheet-nav" aria-label="More">
-        <a class="m-sheet-item${current.nav === "settings" ? " is-active" : ""}" href="/settings">${icon("settings")}<span>Settings</span>${icon("chevron", 14)}</a>
+        <a class="m-sheet-item${current.nav === "settings" ? " is-active" : ""}" href="${withBase(`/settings`)}">${icon("settings")}<span>Settings</span>${icon("chevron", 14)}</a>
         <a class="m-sheet-item" href="${DOCS_URL}" target="_blank" rel="noopener">${icon("docs")}<span>Docs</span>${icon("external", 14)}</a>
       </nav>
       <div class="m-sheet-theme"><span>Theme</span>

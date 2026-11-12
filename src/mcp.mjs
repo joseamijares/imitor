@@ -5,6 +5,7 @@ import path from "node:path";
 import readline from "node:readline";
 import { describe, readProblems, recordVideo, runFlow, screenshot } from "./agent.mjs";
 import { build } from "./build.mjs";
+import { formatInit, init } from "./init.mjs";
 import { loadConfig } from "./config.mjs";
 import { serve } from "./serve.mjs";
 import { appendActivity, recordCaptures, resolveBy } from "./store.mjs";
@@ -15,10 +16,11 @@ const target = { device: { type: "string", description: "Device name, e.g. iphon
 export const TOOLS = [
   { name: "imitor_describe", description: "List the flows, devices and stand-ins configured for this app, and whether a preview build exists. Call this first.", inputSchema: { type: "object", properties: {} } },
   { name: "imitor_build", description: "Build the web preview of the app as it is on disk now. Takes about a minute. Needed before any other tool, and again after code changes.", inputSchema: { type: "object", properties: {} } },
-  { name: "imitor_screenshot", description: "Take one screenshot and return it as an image. Reach the screen with `route` (deep link), with `flow` (runs that flow's steps first), with inline `steps`, or a combination. Each call starts from a fresh, empty app state. The result lists stand-ins visible in the shot: parts that are NOT rendered like the real app.", inputSchema: { type: "object", properties: { route: { type: "string", description: "Path to open, e.g. /settings" }, flow: { type: "string", description: "Name of a configured flow to run before the shot" }, steps: { type: "array", description: 'Extra steps to run before the shot, e.g. [{"tap":"Continue"},{"fill":{"placeholder":"Name","value":"Ada"}}]', items: { type: "object" } }, ...target, fullPage: { type: "boolean", description: "Capture the whole scroll height" }, name: { type: "string", description: "File name for the capture, without extension" } } } },
+  { name: "imitor_screenshot", description: "Take one screenshot and return it as an image. Reach the screen with `route` (deep link), with `flow` (runs that flow's steps first), with inline `steps`, or a combination. Each call starts from a fresh app state: empty, or the flow's (else the config's) after/state/seed/clock settings. The result lists stand-ins visible in the shot: parts that are NOT rendered like the real app.", inputSchema: { type: "object", properties: { route: { type: "string", description: "Path to open, e.g. /settings" }, flow: { type: "string", description: "Name of a configured flow to run before the shot" }, steps: { type: "array", description: 'Extra steps to run before the shot, e.g. [{"tap":"Continue"},{"fill":{"placeholder":"Name","value":"Ada"}}]', items: { type: "object" } }, ...target, fullPage: { type: "boolean", description: "Capture the whole scroll height" }, state: { type: "string", description: "The state label handed to the app's stand-ins (globalThis.__imitor.state), in place of the flow's or the config's" }, name: { type: "string", description: "File name for the capture, without extension" } } } },
   { name: "imitor_run_flow", description: "Run one configured flow step by step. Returns each step's result, the shots it took, and where it failed if it did (with a screenshot of that moment).", inputSchema: { type: "object", properties: { flow: { type: "string" }, ...target }, required: ["flow"] } },
   { name: "imitor_record_video", description: "Record a .webm video of one configured flow as it plays, with animations on. Returns the file path.", inputSchema: { type: "object", properties: { flow: { type: "string" }, ...target }, required: ["flow"] } },
   { name: "imitor_read_problems", description: "Read the problems (failed steps, page errors), stand-ins seen and coverage limits from the last full run.", inputSchema: { type: "object", properties: {} } },
+  { name: "imitor_init", description: "Set Imitor up in this Expo app: wrap the Metro config with withImitor, write imitor.config.json with proposed stand-ins, one device, the app's colour schemes and a first flow, and keep the output folder out of git. Installs nothing; returns the install command. With dryRun (the default) it only returns the planned changes as diffs. It stops without writing if imitor.config.json exists and differs, unless force is true.", inputSchema: { type: "object", properties: { dryRun: { type: "boolean", default: true, description: "Only show the changes. Defaults to true; pass false to write them." }, force: { type: "boolean", default: false, description: "Replace an existing imitor.config.json." } } } },
   { name: "imitor_open_preview", description: "Serve the built preview locally and return a URL a person can open to click around. The server stays up while this MCP server runs.", inputSchema: { type: "object", properties: { route: { type: "string", description: "Path to open, e.g. /settings" } } } },
 ];
 
@@ -46,23 +48,32 @@ export function createServer(root) {
       const result = await screenshot(root, { ...args, scale: 1 });
       recordCaptures(out(), root, "screenshot", { ...result, flow: args.flow || null }, by());
       const image = fs.readFileSync(path.join(root, result.file)).toString("base64");
-      return { content: [text(result), { type: "image", data: image, mimeType: "image/png" }], summary: `took a screenshot of ${result.route} on ${result.device}${result.failedAt ? `, but step ${result.failedAt} failed on the way` : ""}` };
+      return { content: [text(result), { type: "image", data: image, mimeType: "image/png" }], summary: `took a screenshot of ${result.route} on ${result.device}${result.failedAt !== null ? `, but ${result.failedIn ? `step ${result.failedAt} of ${result.failedIn}` : `step ${result.failedAt}`} failed on the way` : ""}` };
     },
     imitor_run_flow: async (args) => {
       const result = await runFlow(root, args);
       recordCaptures(out(), root, "flow", result, by());
       const total = (loadConfig(root).flows.find((f) => f.name === result.flow)?.steps || []).length;
-      const passed = result.steps.filter((s) => s.ok).length;
-      return { content: [text(result)], summary: `ran ${result.flow}, ${passed} of ${plural(total, "step")} passed${result.failedAt ? `; failed at step ${result.failedAt}` : ""}` };
+      const passed = result.steps.filter((s) => s.ok && !s.after).length;
+      return { content: [text(result)], summary: `ran ${result.flow}, ${passed} of ${plural(total, "step")} passed${result.failedAt !== null ? `; failed at step ${result.failedAt}${result.failedIn && result.failedIn !== result.flow ? ` of ${result.failedIn}, which it runs after` : ""}` : ""}${result.seedErrors?.length ? `; ${plural(result.seedErrors.length, "seed problem")}` : ""}` };
     },
     imitor_record_video: async (args) => {
       const result = await recordVideo(root, args);
       recordCaptures(out(), root, "record", result, by());
-      return { content: [text(result)], summary: `recorded ${result.flow} (${result.seconds} s)${result.passed ? "" : `; failed at step ${result.failedAt}`}` };
+      return { content: [text(result)], summary: `recorded ${result.flow} (${result.seconds} s)${result.passed ? "" : result.failedAt !== null ? `; failed at step ${result.failedAt}${result.failedIn && result.failedIn !== result.flow ? ` of ${result.failedIn}` : ""}` : "; the seed had problems"}` };
     },
     imitor_read_problems: async () => {
       const result = readProblems(root);
       return { content: [text(result)], summary: `read the last run: ${plural(result.problems.length, "problem")}, ${plural(result.standInsSeen.length, "stand-in")}` };
+    },
+    imitor_init: async (args) => {
+      const dryRun = args.dryRun !== false;
+      const result = init(root, { dryRun, force: args.force === true });
+      const { changes, conflict, ...rest } = result;
+      const files = (changes || []).map((c) => c.file);
+      const summary = result.stop ? `could not set up Imitor: ${String(result.stop).split(".")[0]}` : dryRun ? `planned the Imitor setup: ${plural(files.length, "change")}` : `set up Imitor: changed ${files.join(", ") || "nothing"}`;
+      // A dry run writes nothing, not even the activity log; nor does a setup that stopped.
+      return { content: [text(formatInit(result)), text({ ...rest, changes: files })], summary, noLog: dryRun || Boolean(result.stop) };
     },
     imitor_open_preview: async (args) => {
       const config = loadConfig(root);
@@ -72,7 +83,7 @@ export function createServer(root) {
       return { content: [text({ url: preview.url + (args.route || "/"), note: "Local to this machine. State starts empty; it is an imitation rendered on the web, not a phone." })], summary: `opened the preview at ${args.route || "/"}` };
     },
   };
-  const FAILED = { imitor_describe: "read the setup", imitor_build: "build the preview", imitor_screenshot: "take a screenshot", imitor_run_flow: "run a flow", imitor_record_video: "record a video", imitor_read_problems: "read problems", imitor_open_preview: "open the preview" };
+  const FAILED = { imitor_describe: "read the setup", imitor_build: "build the preview", imitor_screenshot: "take a screenshot", imitor_run_flow: "run a flow", imitor_record_video: "record a video", imitor_read_problems: "read problems", imitor_init: "set up Imitor", imitor_open_preview: "open the preview" };
 
   // The activity log is for the app; never let writing it break a tool call.
   function log(tool, summary, ok) {
@@ -94,12 +105,12 @@ export function createServer(root) {
       const fn = handlers[params?.name];
       if (!fn) return { jsonrpc: "2.0", id, error: { code: -32602, message: `unknown tool ${params?.name}` } };
       try {
-        const { content, summary } = await fn(params.arguments || {});
-        log(params.name, summary, true);
+        const { content, summary, noLog } = await fn(params.arguments || {});
+        if (!noLog) log(params.name, summary, true);
         return reply({ content });
       } catch (error) {
         const reason = String(error.message).split("\n")[0].slice(0, 160);
-        log(params.name, `tried to ${FAILED[params.name]}: ${reason}`, false);
+        if (params.name !== "imitor_init") log(params.name, `tried to ${FAILED[params.name]}: ${reason}`, false);
         return reply({ content: [text(String(error.message))], isError: true });
       }
     }

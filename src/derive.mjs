@@ -3,6 +3,7 @@
 // File links are built with a URL prefix, "/files/" by default (the local server's file route).
 import crypto from "node:crypto";
 import path from "node:path";
+import { stateInfo } from "./state.mjs";
 
 /** The run.json format written by this version. A run.json without schemaVersion is version 1. */
 export const SCHEMA_VERSION = 1;
@@ -34,7 +35,8 @@ export function flowDetail(config, manifest) {
         let failedMarked = false;
         const steps = shotSteps.map(({ step, index }) => {
           const shot = manifest.shots.find((s) => here(s) && s.shot === step.shot);
-          if (shot) return { index, name: step.shot, status: shot.stubs.length ? "stand-in" : "ok", shot: shot.file, route: shot.route, standIns: shot.stubs };
+          // state and seeded: whether the shot shows invented data (a state label for the stand-ins, or a seed).
+          if (shot) return { index, name: step.shot, status: shot.stubs.length ? "stand-in" : "ok", shot: shot.file, route: shot.route, standIns: shot.stubs, state: shot.state ?? null, seeded: shot.seeded === true };
           if (failure && !failedMarked && (failure.step == null || index >= failure.step)) {
             failedMarked = true;
             return { index, name: step.shot, status: "failed", shot: failure.file || null, route: null, standIns: [] };
@@ -42,7 +44,7 @@ export function flowDetail(config, manifest) {
           return { index, name: step.shot, status: "not-reached", shot: null, route: null, standIns: [] };
         });
         const status = failure ? "failed" : steps.some((s) => s.status === "stand-in") ? "stand-ins" : "passed";
-        flows.push({ name: flow.name, status, device: device.name, scheme, steps });
+        flows.push({ name: flow.name, status, device: device.name, scheme, ...stateInfo(flow), steps });
       }
     }
   }
@@ -50,7 +52,7 @@ export function flowDetail(config, manifest) {
 }
 
 export function runStatus(manifest) {
-  if (manifest.problems.some((p) => p.kind === "flow-failed")) return "failed";
+  if (manifest.problems.some((p) => p.kind === "flow-failed" || p.kind === "seed-failed")) return "failed";
   if (manifest.shots.some((s) => s.stubs.length)) return "stand-ins";
   return "passed";
 }
@@ -87,13 +89,13 @@ export function runProblems(loaded, previous, prefix = "/files/") {
   const ref = { id: run.id, pr: run.pr, commit: run.commit, title: run.title };
   const out = [];
   for (const p of manifest.problems) {
-    if (p.kind !== "flow-failed" && p.kind !== "page-error" && p.kind !== "dialog") continue;
+    if (p.kind !== "flow-failed" && p.kind !== "page-error" && p.kind !== "dialog" && p.kind !== "seed-failed") continue;
     const { flow, device, scheme } = locate(p);
     const failed = p.kind === "flow-failed";
     out.push({
       id: problemId(run.id, p.kind, flow, device, scheme, p.message),
       kind: p.kind,
-      title: failed ? (p.step ? `${flow} failed at step ${p.step}` : `${flow} failed before its first step`) : p.kind === "dialog" ? `Dialog in ${flow}${p.step ? ` at step ${p.step}` : ""}` : `Page error in ${flow}`,
+      title: failed ? (p.step ? `${flow} failed at step ${p.step}` : `${flow} failed before its first step`) : p.kind === "dialog" ? `Dialog in ${flow}${p.step ? ` at step ${p.step}` : ""}` : p.kind === "seed-failed" ? `Seed problem in ${flow}` : `Page error in ${flow}`,
       run: ref,
       device,
       scheme,

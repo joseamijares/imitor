@@ -192,10 +192,10 @@ export function setSeen(out, id, seen) {
 const capturesFile = (out) => path.join(out, "captures", "index.jsonl");
 
 /** Append one capture. `file` is relative to `out` (or absolute). */
-export function appendCapture(out, { kind, file, route = null, flow = null, device = null, scheme = null, by, at = new Date().toISOString(), seconds = null, standIns = [] }) {
+export function appendCapture(out, { kind, file, route = null, flow = null, device = null, scheme = null, by, at = new Date().toISOString(), seconds = null, standIns = [], state = null, seeded = false }) {
   const n = readLines(capturesFile(out)).length + 1;
   const rel = path.isAbsolute(file) ? path.relative(out, file) : file;
-  const line = { id: `c_${stamp(at)}_${n}`, kind, file: rel.split(path.sep).join("/"), route, flow, device, scheme, by, at, seconds, standIns };
+  const line = { id: `c_${stamp(at)}_${n}`, kind, file: rel.split(path.sep).join("/"), route, flow, device, scheme, by, at, seconds, standIns, state, seeded };
   appendLine(capturesFile(out), line);
   return line;
 }
@@ -203,9 +203,10 @@ export function appendCapture(out, { kind, file, route = null, flow = null, devi
 /** Record what `imitor screenshot`, `imitor flow` or `imitor record` (or their MCP tools) produced. Paths in `result` are relative to `root`. */
 export function recordCaptures(out, root, command, result, by) {
   const abs = (f) => path.join(root, f);
-  if (command === "screenshot") return [appendCapture(out, { kind: "screenshot", file: abs(result.file), route: result.route, flow: result.flow ?? null, device: result.device, scheme: result.scheme, by, standIns: result.standIns })];
-  if (command === "flow") return result.shots.map((s) => appendCapture(out, { kind: "screenshot", file: abs(s.file), route: s.route, flow: result.flow, device: result.device, scheme: result.scheme, by, standIns: s.standIns }));
-  if (command === "record") return [appendCapture(out, { kind: "video", file: abs(result.file), route: null, flow: result.flow, device: result.device, scheme: result.scheme, by, seconds: result.seconds, standIns: [] })];
+  const made = { state: result.state ?? null, seeded: result.seeded === true };
+  if (command === "screenshot") return [appendCapture(out, { kind: "screenshot", file: abs(result.file), route: result.route, flow: result.flow ?? null, device: result.device, scheme: result.scheme, by, standIns: result.standIns, ...made })];
+  if (command === "flow") return result.shots.map((s) => appendCapture(out, { kind: "screenshot", file: abs(s.file), route: s.route, flow: result.flow, device: result.device, scheme: result.scheme, by, standIns: s.standIns, ...made }));
+  if (command === "record") return [appendCapture(out, { kind: "video", file: abs(result.file), route: null, flow: result.flow, device: result.device, scheme: result.scheme, by, seconds: result.seconds, standIns: [], ...made })];
   throw new Error(`unknown capture command ${command}`);
 }
 

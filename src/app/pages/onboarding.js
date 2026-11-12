@@ -3,6 +3,7 @@
 import { api, isStatic } from "../api.js";
 import { html, raw, icon, logo, statusMark, chip, pill, seg, avatar, button, codeBlock, thumb, loadingLine, errorState } from "../components.js";
 import { ago, deviceName, schemeName, humanize, stepLabel, plural } from "../format.js";
+import { withBase } from "../base.js";
 
 const STEPS = [
   { key: "add", path: "/onboarding", name: "Add Imitor" },
@@ -17,6 +18,7 @@ const PROMPT = `Set up Imitor (${REPO}) in this repo by following the "Set up" s
 const KIND_TEXT = {
   sqljs: "Real SQLite in the browser (sql.js)",
   skia: "Keeps the box, draws nothing",
+  canvaskit: "Real Skia drawing in the browser (CanvasKit)",
   inert: "Every export exists and does nothing",
 };
 
@@ -36,13 +38,13 @@ export async function mount(ctx) {
 
 function topBar(current) {
   return html`<header class="onb-bar">
-    <a class="onb-brand" href="/runs" title="Runs">${logo(24)}<span class="wordmark">Imitor</span></a>
+    <a class="onb-brand" href="${withBase(`/runs`)}" title="Runs">${logo(24)}<span class="wordmark">Imitor</span></a>
     <ol class="onb-steps" aria-label="Set up steps">${STEPS.map((s, i) => {
       const state = i < current ? "done" : i === current ? "now" : "next";
       return html`${i ? html`<li class="onb-line" aria-hidden="true"></li>` : ""}<li class="onb-step is-${raw(state)}">
-        <a href="${s.path}"${i === current ? raw(' aria-current="step"') : ""}><span class="onb-num" aria-hidden="true">${state === "done" ? icon("check", 11) : i + 1}</span>${s.name}</a></li>`;
+        <a href="${withBase(s.path)}"${i === current ? raw(' aria-current="step"') : ""}><span class="onb-num" aria-hidden="true">${state === "done" ? icon("check", 11) : i + 1}</span>${s.name}</a></li>`;
     })}</ol>
-    <a class="onb-skip" href="/runs">Skip setup</a>
+    <a class="onb-skip" href="${withBase(`/runs`)}">Skip setup</a>
   </header>`;
 }
 
@@ -156,7 +158,7 @@ async function stepStandIns(ctx, col) {
         <span role="cell" class="t2">${KIND_TEXT[s.kind] || (/^\.{0,2}\//.test(s.kind) ? "Your own stand-in" : "Replaced for the web")}</span>
         <span role="cell">${s.fidelity === "genuine" ? pill("Genuine", "ok") : pill("Stand-in", "warn")}</span>
         <span role="cell" class="right">${chip(s.kind)}</span></div>`)}
-    </div>` : html`<div class="onb-empty t2">Every module the app imports is bundled as it is. If the build fails on a native-only module, add it under <span class="mono">"shims"</span> with <span class="mono">"inert"</span>, <span class="mono">"skia"</span> or <span class="mono">"sqljs"</span>.</div>`}
+    </div>` : html`<div class="onb-empty t2">Every module the app imports is bundled as it is. If the build fails on a native-only module, add it under <span class="mono">"shims"</span> with <span class="mono">"inert"</span>, <span class="mono">"skia"</span>, <span class="mono">"canvaskit"</span> or <span class="mono">"sqljs"</span>.</div>`}
     <p class="onb-footnote">${statusMark("standin", "Stand-in")}<span>Stand-ins only change the preview build. Your iOS and Android builds keep the real modules.</span></p>
     ${footer(button("Back", "ghost", { href: STEPS[0].path }), button("Continue", "primary", { href: STEPS[2].path }))}`);
 }

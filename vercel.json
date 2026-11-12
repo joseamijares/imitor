@@ -4,6 +4,6 @@
   "installCommand": "echo 'The site has no dependencies'",
   "buildCommand": "node site/build.mjs",
   "outputDirectory": "site/dist",
-  "cleanUrls": true,
-  "trailingSlash": true
+  "trailingSlash": true,
+  "rewrites": [{ "source": "/demo/((?!api/|files/|assets/)[^.]*)", "destination": "/demo/index.html" }]
 }
