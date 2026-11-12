@@ -22,6 +22,10 @@ export function memoryStorage({ baseUrl = null, now = () => Date.now() } = {}) {
   const storage = {
     baseUrl,
     objects,
+    /** The server's own origin: memory storage is for tests and local runs, never for files people should not trust. */
+    get origin() {
+      return storage.baseUrl ? new URL(storage.baseUrl).origin : null;
+    },
     async presignPut(key, { size, sha256, contentType, expiresIn = 900 }) {
       const params = { expires: String(now() + expiresIn * 1000), size: String(size), sha256, type: contentType };
       return { method: "PUT", url: url("PUT", key, params), headers: { "content-length": String(size), "content-type": contentType, "x-amz-checksum-sha256": hexToBase64(sha256) } };
@@ -55,7 +59,8 @@ export function memoryStorage({ baseUrl = null, now = () => Date.now() } = {}) {
       if (Number(signed.expires) < now()) return plain(403, "Request has expired");
       if (request.method === "GET") {
         const o = objects.get(key);
-        return o ? new Response(o.body, { status: 200, headers: { "content-type": o.contentType } }) : plain(404, "NoSuchKey");
+        // Served from the app's own origin here, so nothing in it may run or be framed, whatever its bytes.
+        return o ? new Response(o.body, { status: 200, headers: { "content-type": o.contentType, "content-security-policy": "default-src 'none'; sandbox", "x-content-type-options": "nosniff", "cache-control": "private, max-age=300" } }) : plain(404, "NoSuchKey");
       }
       if (request.headers.get("content-type") !== signed.type) return plain(403, "SignatureDoesNotMatch: content-type");
       if (request.headers.get("x-amz-checksum-sha256") !== hexToBase64(signed.sha256)) return plain(403, "SignatureDoesNotMatch: x-amz-checksum-sha256");

@@ -163,6 +163,17 @@ npx imitor export --base /review                   # to serve it under /review/ 
 
 The site holds the app's screenshots and videos. Publish it only where those may be seen, for example a team-only or password-protected deployment, not a public URL for an unreleased app.
 
+## Use Imitor Cloud (in development, not hosted yet)
+
+Imitor Cloud is a place for finished runs that a team signs in to: agents and CI upload a run with `imitor push`, and people review it in the same interface `imitor app` shows, signed in with Google. It is in development: nothing is hosted yet, and the code in [`cloud/`](cloud/) (AGPL-3.0) is for running your own. [`cloud/README.md`](cloud/README.md) covers running it locally, on a Node server with Postgres and S3-compatible storage, or on Vercel.
+
+```bash
+# on an Imitor Cloud you run: make a project, then an upload key under Settings, Access keys
+IMITOR_CLOUD_URL=https://cloud.example.com IMITOR_TOKEN=imk_... npx imitor push
+```
+
+The key can only upload runs to its project. Typed values (passwords, emails) are blanked before anything leaves the machine. Interest in a hosted version is collected on [issue #11](https://github.com/joseamijares/imitor/issues/11).
+
 ## Stand-ins
 
 | Value | Replaces | Behaviour |

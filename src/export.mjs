@@ -8,10 +8,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { APP_DIR, apiGet } from "./appserver.mjs";
+import { BASE_META, markIndex, MODE_META } from "./app-index.mjs";
 import { loadConfig } from "./config.mjs";
 
-export const MODE_META = "imitor-mode";
-export const BASE_META = "imitor-base";
+export { BASE_META, markIndex, MODE_META };
+
 // Every path without a dot in it (the interface's History API routes) gets index.html; files are served as they are.
 export const SPA_REWRITE = { source: "/((?!api/|files/|assets/)[^.]*)", destination: "/index.html" };
 const MARK_FILE = ".imitor-export";
@@ -50,16 +51,6 @@ const writeJson = (file, value) => {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(value));
 };
-
-/** index.html with the mode marker (and the base marker, with root paths prefixed, when `base` is set) after <meta charset>. */
-export function markIndex(html, mode, base = "") {
-  let tag = `<meta name="${MODE_META}" content="${mode}">`;
-  if (base) {
-    tag += `\n  <meta name="${BASE_META}" content="${base}">`;
-    html = html.replace(/\b(href|src)="\/(?!\/)/g, `$1="${base}/`);
-  }
-  return /<meta charset[^>]*>/i.test(html) ? html.replace(/<meta charset[^>]*>/i, (m) => `${m}\n  ${tag}`) : html.replace(/<head[^>]*>/i, (m) => `${m}\n  ${tag}`);
-}
 
 function folderSize(dir) {
   let n = 0;

@@ -3,7 +3,7 @@
 // The preview is served on its own origin (GET /api/project previewUrl). Every page of it loads a small driver
 // (src/live-driver.js) that this page talks to with postMessage: it performs flow steps inside the frame, clears the
 // app's stored state, and reports the route and the stand-ins on screen.
-import { api, isStatic, isDemo, LIVE_NEEDS_APP } from "../api.js";
+import { api, isCloud, isRemote, isDemo, LIVE_UNAVAILABLE } from "../api.js";
 import { html, raw, icon, logo, statusMark, chip, pill, switchEl, loadingLine, errorState, codeBlock, demoPill } from "../components.js";
 import { ago, deviceName, humanize, stepLabel, plural } from "../format.js";
 import { withBase } from "../base.js";
@@ -287,9 +287,9 @@ function createLive(ctx, project, detail) {
     const standIns = project.standIns || [];
     const onScreen = st.standIns.length
       ? html`On this screen: ${st.standIns.map((s, i) => html`${i ? ", " : ""}<span class="mono">${s.kind}</span>${s.count > 1 ? ` ×${s.count}` : ""}`)}`
-      : isStatic && !project.previewUrl ? "" : st.media === undefined ? "Waiting for the preview…" : "No stand-ins on this screen.";
+      : isRemote && !project.previewUrl ? "" : st.media === undefined ? "Waiting for the preview…" : "No stand-ins on this screen.";
     const d = st.device;
-    const appearanceNote = st.appearance || (isStatic && !project.previewUrl) ? "" : html`<p class="control-note">This preview was built before Imitor could switch its appearance and motion. Rebuild it to use these: <span class="mono">npx imitor build</span>. Until then the app follows this computer’s settings.</p>`;
+    const appearanceNote = st.appearance || (isRemote && !project.previewUrl) ? "" : html`<p class="control-note">This preview was built before Imitor could switch its appearance and motion. Rebuild it to use these: <span class="mono">npx imitor build</span>. Until then the app follows this computer’s settings.</p>`;
     inspector.innerHTML = String(html`
       <section class="insp-section">
         <div class="insp-head"><h2>Fidelity</h2>${pill("Web imitation", "acc")}<button type="button" class="m-icon-btn live-sheet-close" data-live="sheet-close" aria-label="Close">${icon("close", 16)}</button></div>
@@ -425,10 +425,10 @@ function createLive(ctx, project, detail) {
   }
 
   function renderStage() {
-    // An exported site has no preview server unless it was exported with --preview-url.
-    if (isStatic && !project.previewUrl) {
+    // An exported site has no preview server unless it was exported with --preview-url; Imitor Cloud has none.
+    if (isRemote && !project.previewUrl) {
       const shots = withBase(runId ? `/runs/${encodeURIComponent(runId)}` : "/runs");
-      fit.innerHTML = String(html`<div class="state stage-state"><h2>No live preview on this site</h2><p>${LIVE_NEEDS_APP} <a href="${shots}" style="text-decoration:underline">${runId ? "See this run’s shots" : "See the runs and their shots"}</a> instead.</p></div>`);
+      fit.innerHTML = String(html`<div class="state stage-state"><h2>${isCloud ? "No live preview in Imitor Cloud" : "No live preview on this site"}</h2><p>${LIVE_UNAVAILABLE} <a href="${shots}" style="text-decoration:underline">${runId ? "See this run’s shots" : "See the runs and their shots"}</a> instead.</p></div>`);
       return false;
     }
     if (!project.built) {

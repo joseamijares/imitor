@@ -70,7 +70,7 @@ test("imitor push uploads the newest run, redacted, and prints its URL; pushing 
   const [run] = await c.deps.db.listRuns(c.project.id);
   assert.equal(run.status, "ready");
   assert.equal(run.clientRunId, a.run.id);
-  assert.equal(first.stdout.split("\n")[0], `Pushed run ${a.run.id} (4 files): ${c.url}/runs/${run.id}`);
+  assert.equal(first.stdout.split("\n")[0], `Pushed run ${a.run.id} (4 files): ${c.url}/p/fernwood/runs/${run.id}`);
   assert.match(first.stdout, /Left out 1 file of a type the cloud does not take, e\.g\. screens\/notes\.txt/);
 
   // Every file arrived byte for byte, under the server's key.
@@ -86,7 +86,7 @@ test("imitor push uploads the newest run, redacted, and prints its URL; pushing 
 
   const again = await cli(a.root, ["push", "--run", a.run.id], env);
   assert.equal(again.code, 0, again.stderr);
-  assert.equal(again.stdout.split("\n")[0], `Pushed run ${a.run.id} (0 of 4 files; the rest were already there): ${c.url}/runs/${run.id}`);
+  assert.equal(again.stdout.split("\n")[0], `Pushed run ${a.run.id} (0 of 4 files; the rest were already there): ${c.url}/p/fernwood/runs/${run.id}`);
   assert.equal((await c.deps.db.listRuns(c.project.id)).length, 1);
 });
 

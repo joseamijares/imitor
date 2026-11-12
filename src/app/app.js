@@ -1,6 +1,6 @@
 // Imitor app: the shell (sidebar and page frame), routes, and app-wide behaviour
 // (theme, copy buttons, the shot lightbox, toasts, retry).
-import { api, isDemo } from "./api.js";
+import { api, CLOUD_PAGES, isCloud, isDemo } from "./api.js";
 import { createRouter } from "./router.js";
 import { html, raw, icon, logo, navItem, toNode, safeUrl, demoPill } from "./components.js";
 import * as runsPage from "./pages/runs.js";
@@ -75,7 +75,8 @@ function sidebar() {
         <dt>Project</dt><dd>${p.name}</dd>
         <dt>Branch</dt><dd>${p.branch || "—"}</dd>
         <dt>Commit</dt><dd class="mono">${p.commit || "—"}</dd>
-        <dt>Preview</dt><dd>${p.built ? "Built" : "Not built yet"}</dd></dl>` : html`<span>${state.projectError ? `Couldn’t load the project: ${state.projectError}` : "Loading…"}</span>`}</div>
+        ${isCloud ? "" : html`<dt>Preview</dt><dd>${p.built ? "Built" : "Not built yet"}</dd>`}</dl>` : html`<span>${state.projectError ? `Couldn’t load the project: ${state.projectError}` : "Loading…"}</span>`}
+        ${isCloud ? html`<a class="project-all" href="${CLOUD_PAGES.projects}">All projects</a>` : ""}</div>
     </div>
     <nav class="side-nav" aria-label="Pages">
       ${navItem({ href: "/runs", iconName: "runs", label: "Runs", active: nav === "runs" })}
@@ -139,9 +140,10 @@ function phoneSheet() {
     <div class="m-sheet-panel" role="dialog" aria-modal="true" aria-labelledby="m-sheet-title">
       <div class="m-sheet-head"><span class="m-sheet-project"><span class="project-swatch" aria-hidden="true"></span><span id="m-sheet-title">${p?.name || "Imitor"}</span></span>
         <button type="button" class="m-icon-btn" data-action="more-close" aria-label="Close">${icon("close", 16)}</button></div>
-      ${p ? html`<dl class="m-sheet-facts"><dt>Branch</dt><dd class="mono">${p.branch || "—"}</dd><dt>Commit</dt><dd class="mono">${p.commit || "—"}</dd><dt>Preview</dt><dd>${p.built ? "Built" : "Not built yet"}</dd></dl>` : ""}
+      ${p ? html`<dl class="m-sheet-facts"><dt>Branch</dt><dd class="mono">${p.branch || "—"}</dd><dt>Commit</dt><dd class="mono">${p.commit || "—"}</dd>${isCloud ? "" : html`<dt>Preview</dt><dd>${p.built ? "Built" : "Not built yet"}</dd>`}</dl>` : ""}
       <nav class="m-sheet-nav" aria-label="More">
         <a class="m-sheet-item${current.nav === "settings" ? " is-active" : ""}" href="${withBase(`/settings`)}">${icon("settings")}<span>Settings</span>${icon("chevron", 14)}</a>
+        ${isCloud ? html`<a class="m-sheet-item" href="${CLOUD_PAGES.projects}">${icon("runs")}<span>All projects</span>${icon("chevron", 14)}</a>` : ""}
         <a class="m-sheet-item" href="${DOCS_URL}" target="_blank" rel="noopener">${icon("docs")}<span>Docs</span>${icon("external", 14)}</a>
       </nav>
       <div class="m-sheet-theme"><span>Theme</span>

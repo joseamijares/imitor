@@ -130,7 +130,7 @@ test("checkUpload refuses a deeply nested or oversized body without overflowing 
   assert.match(checkUpload(nested), /nested more than 64 levels deep/);
   assert.match(sizeProblem(deep), /nested more than 64 levels deep/);
   assert.doesNotThrow(() => redact(nested));
-  assert.match(checkUpload(withManifest({ notes: "x".repeat(MAX_BODY_BYTES) })), /over 8 MB of JSON; the limit is 8 MB/);
+  assert.match(checkUpload(withManifest({ notes: "x".repeat(MAX_BODY_BYTES) })), /over 4 MB of JSON; the limit is 4 MB/);
   assert.equal(sizeProblem(body()), null);
 });
 
