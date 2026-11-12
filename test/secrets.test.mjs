@@ -47,6 +47,7 @@ test("resolveValue: literals as text; a listed, set variable's value; otherwise 
   assert.throws(() => resolveValue({ env: "PW" }, ["PW"], {}), /environment variable PW is not set/);
   assert.throws(() => resolveValue({ env: "PW" }, ["PW"], { PW: "" }), /PW is not set/);
   assert.throws(() => resolveValue({ nope: 1 }, ["PW"], {}), /must be text/);
+  assert.throws(() => resolveValue({ env: "PIN" }, ["PIN"], { PIN: "123" }), (e) => /PIN is shorter than 4 characters/.test(e.message) && !e.message.includes("123"));
 });
 
 test("publicStep hides every fill value; scrub removes secret values from any text; inline steps cannot use env", () => {
@@ -58,6 +59,9 @@ test("publicStep hides every fill value; scrub removes secret values from any te
   const values = secretValues(["A", "B", "SHORT"], { A: "alpha-secret", B: "beta-secret", SHORT: "ab" });
   assert.deepEqual(values, ["alpha-secret", "beta-secret"], "values shorter than 4 characters are not scrubbed");
   assert.deepEqual(scrub({ m: "x alpha-secret y", list: ["beta-secret"], n: 3 }, values), { m: `x ${HIDDEN} y`, list: [HIDDEN], n: 3 });
+  assert.equal(scrub(JSON.stringify({ password: 'ab"cd-ef' }), ['ab"cd-ef']), `{"password":"${HIDDEN}"}`, "JSON-escaped forms too");
+  assert.deepEqual(scrub({ file: "screens/alpha-secret.png", route: "/u/alpha-secret" }, values), { file: "screens/alpha-secret.png", route: `/u/${HIDDEN}` }, "paths stay valid");
+  assert.deepEqual(scrub({ fill: { value: { env: "A" } } }, values), { fill: { value: { env: "A" } } }, "a reference is kept");
   assert.throws(() => refuseSecretRefs([{ tap: "x" }, { fill: { placeholder: "P", value: { env: "PW" } } }]), /step 2: values from the environment can only be used in flows in imitor.config.json/);
   refuseSecretRefs([{ fill: { placeholder: "P", value: "literal" } }]);
   refuseSecretRefs(undefined);
@@ -85,6 +89,8 @@ const forms = (s) => [s, Buffer.from(s).toString("base64"), encodeURIComponent(s
 
 function findCanaries(text, where) {
   for (const c of CANARIES) for (const f of forms(c)) assert.ok(!text.includes(f), `${where} contains a value that was typed (${c === LITERAL ? "literal" : "secret"})`);
+  // Every canary carries the tag; part of one (a value cut in half by a truncation) still has its first 8 characters.
+  assert.ok(!text.includes(tag.slice(0, 8)), `${where} contains part of a value that was typed`);
 }
 
 function scanDir(dir, skip = new Set()) {
@@ -131,7 +137,8 @@ function signInApp() {
       // Fails in its own step, after the secrets were typed in the flow it runs after.
       { name: "stuck", after: "login", steps: [{ tap: "Not there" }] },
       // Fails right after typing a literal.
-      { name: "literal", start: "/", steps: [{ fill: { placeholder: "Email", value: LITERAL } }, { tap: "Missing" }] },
+      // Types a literal, which the app then echoes (console error, alert, address), and fails.
+      { name: "literal", start: "/", steps: [{ fill: { placeholder: "Email", value: LITERAL } }, { tap: "Sign in" }, { tap: "Missing" }] },
     ],
   }));
   git(root, "add", ".");
@@ -143,7 +150,8 @@ function signInApp() {
 <style>body{margin:0;font:16px sans-serif;background:#fff}input{display:block;width:300px;height:40px;margin:20px;border:1px solid #888;background:#fff}</style></head><body>
 <input id="email" placeholder="Email"><input id="pw" type="password" placeholder="Password"><button id="go">Sign in</button><div id="out"></div>
 <script>document.getElementById("go").onclick=function(){var e=document.getElementById("email").value,p=document.getElementById("pw").value;
-console.error("sign-in failed for "+e+" with "+p);alert("Wrong password "+p);document.getElementById("out").textContent="Signed in";};</script></body></html>`);
+console.error("sign-in failed for "+e+" with "+p);alert("Wrong password "+p);alert("y".repeat(275)+p);
+history.pushState(null,"","/u/"+e);document.getElementById("out").textContent="Signed in";};</script></body></html>`);
   return { root, remote, dir };
 }
 
@@ -191,6 +199,9 @@ test("no value a flow types reaches a file, a result, a log, the comment, the ex
   assert.ok(result.problems.some((p) => p.kind === "dialog" && p.message.includes(HIDDEN)), "and those were scrubbed, not dropped");
   const literalFail = result.problems.find((p) => p.flow === "literal" && p.kind === "flow-failed");
   assert.equal(literalFail.stepConfig.tap, "Missing");
+  assert.ok(result.problems.some((p) => p.flow === "literal" && p.kind === "page-error" && p.message.includes(HIDDEN)), "a literal the app echoed is scrubbed too");
+  assert.equal(result.shots.find((s) => s.shot === "home").route, `/u/${HIDDEN}`, "an address that holds a typed value is scrubbed");
+  assert.ok(result.problems.some((p) => p.kind === "dialog" && /^alert: y{275}•••$/.test(p.message)), "a value is hidden before a dialog is cut to 300 characters");
   const manifest = writeReport(root, config, result);
   assert.deepEqual(manifest.shots.find((s) => s.shot === "home").secrets, ["IMITOR_TEST_EMAIL", "IMITOR_TEST_PASSWORD"], "shots say which secrets their flow used");
   assert.equal(manifest.shots.find((s) => s.flow === "literal"), undefined);
@@ -256,14 +267,15 @@ test("no value a flow types reaches a file, a result, a log, the comment, the ex
   for (const f of branchFiles) findCanaries(git(remote, "show", `imitor-shots:${f}`), `imitor-shots:${f}`);
   findCanaries(git(remote, "log", "-p", "imitor-shots"), "the shots branch history");
 
-  // The email field was filled from a secret and is masked in shots; the password field draws dots and is not masked.
+  // Both fields were filled from secrets and are masked, the password field too ("show password" could reveal it).
   const { chromium } = require("playwright");
   const b = await chromium.launch();
   t.after(() => b.close());
   const page = await b.newPage();
   const n = await maskedPixels(page, filled);
-  assert.ok(n > 300 * 40, `the email field is masked (${n} magenta pixels)`);
-  assert.ok(n < 300 * 40 * 4 * 1.5, `only the email field is masked (${n} magenta pixels)`);
+  const field = 300 * 40 * 4; // a 300 x 40 field at device scale 2
+  assert.ok(n > 2 * field * 0.9, `both fields are masked (${n} magenta pixels)`);
+  assert.ok(n < 2 * field * 1.3, `only the two fields are masked (${n} magenta pixels)`);
 });
 
 test("a listed secret that is not set fails the step with the variable's name", browser, async (t) => {

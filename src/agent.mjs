@@ -3,8 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { DEVICES, fidelityOf, loadConfig } from "./config.mjs";
 import { serve } from "./serve.mjs";
-import { publicStep, refuseSecretRefs, scrub, secretValues } from "./secrets.mjs";
-import { doStep, loadPlaywright, settle, shotOptions, visibleStandIns, watchDialogs } from "./shoot.mjs";
+import { publicStep, refuseSecretRefs, scrub, typedValues } from "./secrets.mjs";
+import { doStep, firstLine, loadPlaywright, settle, shotOptions, visibleStandIns, watchDialogs } from "./shoot.mjs";
 import { flowChain, flowSecrets, prepareContext, readSeedProblems, stateInfo } from "./state.mjs";
 
 const slug = (s) => String(s).replace(/^\/+|\/+$/g, "").replace(/[^a-zA-Z0-9]+/g, "-") || "root";
@@ -60,15 +60,16 @@ async function withPage(root, config, opts, flow, task) {
     });
     const setup = await prepareContext(context, flow);
     const page = await context.newPage();
-    page.on("pageerror", (e) => errors.push(String(e.message).split("\n")[0]));
-    page.on("console", (m) => m.type() === "error" && errors.push(m.text().split("\n")[0].slice(0, 300)));
-    watchDialogs(page, (message) => dialogs.push(message));
+    const hide = typedValues(config, opts.steps);
+    page.on("pageerror", (e) => errors.push(firstLine(e.message, hide)));
+    page.on("console", (m) => m.type() === "error" && errors.push(firstLine(m.text(), hide, 300)));
+    watchDialogs(page, (message) => dialogs.push(message), hide);
     const result = await task({ page, context, device, scheme, baseUrl: server.url });
     const seedErrors = await readSeedProblems(page, setup);
     await context.close(); // flushes the video file
     const { after, state, seeded, clock } = stateInfo(flow);
     // Error messages, page errors and dialogs can echo what was typed: take every secret value out of the result.
-    return scrub({ ...result, device: device.name, scheme, after, state, seeded, clock, ...("passed" in result ? { passed: result.passed && !seedErrors.length } : {}), seedErrors, pageErrors: [...new Set(errors)], dialogs }, secretValues(config.secrets));
+    return scrub({ ...result, device: device.name, scheme, after, state, seeded, clock, ...("passed" in result ? { passed: result.passed && !seedErrors.length } : {}), seedErrors, pageErrors: [...new Set(errors)], dialogs }, hide);
   } finally {
     await browser.close();
     server.close();
@@ -90,7 +91,7 @@ async function startFlow(page, config, flow, baseUrl) {
       if (!b.step.wait) await settle(page, 150);
       done.push({ after: b.flow, index: b.index, step: b.step, ok: true });
     } catch (error) {
-      done.push({ after: b.flow, index: b.index, step: b.step, ok: false, error: String(error.message).split("\n")[0] });
+      done.push({ after: b.flow, index: b.index, step: b.step, ok: false, error: firstLine(error.message, typedValues(config)) });
       return { steps: done, failedAt: b.index, failedIn: b.flow };
     }
   }
@@ -128,7 +129,7 @@ async function runSteps(page, steps, baseUrl, config, onShot) {
       }
       done.push({ index: index + 1, step, ok: true });
     } catch (error) {
-      done.push({ index: index + 1, step, ok: false, error: String(error.message).split("\n")[0] });
+      done.push({ index: index + 1, step, ok: false, error: firstLine(error.message, typedValues(config, steps)) });
       return { steps: done, failedAt: index + 1 };
     }
   }

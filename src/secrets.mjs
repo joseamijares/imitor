@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { fillValues, redact } from "./redact.mjs";
 
 // Values a flow types, and keeping them out of what Imitor writes and returns.
 //
@@ -14,8 +15,9 @@ import path from "node:path";
 
 export const HIDDEN = "•••";
 const NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
-// Shorter secrets are not scrubbed from free text: replacing every "ab" in an error message helps no one.
-const MIN_SCRUB = 4;
+// A value from the environment must be at least this long: shorter ones ("123") cannot be found in free text without
+// also blanking ordinary words, so Imitor refuses to type them rather than risk one leaking.
+export const MIN_SECRET = 4;
 
 /** True for { "env": "NAME" } and nothing else. */
 export const isSecretRef = (v) => Boolean(v) && typeof v === "object" && !Array.isArray(v) && Object.keys(v).length === 1 && typeof v.env === "string";
@@ -56,12 +58,13 @@ export function resolveValue(value, secrets = [], env = process.env) {
   if (!secrets.includes(value.env)) throw new Error(`"${value.env}" is not listed in "secrets" in imitor.config.json`);
   const text = env[value.env];
   if (text === undefined || text === "") throw new Error(`the environment variable ${value.env} is not set (it is listed in "secrets"; run Imitor with it set, for example under op run)`);
+  if (text.length < MIN_SECRET) throw new Error(`the environment variable ${value.env} is shorter than ${MIN_SECRET} characters, too short for Imitor to keep out of error messages, so it is not typed`);
   return text;
 }
 
 /** The values of the listed secrets that are set, for scrub(). */
 export function secretValues(secrets = [], env = process.env) {
-  return secrets.map((n) => env[n]).filter((v) => typeof v === "string" && v.length >= MIN_SCRUB);
+  return secrets.map((n) => env[n]).filter((v) => typeof v === "string" && v.length >= MIN_SECRET);
 }
 
 /** A step as it may appear in output: every fill value replaced (a literal by "•••", a reference by the reference). */
@@ -76,17 +79,21 @@ export function secretsUsed(steps) {
   return [...new Set((steps || []).filter((s) => s && s.fill && isSecretRef(s.fill.value)).map((s) => s.fill.value.env))];
 }
 
-/** Replace every secret value inside a string, or inside every string of an object or array (returns a copy). */
-export function scrub(value, values) {
-  if (!values || !values.length) return value;
-  if (typeof value === "string") {
-    let out = value;
-    for (const v of values) out = out.split(v).join(HIDDEN);
-    return out;
-  }
-  if (Array.isArray(value)) return value.map((x) => scrub(x, values));
-  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, x]) => [k, scrub(x, values)]));
-  return value;
+/**
+ * Every value a run of `config` may type: the set values of its secrets, the literal fill values of its flows, and those
+ * of `extraSteps` (steps passed to a command or tool). scrub() takes them out of anything a page could echo them into.
+ */
+export function typedValues(config, extraSteps = [], env = process.env) {
+  return [...new Set([...secretValues(config.secrets || [], env), ...fillValues(config.flows || []), ...fillValues(extraSteps || [])])];
+}
+
+/**
+ * Replace every one of `values` inside a string, or inside the strings of an object or array (returns a copy), including
+ * their JSON-escaped forms; fill values are blanked too. Uses redact.mjs, so paths, names and ids (file, flow, shot...)
+ * are left alone and stay valid; a value shorter than 4 characters is blanked only where it is the whole string.
+ */
+export function scrub(value, values = []) {
+  return redact(value, { secrets: values });
 }
 
 /**

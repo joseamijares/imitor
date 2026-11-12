@@ -14,6 +14,7 @@ const KEEP = new Set([
 ]);
 const MIN_SECRET = 4; // shorter values ("1", "yes") would blank ordinary words inside text; they are blanked only whole
 
+const isEnvRef = (v) => Boolean(v) && typeof v === "object" && !Array.isArray(v) && Object.keys(v).length === 1 && typeof v.env === "string";
 const isFill = (key, v) => key === "fill" && v && typeof v === "object" && !Array.isArray(v) && "value" in v;
 
 // Visits [value, key it sits under] depth first, without recursion, so a deeply nested value cannot overflow the stack.
@@ -58,7 +59,8 @@ export function redact(value, { secrets = [] } = {}) {
       const fill = isFill(key, v);
       for (const [k, x] of Object.entries(v)) {
         define(out, k, undefined); // keeps the key order of the original
-        stack.push([fill && k === "value" ? BLANK : x, k, out, k]);
+        // A value from the environment ({ env: NAME }) is only a reference: keep it, so outputs say which variable it was.
+        stack.push([fill && k === "value" && !isEnvRef(x) ? BLANK : x, k, out, k]);
       }
     } else define(into, slot, typeof v === "string" ? scrub(v, key) : v);
   }

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { publicStep, resolveValue, scrub, secretValues } from "./secrets.mjs";
+import { publicStep, resolveValue, scrub, typedValues } from "./secrets.mjs";
 import { flowChain, flowSecrets, prepareContext, readSeedProblems, stateInfo } from "./state.mjs";
 
 // Prefer the app's own playwright, then Imitor's, then a global install.
@@ -30,8 +30,8 @@ export async function settle(page, ms) {
   await page.waitForTimeout(ms);
 }
 
-// Fields filled from a secret on each page, masked in that page's screenshots (unless they are password fields, which
-// already draw dots).
+// Fields filled from a secret on each page, masked in that page's screenshots. Password fields too: a "show password"
+// toggle can turn the dots into text before the next shot.
 const masked = new WeakMap();
 
 /** Screenshot options for `page`: `extra`, plus a mask over every field filled from a secret. */
@@ -47,10 +47,7 @@ export async function doStep(page, step, baseUrl, secrets = []) {
     const field = locate(page, step.fill);
     const fromEnv = step.fill.value !== null && typeof step.fill.value === "object";
     await field.fill(resolveValue(step.fill.value, secrets), { timeout: 10000 });
-    if (fromEnv) {
-      const password = await field.evaluate((el) => el.matches("input[type=password]") || Boolean(el.querySelector && el.querySelector("input[type=password]"))).catch(() => false);
-      if (!password) masked.set(page, [...(masked.get(page) || []), field]);
-    }
+    if (fromEnv) masked.set(page, [...(masked.get(page) || []), field]);
   }
   else if (step.goto) await page.goto(baseUrl + step.goto);
   else if (step.wait) await page.waitForTimeout(step.wait);
@@ -71,12 +68,16 @@ export async function doStep(page, step, baseUrl, secrets = []) {
  * Record alert / confirm / prompt dialogs and dismiss them (as Playwright does by default). Apps often show errors with
  * window.alert on web, and a browser dialog never appears in a screenshot, so without this its text is lost.
  */
-export function watchDialogs(page, onDialog) {
+export function watchDialogs(page, onDialog, hide = []) {
   page.on("dialog", (dialog) => {
-    onDialog(`${dialog.type()}: ${dialog.message().replace(/\s+/g, " ").trim().slice(0, 300)}`);
+    // Hide typed values before the text is shortened, which could leave half of one behind.
+    onDialog(`${dialog.type()}: ${scrub(dialog.message(), hide).replace(/\s+/g, " ").trim().slice(0, 300)}`);
     dialog.dismiss().catch(() => {});
   });
 }
+
+/** The first line of a diagnostic, with typed values hidden first (so a cut cannot leave half of one), at most `max` long. */
+export const firstLine = (text, hide = [], max = Infinity) => scrub(String(text), hide).split("\n")[0].slice(0, max);
 
 /** The names of stand-ins visible on the page right now. */
 export const visibleStandIns = (page) =>
@@ -99,6 +100,7 @@ export async function shoot(root, config, baseUrl) {
   const shots = [];
   const problems = [];
   const secrets = config.secrets || [];
+  const hide = typedValues(config);
   try {
     for (const flow of config.flows) {
       for (const device of config.devices) {
@@ -119,13 +121,13 @@ export async function shoot(root, config, baseUrl) {
           const chain = flowChain(config, flow);
           const page = await context.newPage();
           const errors = [];
-          page.on("pageerror", (e) => errors.push(String(e.message).split("\n")[0]));
-          page.on("console", (m) => m.type() === "error" && errors.push(m.text().split("\n")[0].slice(0, 300)));
+          page.on("pageerror", (e) => errors.push(firstLine(e.message, hide)));
+          page.on("console", (m) => m.type() === "error" && errors.push(firstLine(m.text(), hide, 300)));
           const where = `${flow.name} / ${device.name} / ${scheme}`;
           const at = { flow: flow.name, device: device.name, scheme };
           const steps = flow.steps || [];
           let index = 0; // 1-based index of the step being run; 0 while opening the start route
-          watchDialogs(page, (message) => problems.push({ where, kind: "dialog", message, ...at, step: index }));
+          watchDialogs(page, (message) => problems.push({ where, kind: "dialog", message, ...at, step: index }), hide);
           let lastGoodShot = null;
           let pre = null; // the step of a flow this one runs after ("after"), while those run
           try {
@@ -154,7 +156,7 @@ export async function shoot(root, config, baseUrl) {
             const file = `screens/${flow.name}-FAILED-${device.name}-${scheme}.png`;
             await page.screenshot(shotOptions(page, { path: path.join(outDir, file) })).catch(() => {});
             const notReached = steps.slice(Math.max(0, index - 1)).filter((s) => s.shot).map((s) => s.shot);
-            const message = String(error.message).split("\n")[0];
+            const message = firstLine(error.message, hide);
             if (pre) problems.push({ where, kind: "flow-failed", message: `${afterWhere(pre, flow.name)}: ${message}`, error: message, file, ...at, step: 0, stepConfig: publicStep(pre.step), after: { flow: pre.flow, step: pre.index }, lastGoodShot, notReached });
             else problems.push({ where, kind: "flow-failed", message, file, ...at, step: index, stepConfig: publicStep(steps[index - 1] ?? null), lastGoodShot, notReached });
           }
@@ -167,6 +169,6 @@ export async function shoot(root, config, baseUrl) {
   } finally {
     await browser.close();
   }
-  // Errors, page errors and dialogs can echo what was typed: take every secret value out of them.
-  return { shots, problems: scrub(problems, secretValues(secrets)) };
+  // Anything a page or an error could have echoed a typed value into (messages, routes) is scrubbed; paths and names stay.
+  return scrub({ shots, problems }, hide);
 }

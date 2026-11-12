@@ -314,9 +314,9 @@ In GitHub Actions, [`1password/load-secrets-action`](https://www.1password.dev/c
 What Imitor does with them:
 
 - The value is read at the moment the field is filled. The step itself keeps the reference, so manifests, results and logs show `{ "env": "TEST_PASSWORD" }` and never the value.
-- Error messages, page errors and dialogs are searched for the values of the listed variables, and any found are replaced with `•••` (values shorter than 4 characters are not searched for). This covers an app that echoes what was typed, such as `alert("Wrong password …")`.
-- In screenshots, a field filled from a variable is covered by a solid box, unless it is a password field (which already draws dots).
-- A variable that is listed but not set fails the step with its name. A reference to a variable not listed in `secrets` is an error when the config loads.
+- Error messages, page errors, dialogs and the addresses shots were taken at are searched for every value the flows type (the listed variables' values and the literal fill values), as written and JSON-escaped, and any found are replaced with `•••`. This covers an app that echoes what was typed, such as `alert("Wrong password …")` or a `/u/<email>` address. Text is searched before it is shortened, so a cut cannot leave half a value behind.
+- In screenshots, a field filled from a variable is covered by a solid box, password fields too (a "show password" toggle could reveal one).
+- A variable that is listed but not set fails the step with its name. So does one shorter than 4 characters: a value that short cannot be found in text without blanking ordinary words, so Imitor does not type it. A reference to a variable not listed in `secrets` is an error when the config loads.
 - Only flows in `imitor.config.json` can use them. Steps passed to `imitor screenshot --steps` or the `imitor_screenshot` tool cannot, so an agent cannot type an arbitrary variable into a field and screenshot it.
 - `imitor record` and `imitor_record_video` refuse a flow that uses them (or runs `after` one that does): a video shows every frame, and the masks do not reach it.
 - The live preview in `imitor app` stops before such a step and says so. The interface never receives the values.
