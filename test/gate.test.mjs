@@ -115,3 +115,23 @@ test("imitor gate rejects a bad --fail-on before doing any work", () => {
   assert.equal(r.status, 1);
   assert.match(r.stderr, /--fail-on must be one of flows, errors, stand-ins/);
 });
+
+test("a flow that failed inside a flow it runs after says which flow and step, not step 0", () => {
+  const msg = "locator.click: Timeout 10000ms exceeded.";
+  const at = { kind: "flow-failed", flow: "log", device: "iphone-16", scheme: "dark", file: "screens/log-FAILED-iphone-16-dark.png" };
+  const v = evaluate({
+    shots: [shot("screens/a.png")],
+    problems: [
+      { ...at, step: 0, stepConfig: { tap: "Continue" }, message: `in "welcome", which this flow runs after, step 2: ${msg}`, error: msg, after: { flow: "welcome", step: 2 } },
+      { ...at, step: 0, stepConfig: { goto: "/log" }, message: `opening its start /log, after the flows it runs after: ${msg}`, error: msg, after: { flow: "log", step: 0 } },
+      { ...at, step: 0, stepConfig: { goto: "/name" }, message: `in "name", which this flow runs after, opening /name: ${msg}`, after: { flow: "name", step: 0 } },
+    ],
+  });
+  const text = formatText(v);
+  assert.match(text, /x log on iphone-16, dark: stopped at step 2 of "welcome" \(which it runs after\) while tapping "Continue"\. locator\.click: Timeout/);
+  assert.match(text, /stopped at its own start \(after the flows it runs after\) while going to "\/log"\. locator/);
+  // An older problem without `error` keeps its full message.
+  assert.match(text, /stopped at the start of "name" \(which it runs after\) while going to "\/name"\. in "name", which this flow runs after/);
+  assert.ok(!/step 0/.test(text));
+  assert.match(formatMarkdown(v), /\| step 2 of "welcome" \(which it runs after\) \| tapping "Continue" \|/);
+});

@@ -2,7 +2,7 @@
 // `imitor comment` prints it; the GitHub Action posts it (and updates it in place, found by MARKER).
 import fs from "node:fs";
 import path from "node:path";
-import { loadConfig } from "./config.mjs";
+import { fidelityOf, loadConfig } from "./config.mjs";
 import { evaluate } from "./gate.mjs";
 
 export const MARKER = "<!-- imitor-comment -->";
@@ -81,16 +81,20 @@ export function buildComment(manifest, opts = {}) {
     flow.shots.sort((a, b) => a.order - b.order || a.at - b.at);
     flow.more = Math.max(0, flow.shots.length - maxShots);
     flow.shots = flow.shots.slice(0, maxShots).map(({ order, at, ...s }) => ({
-      file: s.file, step: s.shot, stepIndex: s.step ?? null, standIns: s.stubs || [], url: opts.imageBase ? imageUrl(opts.imageBase, s.file) : null,
+      file: s.file, step: s.shot, stepIndex: s.step ?? null, standIns: s.stubs || [], state: s.state ?? null, seeded: s.seeded === true, url: opts.imageBase ? imageUrl(opts.imageBase, s.file) : null,
     }));
   }
+  // Shots that started from a state label or seeded data (flow "state" / "seed"): invented data, not the app's own.
+  const invented = shots.filter((s) => s.state != null || s.seeded === true).length;
+  // Configured kinds that run the real library (sqljs, canvaskit): not stand-ins, so the counts say so instead.
+  const genuine = Object.entries(manifest.shims || {}).filter(([, kind]) => fidelityOf(kind) === "genuine").map(([module, kind]) => ({ module, kind }));
   const failures = verdict.failedFlows.map((f) => ({ ...f, url: f.shot && opts.imageBase ? imageUrl(opts.imageBase, f.shot) : null }));
   return {
     marker: MARKER,
     app: manifest.app || null,
     commit: manifest.commit || null,
     verdict: { passed: verdict.passed, reasons: verdict.reasons, failOn: verdict.failOn },
-    counts: { shots: verdict.shots, flows: flows.length, failedFlows: verdict.failedFlows.length, pageErrors: verdict.pageErrors.length, shotsWithStandIns: verdict.shotsWithStandIns, standIns: verdict.standIns },
+    counts: { shots: verdict.shots, flows: flows.length, failedFlows: verdict.failedFlows.length, pageErrors: verdict.pageErrors.length, shotsWithStandIns: verdict.shotsWithStandIns, standIns: verdict.standIns, shotsWithInventedData: invented, genuine },
     showing: { device, scheme, maxShots, devices: present("device"), schemes: present("scheme") },
     failures,
     flows,
@@ -104,6 +108,9 @@ function thumb(url, alt, width = THUMB) {
   return `<a href="${u}"><img src="${u}" width="${width}" alt="${escHtml(alt)}"></a>`;
 }
 
+/** "state signed-in, seeded data" for a shot that started from invented data, else "". */
+const inventedNote = (s) => [s.state != null ? `state ${s.state}` : "", s.seeded ? "seeded data" : ""].filter(Boolean).join(", ");
+
 function flowSection(flow, data, cap) {
   const shown = flow.shots.slice(0, cap);
   const hidden = flow.shots.length - shown.length + flow.more;
@@ -115,7 +122,8 @@ function flowSection(flow, data, cap) {
     for (let i = 0; i < shown.length; i += PER_ROW) {
       rows.push("<tr>");
       for (const s of shown.slice(i, i + PER_ROW)) {
-        const note = s.standIns.length ? `<br><sub>⚠︎ stand-in: ${escHtml(s.standIns.join(", "))}</sub>` : "";
+        const invented = inventedNote(s);
+        const note = (s.standIns.length ? `<br><sub>⚠︎ stand-in: ${escHtml(s.standIns.join(", "))}</sub>` : "") + (invented ? `<br><sub>invented data: ${escHtml(clip(invented, 60))}</sub>` : "");
         rows.push(`<td valign="top">${thumb(s.url, `${clip(flow.name, 60)}: ${clip(s.step, 60)}`)}<br><sub>${escHtml(clip(s.step, 60))}</sub>${note}</td>`);
       }
       rows.push("</tr>");
@@ -123,8 +131,9 @@ function flowSection(flow, data, cap) {
     rows.push("</table>");
     out.push(rows.join(""), "");
   } else {
-    out.push("| Step | Shot | Stand-in |", "| --- | --- | --- |");
-    for (const s of shown) out.push(`| ${cell(clip(s.step, 60))} | ${codeCell(s.file)} | ${s.standIns.length ? cell(s.standIns.join(", ")) : ""} |`);
+    const withData = data.counts.shotsWithInventedData > 0;
+    out.push(`| Step | Shot | Stand-in |${withData ? " Invented data |" : ""}`, `| --- | --- | --- |${withData ? " --- |" : ""}`);
+    for (const s of shown) out.push(`| ${cell(clip(s.step, 60))} | ${codeCell(s.file)} | ${s.standIns.length ? cell(s.standIns.join(", ")) : ""} |${withData ? ` ${cell(clip(inventedNote(s), 60))} |` : ""}`);
     out.push("");
   }
   const notes = [];
@@ -146,13 +155,16 @@ function render(data, cap, flowLimit, failureLimit) {
     plural(c.pageErrors, "page error"),
     c.standIns.length ? `stand-ins in ${plural(c.shotsWithStandIns, "shot")} (${escMd(c.standIns.join(", "))})` : "no stand-ins",
   ];
+  if (c.shotsWithInventedData) counts.push(`invented data in ${plural(c.shotsWithInventedData, "shot")}`);
+  // Code spans: module names like @scope/pkg must not mention anyone.
+  if (c.genuine?.length) counts.push(`real on the web: ${c.genuine.map((g) => `\`${String(g.module).replace(/`/g, "")}\` (${escMd(g.kind)})`).join(", ")}`);
   if (data.commit) counts.push(`commit \`${String(data.commit).replace(/`/g, "")}\``);
   out.push(counts.join(" · "), "");
 
   if (data.failures.length) {
     out.push("**Failed flows**", "");
     for (const f of data.failures.slice(0, failureLimit)) {
-      out.push(`- **${escMd(clip(f.where))}**: stopped at step ${f.step ?? "?"} while ${escMd(clip(f.doing))}. ${escMd(clip(f.message, 300))}`);
+      out.push(`- **${escMd(clip(f.where))}**: stopped at ${escMd(clip(f.stoppedAt ?? `step ${f.step ?? "?"}`))} while ${escMd(clip(f.doing))}. ${escMd(clip(f.message, 300))}`);
       if (f.shot) out.push(f.url ? `  <br>${thumb(f.url, `Where ${clip(f.where, 60)} stopped`)}` : `  Screenshot: \`${String(f.shot).replace(/`/g, "'")}\``);
     }
     if (data.failures.length > failureLimit) out.push(`- …and ${plural(data.failures.length - failureLimit, "more failed flow")} in the full report.`);

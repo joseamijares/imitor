@@ -136,3 +136,31 @@ test("imitor comment reads the last run from the app folder", () => {
   assert.equal(json.flows[0].more, 1);
   assert.equal(json.imageBase, null);
 });
+
+test("shots from a state or seeded data are marked like stand-ins; genuine kinds are not called stand-ins", () => {
+  const seeded = {
+    shims: { "expo-sqlite": "sqljs", "@shopify/react-native-skia": "canvaskit" },
+    shots: [shot("today", "logged", 2, { state: "signed-in", seeded: true }), shot("today", "empty", 1, { state: null, seeded: false }), shot("welcome", "first", 1)],
+    problems: [],
+  };
+  const data = buildComment(seeded, { imageBase: BASE });
+  assert.equal(data.counts.shotsWithInventedData, 1);
+  const md = formatComment(data);
+  assert.match(md.split("\n")[2], /^3 shots · 2 flows · 0 failed flows · 0 page errors · no stand-ins · invented data in 1 shot · real on the web: `expo-sqlite` \(sqljs\), `@shopify\/react-native-skia` \(canvaskit\)$/);
+  assert.match(md, /<sub>logged<\/sub><br><sub>invented data: state signed-in, seeded data<\/sub>/);
+  assert.match(md, /<sub>empty<\/sub><\/td>/);
+  // step order within the flow, whatever order the run wrote them in
+  assert.ok(md.indexOf("<sub>empty</sub>") < md.indexOf("<sub>logged</sub>"));
+  const table = formatComment(buildComment(seeded, {}));
+  assert.match(table, /\| Step \| Shot \| Stand-in \| Invented data \|/);
+  assert.match(table, /\| logged \| `screens\/today-logged-iphone-16-light.png` \|  \| state signed-in, seeded data \|/);
+  // a run without invented data keeps the three-column table
+  assert.ok(!formatComment(buildComment(run, {})).includes("Invented data"));
+});
+
+test("a failure inside a flow it runs after names that flow and step in the comment", () => {
+  const m = { shots: [shot("log", "a", 1)], problems: [{ kind: "flow-failed", flow: "log", device: "iphone-16", scheme: "light", step: 0, stepConfig: { tap: "Continue" }, message: 'in "welcome", which this flow runs after, step 2: boom', error: "boom", after: { flow: "welcome", step: 2 }, file: "screens/log-FAILED-iphone-16-light.png" }] };
+  const md = formatComment(buildComment(m, {}));
+  assert.match(md, /stopped at step 2 of "welcome" \(which it runs after\) while tapping "Continue"\. boom/);
+  assert.ok(!md.includes("step 0"));
+});

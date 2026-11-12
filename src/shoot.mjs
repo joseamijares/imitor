@@ -134,7 +134,7 @@ export async function shoot(root, config, baseUrl) {
             await page.screenshot({ path: path.join(outDir, file) }).catch(() => {});
             const notReached = steps.slice(Math.max(0, index - 1)).filter((s) => s.shot).map((s) => s.shot);
             const message = String(error.message).split("\n")[0];
-            if (pre) problems.push({ where, kind: "flow-failed", message: `${afterWhere(pre, flow.name)}: ${message}`, file, ...at, step: 0, stepConfig: pre.step, after: { flow: pre.flow, step: pre.index }, lastGoodShot, notReached });
+            if (pre) problems.push({ where, kind: "flow-failed", message: `${afterWhere(pre, flow.name)}: ${message}`, error: message, file, ...at, step: 0, stepConfig: pre.step, after: { flow: pre.flow, step: pre.index }, lastGoodShot, notReached });
             else problems.push({ where, kind: "flow-failed", message, file, ...at, step: index, stepConfig: steps[index - 1] ?? null, lastGoodShot, notReached });
           }
           for (const message of await readSeedProblems(page, setup)) problems.push({ where, kind: "seed-failed", message, ...at });

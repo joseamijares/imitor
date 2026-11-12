@@ -13,6 +13,16 @@ const describeStep = (config) => {
 };
 
 /**
+ * Where a failed flow stopped, for "stopped at ...". A failure inside the steps of a flow this one runs "after" has
+ * step 0 and `after: { flow, step }` (shoot.mjs); its step number is that flow's, so say so instead of "step 0".
+ */
+const stoppedAt = (p) => {
+  if (!p.after) return `step ${p.step ?? "?"}`;
+  if (p.after.flow === p.flow) return "its own start (after the flows it runs after)";
+  return p.after.step ? `step ${p.after.step} of "${p.after.flow}" (which it runs after)` : `the start of "${p.after.flow}" (which it runs after)`;
+};
+
+/**
  * Judge a run. `failOn` is the strictest thing that blocks:
  *   flows      a flow could not be completed (the default)
  *   errors     also an uncaught page error
@@ -25,8 +35,10 @@ export function evaluate(manifest, { failOn = "flows" } = {}) {
   const failedFlows = problems.filter((p) => p.kind === "flow-failed").map((p) => ({
     where: p.flow ? `${p.flow} on ${p.device}, ${p.scheme}` : p.where,
     step: p.step ?? null,
+    ...(p.after ? { after: p.after, stoppedAt: stoppedAt(p) } : {}),
     doing: describeStep(p.stepConfig),
-    message: p.message,
+    // shoot.mjs puts where a failure inside an "after" flow happened in front of the message; stoppedAt says it here.
+    message: p.after && p.error ? p.error : p.message,
     shot: p.file || null,
   }));
   const pageErrors = problems.filter((p) => p.kind === "page-error").map((p) => ({ where: p.flow ? `${p.flow} on ${p.device}, ${p.scheme}` : p.where, message: p.message }));
@@ -47,7 +59,7 @@ export function evaluate(manifest, { failOn = "flows" } = {}) {
 export function formatText(v, report) {
   const lines = [`Imitor gate: ${v.passed ? "PASSED" : "BLOCKED"}${v.passed ? "" : ` (${v.reasons.join("; ")})`}`];
   lines.push(`  ${v.shots} shots, ${v.failedFlows.length} failed flows, ${v.pageErrors.length} page errors${v.standIns.length ? `, stand-ins seen: ${v.standIns.join(", ")}` : ""}`);
-  for (const f of v.failedFlows) lines.push(`  x ${f.where}: stopped at step ${f.step ?? "?"} while ${f.doing}. ${f.message}${f.shot ? ` (see ${f.shot})` : ""}`);
+  for (const f of v.failedFlows) lines.push(`  x ${f.where}: stopped at ${f.stoppedAt ?? `step ${f.step ?? "?"}`} while ${f.doing}. ${f.message}${f.shot ? ` (see ${f.shot})` : ""}`);
   for (const e of v.seedProblems || []) lines.push(`  x ${e.where}: ${e.message}`);
   for (const e of v.pageErrors) lines.push(`  ! ${e.where}: ${e.message}`);
   if (report) lines.push(`  report: ${report}`);
@@ -64,7 +76,7 @@ export function formatMarkdown(v, report) {
   out.push("| Shots | Failed flows | Page errors | Stand-ins seen |", "| --- | --- | --- | --- |", `| ${v.shots} | ${v.failedFlows.length} | ${v.pageErrors.length} | ${v.standIns.length ? cell(v.standIns.join(", ")) : "none"} |`, "");
   if (v.failedFlows.length) {
     out.push("| Flow | Stopped at | While | Error |", "| --- | --- | --- | --- |");
-    for (const f of v.failedFlows) out.push(`| ${cell(f.where)} | step ${f.step ?? "?"} | ${cell(f.doing)} | ${cell(f.message)} |`);
+    for (const f of v.failedFlows) out.push(`| ${cell(f.where)} | ${cell(f.stoppedAt ?? `step ${f.step ?? "?"}`)} | ${cell(f.doing)} | ${cell(f.message)} |`);
     out.push("");
   }
   if (v.pageErrors.length) {
@@ -91,7 +103,7 @@ export function reportToGitHub(v, report, env = process.env, write = (s) => proc
   if (env.GITHUB_ACTIONS === "true") {
     const esc = (s) => String(s).replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
     for (const e of v.seedProblems || []) write(`::error title=Imitor: seed problem::${esc(`${e.where}: ${e.message}`)}\n`);
-    for (const f of v.failedFlows) write(`::error title=Imitor: flow failed::${esc(`${f.where} stopped at step ${f.step ?? "?"} while ${f.doing}. ${f.message}`)}\n`);
+    for (const f of v.failedFlows) write(`::error title=Imitor: flow failed::${esc(`${f.where} stopped at ${f.stoppedAt ?? `step ${f.step ?? "?"}`} while ${f.doing}. ${f.message}`)}\n`);
     if (v.failOn !== "flows") for (const e of v.pageErrors) write(`::error title=Imitor: page error::${esc(`${e.where}: ${e.message}`)}\n`);
     wrote.push("annotations");
   }
