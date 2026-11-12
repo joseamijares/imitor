@@ -166,13 +166,17 @@ test("demo/build.mjs builds a demo site with twelve fernwood runs, the newest mi
   for (const url of jsonFiles(dir).flatMap((file) => fileUrls(readJson(path.join(dir, file))))) assert.ok(fs.existsSync(path.join(dir, decodeURIComponent(url))), url);
 });
 
-test("vercel.json deploys the demo with the same single-page rewrite as an export", () => {
-  const v = readJson(path.join(REPO, "vercel.json"));
-  assert.equal(v.buildCommand, "node demo/build.mjs");
-  assert.equal(v.outputDirectory, "demo/site");
+test("demo/vercel.json deploys the demo with the same single-page rewrite as an export", () => {
+  // The demo is its own Vercel project with demo/ as the root directory; the root vercel.json deploys the public site.
+  const v = readJson(path.join(REPO, "demo", "vercel.json"));
+  assert.equal(v.buildCommand, "node build.mjs");
+  assert.equal(v.outputDirectory, "site");
   assert.equal(v.framework, null);
   assert.deepEqual(v.rewrites, [SPA_REWRITE]);
   const re = new RegExp("^" + SPA_REWRITE.source + "$");
   for (const p of ["/", "/runs", "/runs/20261111T185759-7c77065", "/problems/p_abc123", "/captures"]) assert.ok(re.test(p), p);
   for (const p of ["/app.js", "/api/runs.json", "/files/runs/x/screens/a.png", "/assets/imitor-icon-32.svg", "/api/runs/missing"]) assert.ok(!re.test(p), p);
+  const site = readJson(path.join(REPO, "vercel.json"));
+  assert.equal(site.buildCommand, "node site/build.mjs");
+  assert.equal(site.outputDirectory, "site/dist");
 });
