@@ -65,11 +65,14 @@ runs:
       env:
         IMITOR_FAIL_ON: ${{ inputs.fail-on }}
       run: npx imitor gate --fail-on "$IMITOR_FAIL_ON"
+    # Workflows should run this job in a concurrency group per pull request with cancel-in-progress (see the README),
+    # so an older run cannot publish and comment after a newer one. A cancelled run publishes and comments nothing, so
+    # it cannot replace the newer run's comment with a "no report" note.
     # The gate sets its "report" output only once this run has written its report. A manifest left in the output
     # folder by an earlier run is never published or commented on as if it were this commit's.
     - name: Publish the shots for the comment
       id: shots
-      if: always() && inputs.comment == 'true' && github.event_name == 'pull_request' && steps.gate.outputs.report != ''
+      if: "!cancelled() && inputs.comment == 'true' && github.event_name == 'pull_request' && steps.gate.outputs.report != ''"
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
@@ -83,7 +86,7 @@ runs:
           echo "::notice title=Imitor: shots not published::Could not push the screenshots to the $IMITOR_SHOTS_BRANCH branch, so the comment lists file paths instead of images. The workflow needs 'permissions: contents: write' (a pull request from a fork never gets it)."
         fi
     - name: Comment on the pull request
-      if: always() && inputs.comment == 'true' && github.event_name == 'pull_request' && steps.gate.outcome != 'skipped'
+      if: "!cancelled() && inputs.comment == 'true' && github.event_name == 'pull_request' && steps.gate.outcome != 'skipped'"
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:

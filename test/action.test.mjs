@@ -30,6 +30,13 @@ test("action: publishing and uploading need this run's report; commenting needs 
   const comment = step("Comment on the pull request").cond;
   assert.match(comment, /steps\.gate\.outcome != 'skipped'/);
   assert.doesNotMatch(comment, /outputs\.report/); // a blocked gate and a failed build both comment
+  // A run cancelled by a newer push (concurrency) leaves the comment to the newer run.
+  for (const name of ["Publish the shots for the comment", "Comment on the pull request"]) {
+    assert.match(step(name).cond, /^"!cancelled\(\) && /);
+    assert.doesNotMatch(step(name).cond, /always\(\)/);
+  }
+  // Older runs of the same pull request: the README's workflow cancels them.
+  assert.match(fs.readFileSync(path.join(here, "..", "README.md"), "utf8"), /concurrency:.*\n\s+group: imitor-\$\{\{ github\.event\.pull_request\.number \}\}\n\s+cancel-in-progress: true/);
 });
 
 /** Run the comment step's script with stand-in `npx` and `gh` commands that record what they were asked. */

@@ -296,6 +296,9 @@ on: pull_request
 jobs:
   imitor:
     runs-on: ubuntu-latest
+    concurrency:            # a newer push cancels this pull request's older run
+      group: imitor-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     permissions:
       contents: write       # push the screenshots to the imitor-shots branch
       pull-requests: write  # post and update the comment
@@ -333,6 +336,8 @@ Where the images live: GitHub only shows images in a comment on a private reposi
 The branch has no shared history with your code and never touches your working branch. On every push it keeps only the newest 3 commits' folders per pull request and is rewritten as a single commit, so it does not grow with history (Git hosts can still keep unreferenced old images for a while before cleaning them up). Folders of closed pull requests stay until removed; deleting the branch at any time is safe, the next run creates it again.
 
 The workflow needs the `permissions:` block above: `contents: write` to push the branch and `pull-requests: write` for the comment. Without them (and always for a pull request from a fork, whose token is read-only) the action prints a notice naming the missing permission and carries on: the comment falls back to file paths, or is skipped, and the job's result is still the gate's.
+
+Keep the `concurrency` block above: two pushes in quick succession start two runs, and without it the older one can finish last and put its shots and verdict on the comment after the newer one. With it, a new push cancels the pull request's run in progress, and a cancelled run publishes and comments nothing.
 
 Turn it off with `comment: "false"`. To delete what was stored, delete the `imitor-shots` branch.
 
