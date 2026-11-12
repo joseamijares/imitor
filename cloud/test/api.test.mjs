@@ -70,7 +70,7 @@ test("happy path: register, upload straight to storage, complete, get the run UR
 
   const done = await call(s, "POST", `/v1/runs/${created.body.id}/complete`);
   assert.equal(done.status, 200);
-  assert.deepEqual(done.body, { id: created.body.id, status: "ready", url: `https://cloud.example/runs/${created.body.id}` });
+  assert.deepEqual(done.body, { id: created.body.id, status: "ready", url: `https://cloud.example/p/fernwood/runs/${created.body.id}` });
   assert.deepEqual([...s.storage.objects.keys()].sort(), Object.keys(DEFAULT_FILES).map((p) => `${s.fernwood.id}/${created.body.id}/${p}`).sort());
   const stored = await s.db.getRun(created.body.id);
   assert.equal(stored.status, "ready");
@@ -122,7 +122,7 @@ test("pushing the same run again returns the same id, and only the files not yet
 
   const after = await call(s, "POST", "/v1/runs", { body: runBody() });
   assert.equal(after.status, 200);
-  assert.deepEqual({ id: after.body.id, status: after.body.status, uploads: after.body.uploads, url: after.body.url }, { id: first.body.id, status: "ready", uploads: [], url: `https://cloud.example/runs/${first.body.id}` });
+  assert.deepEqual({ id: after.body.id, status: after.body.status, uploads: after.body.uploads, url: after.body.url }, { id: first.body.id, status: "ready", uploads: [], url: `https://cloud.example/p/fernwood/runs/${first.body.id}` });
 
   const changed = await call(s, "POST", "/v1/runs", { body: runBody(undefined, { "screens/first-run.webm": "other" }) });
   assert.equal(changed.status, 409);
@@ -184,7 +184,7 @@ test("keys: missing or unknown is 401, other routes are 403, another project's r
     assert.match(res.body.error, /can only upload runs/);
   }
   assert.equal((await call(s, "GET", "/v1/runs", { key: null })).status, 401);
-  assert.equal((await call(s, "GET", "/index.html")).status, 404);
+  assert.equal((await handle(new Request(BASE + "/index.html", { headers: { authorization: `Bearer ${s.key.secret}` } }), s.deps)).status, 404, "a key opens no page");
 
   await s.db.revokeAccessKey(s.key.id);
   assert.equal((await call(s, "POST", "/v1/runs", { body: runBody("20261112T110000-abc1234") })).status, 401, "a revoked key");

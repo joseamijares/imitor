@@ -69,6 +69,8 @@ export function s3Storage({ bucket, region, accessKeyId, secretAccessKey, sessio
   const sign = (method, key, opts) => signUrl(method, objectUrl(key), opts);
 
   return {
+    /** Where files are served from, for the interface's Content-Security-Policy. */
+    origin: new URL(bucketUrl).origin,
     async presignPut(key, { size, sha256, contentType, expiresIn = 900 }) {
       const headers = { "content-length": String(size), "content-type": contentType };
       if (checksums && sha256) headers["x-amz-checksum-sha256"] = hexToBase64(sha256);

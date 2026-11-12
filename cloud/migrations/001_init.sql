@@ -1,12 +1,12 @@
 -- Imitor Cloud: the first schema, for plain Postgres (12 or newer).
--- Week 1: written and reviewed, not yet run anywhere. The in-memory repository (cloud/src/db/memory.mjs) has the
--- same tables and columns, named in camelCase there (secret_sha256 is secretSha256); cloud/src/db/CONTRACT.md lists
--- its methods. The Postgres repository that uses this schema comes in week 2.
+-- The in-memory repository (cloud/src/db/memory.mjs) has the same tables and columns, named in camelCase there
+-- (secret_sha256 is secretSha256); cloud/src/db/CONTRACT.md lists its methods and cloud/src/db/pg.mjs is the
+-- repository on this schema. cloud/src/db/migrate.mjs runs each file in a transaction of its own, so files hold no
+-- begin or commit.
 -- Ids are text with a kind prefix (prj_, run_, key_, usr_), minted by the server.
 
-begin;
-
--- People. Sign-in is Google (week 2); `allowed` is the allowlist: nobody gets in until an admin allows them.
+-- People. Sign-in is Google (or the admin token on a private instance); `allowed` says the person was admitted: by
+-- IMITOR_ALLOWED_EMAILS on their first sign-in, after which their identity's subject decides, not the address.
 create table users (
   id          text primary key,
   email       text not null,
@@ -128,9 +128,11 @@ create table seen (
 );
 create index seen_run on seen (run_id);
 
--- Who did what: run.create, run.complete, run.prune, key.create, key.revoke, member.add, ... Who is in the columns;
--- what is in detail, an object: { runId, clientRunId } for run.create, { runId } for run.complete,
--- { runId, reason: "newest-runs" | "age" | "unfinished" } for run.prune.
+-- Who did what: run.create, run.complete, run.prune, key.create, key.revoke, project.create, user.create,
+-- user.signin, user.signout, user.signout-everywhere. Who is in the columns; what is in detail, an object:
+-- { runId, clientRunId } for run.create, { runId } for run.complete, { runId, reason: "newest-runs" | "age" |
+-- "unfinished" } for run.prune, { keyId, name } for key.create and key.revoke, { name, slug } for project.create,
+-- { email, via: "google" | "admin-token" } for user.create and user.signin.
 create table audit_log (
   id          bigint generated always as identity primary key,
   at          timestamptz not null default now(),
@@ -141,5 +143,3 @@ create table audit_log (
   detail      jsonb not null default '{}'
 );
 create index audit_log_project on audit_log (project_id, at desc);
-
-commit;

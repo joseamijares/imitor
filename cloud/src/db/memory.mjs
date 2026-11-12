@@ -1,8 +1,8 @@
-// The repository the API is written against, kept in memory, for tests and local runs. A Postgres version with the
-// same methods comes in week 2: cloud/migrations/001_init.sql is its schema, and the fields here are its columns in
-// camelCase (secretSha256 is secret_sha256). CONTRACT.md lists every method. Every method is async so the two can be
-// swapped. Access key secrets are never stored: only their SHA-256.
-import { hashSecret, KEY_PREFIX, newId, newSecret } from "../ids.mjs";
+// The repository kept in memory, for tests and local runs. pg.mjs is the same repository on Postgres
+// (cloud/migrations/), and the fields here are its columns in camelCase (secretSha256 is secret_sha256). CONTRACT.md
+// lists every method; test/db.test.mjs runs one suite against both. Access key secrets are never stored: only their
+// SHA-256.
+import { hashSecret, KEY_PREFIX, newId, newSecret, slugAttempt, slugify } from "../ids.mjs";
 
 /**
  * @typedef {object} RunRecord             a row of runs
@@ -19,28 +19,127 @@ import { hashSecret, KEY_PREFIX, newId, newSecret } from "../ids.mjs";
  * @property {string | null} completedAt
  */
 
+export const LINE_KINDS = ["captures", "activity"];
+
 /** opts: { now: () => Date }. */
 export function memoryDb({ now = () => new Date() } = {}) {
+  const users = new Map();
+  const identities = new Map(); // "provider\0subject" -> identity
+  const sessions = new Map(); // idHash -> session
   const projects = new Map();
+  const members = new Map(); // "projectId\0userId" -> member
   const keys = new Map(); // secretSha256 -> access_keys row
   const runs = new Map();
   const lines = { captures: [], activity: [] };
+  const seen = new Map(); // "projectId\0userId\0problemId" -> seen row
   const audit = [];
   const pending = new Map(); // object key -> pending_deletions row
   let serial = 0; // the identity columns of captures, activity and audit_log
   const stamp = () => now().toISOString();
   const copy = (v) => (v == null ? v : structuredClone(v));
+  const lower = (s) => String(s).toLowerCase();
+  const conflict = (message) => Object.assign(new Error(message), { code: "conflict" });
 
-  return {
-    async createProject({ name }) {
-      const project = { id: newId("prj"), name, createdAt: stamp() };
+  const db = {
+    // ---------- people ----------
+    async createUser({ email, name = null, allowed = false }) {
+      if ([...users.values()].some((u) => lower(u.email) === lower(email))) throw conflict(`a user with the address ${email} exists`);
+      const user = { id: newId("usr"), email, name, allowed, createdAt: stamp() };
+      users.set(user.id, user);
+      return copy(user);
+    },
+    async getUser(id) {
+      return copy(users.get(id) ?? null);
+    },
+    async findUserByEmail(email) {
+      return copy([...users.values()].find((u) => lower(u.email) === lower(email)) ?? null);
+    },
+    async updateUser(id, patch) {
+      const user = users.get(id);
+      if (!user) return null;
+      for (const k of ["name", "allowed"]) if (k in patch) user[k] = patch[k];
+      return copy(user);
+    },
+    async findIdentity(provider, subject) {
+      return copy(identities.get(`${provider}\0${subject}`) ?? null);
+    },
+    async addIdentity(provider, subject, userId) {
+      const k = `${provider}\0${subject}`;
+      if (identities.has(k)) throw conflict(`the ${provider} identity ${subject} is bound to a user`);
+      if (!users.has(userId)) throw new Error(`no user ${userId}`);
+      const identity = { provider, subject, userId, createdAt: stamp() };
+      identities.set(k, identity);
+      return copy(identity);
+    },
+    async listIdentities(userId) {
+      return [...identities.values()].filter((i) => i.userId === userId).map(copy);
+    },
+
+    // ---------- sessions ----------
+    async createSession({ idHash, userId, expiresAt }) {
+      const session = { idHash, userId, createdAt: stamp(), expiresAt };
+      sessions.set(idHash, session);
+      return copy(session);
+    },
+    async getSession(idHash) {
+      return copy(sessions.get(idHash) ?? null);
+    },
+    async updateSession(idHash, { expiresAt }) {
+      const s = sessions.get(idHash);
+      if (s) s.expiresAt = expiresAt;
+    },
+    async deleteSession(idHash) {
+      sessions.delete(idHash);
+    },
+    async deleteUserSessions(userId) {
+      for (const [k, s] of sessions) if (s.userId === userId) sessions.delete(k);
+    },
+    async deleteExpiredSessions(before) {
+      let n = 0;
+      for (const [k, s] of sessions) if (s.expiresAt <= before) (sessions.delete(k), n++);
+      return n;
+    },
+
+    // ---------- projects ----------
+    /** A project with a slug of its own; with ownerId, that user is its owner (in the same step). */
+    async createProject({ name, slug = null, ownerId = null }) {
+      const base = slugify(slug || name);
+      const taken = new Set([...projects.values()].map((p) => p.slug));
+      let n = 0;
+      while (taken.has(slugAttempt(base, n))) n++;
+      if (ownerId && !users.has(ownerId)) throw new Error(`no user ${ownerId}`);
+      const project = { id: newId("prj"), name, slug: slugAttempt(base, n), createdAt: stamp() };
       projects.set(project.id, project);
+      if (ownerId) members.set(`${project.id}\0${ownerId}`, { projectId: project.id, userId: ownerId, role: "owner", createdAt: stamp() });
       return copy(project);
     },
     async getProject(id) {
       return copy(projects.get(id) ?? null);
     },
+    async getProjectBySlug(slug) {
+      return copy([...projects.values()].find((p) => p.slug === slug) ?? null);
+    },
+    async listProjects() {
+      return [...projects.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)).map(copy);
+    },
+    async addMember(projectId, userId, role = "member") {
+      if (!projects.has(projectId) || !users.has(userId)) throw new Error(`no project ${projectId} or user ${userId}`);
+      const k = `${projectId}\0${userId}`;
+      const member = { ...(members.get(k) || { projectId, userId, createdAt: stamp() }), role };
+      members.set(k, member);
+      return copy(member);
+    },
+    async getMember(projectId, userId) {
+      return copy(members.get(`${projectId}\0${userId}`) ?? null);
+    },
+    /** The user's projects, each with their `role`, by name. */
+    async listUserProjects(userId) {
+      return [...members.values()].filter((m) => m.userId === userId && projects.has(m.projectId))
+        .map((m) => ({ ...copy(projects.get(m.projectId)), role: m.role }))
+        .sort((a, b) => a.name.localeCompare(b.name) || a.slug.localeCompare(b.slug));
+    },
 
+    // ---------- keys ----------
     /** A new write-only key for a project. The secret is returned once and not kept. */
     async createAccessKey(projectId, { name = "default", expiresAt = null } = {}) {
       if (!projects.has(projectId)) throw new Error(`no project ${projectId}`);
@@ -57,16 +156,25 @@ export function memoryDb({ now = () => new Date() } = {}) {
       key.lastUsedAt = stamp();
       return copy(key);
     },
+    async getAccessKey(id) {
+      return copy([...keys.values()].find((k) => k.id === id) ?? null);
+    },
+    /** A project's keys, revoked ones included, newest first. */
+    async listAccessKeys(projectId) {
+      return [...keys.values()].filter((k) => k.projectId === projectId).sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id)).map(copy);
+    },
     async revokeAccessKey(id) {
-      for (const key of keys.values()) if (key.id === id) key.revokedAt = stamp();
+      for (const key of keys.values()) if (key.id === id && !key.revokedAt) key.revokedAt = stamp();
     },
 
-    /** Insert a run unless (projectId, clientRunId) exists. Returns { run, created }. */
-    async createRun(fields) {
+    // ---------- runs ----------
+    /** Insert a run (and its captures and activity lines) unless (projectId, clientRunId) exists. Returns { run, created }. */
+    async createRun({ lines: runLines = {}, ...fields }) {
       const existing = [...runs.values()].find((r) => r.projectId === fields.projectId && r.clientRunId === fields.clientRunId);
       if (existing) return { run: copy(existing), created: false };
       const run = { keyId: null, ...copy(fields), id: fields.id || newId("run"), status: "uploading", createdAt: stamp(), completedAt: null };
       runs.set(run.id, run);
+      for (const kind of LINE_KINDS) if (runLines[kind]?.length) await db.addLines(kind, run.projectId, run.id, runLines[kind]);
       return { run: copy(run), created: true };
     },
     async getRun(id) {
@@ -89,10 +197,11 @@ export function memoryDb({ now = () => new Date() } = {}) {
         .sort((a, b) => order(b).localeCompare(order(a)) || b.id.localeCompare(a.id))
         .map(copy);
     },
-    /** Deletes the run and, as the schema's cascades do, its captures and activity lines. */
+    /** Deletes the run and, as the schema's cascades do, its captures, activity and seen rows. */
     async deleteRun(id) {
       runs.delete(id);
-      for (const kind of Object.keys(lines)) lines[kind] = lines[kind].filter((l) => l.runId !== id);
+      for (const kind of LINE_KINDS) lines[kind] = lines[kind].filter((l) => l.runId !== id);
+      for (const [k, s] of seen) if (s.runId === id) seen.delete(k);
     },
 
     /** Store captures or activity lines that came with a run. */
@@ -101,7 +210,18 @@ export function memoryDb({ now = () => new Date() } = {}) {
       for (const line of values) lines[kind].push({ id: ++serial, projectId, runId, line: copy(line), createdAt: stamp() });
     },
     async listLines(kind, runId) {
+      if (!lines[kind]) throw new Error(`unknown line kind ${kind}`);
       return lines[kind].filter((l) => l.runId === runId).map((l) => copy(l.line));
+    },
+
+    // ---------- seen ----------
+    async setSeen({ projectId, runId, userId, problemId, seen: value }) {
+      seen.set(`${projectId}\0${userId}\0${problemId}`, { projectId, runId, userId, problemId, seen: value, updatedAt: stamp() });
+    },
+    async listSeen(projectId, userId) {
+      return [...seen.values()].filter((s) => s.projectId === projectId && s.userId === userId)
+        .map(({ problemId, runId, seen: value, updatedAt }) => ({ problemId, runId, seen: value, updatedAt }))
+        .sort((a, b) => a.problemId.localeCompare(b.problemId));
     },
 
     /** Object keys of deleted runs, kept until storage confirms they are gone. */
@@ -122,5 +242,7 @@ export function memoryDb({ now = () => new Date() } = {}) {
     async listAudit() {
       return audit.map(copy);
     },
+    async close() {},
   };
+  return db;
 }

@@ -17,3 +17,33 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm test
       - run: npm run test:cloud
+  # The cloud against a real Postgres: the migrations, then the repository contract suite and the rest of the cloud's
+  # tests with DATABASE_URL set.
+  cloud-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: imitor
+          POSTGRES_PASSWORD: imitor
+          POSTGRES_DB: imitor
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U imitor"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://imitor:imitor@localhost:5432/imitor
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: npm install --no-audit --no-fund
+        working-directory: cloud
+      - run: node cloud/src/db/migrate.mjs
+      - run: npm run test:cloud

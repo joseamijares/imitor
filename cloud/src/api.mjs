@@ -1,15 +1,21 @@
-// The receive-only upload API: web-standard handle(request, deps) -> Response, so it runs behind node:http
-// (server.mjs) or any platform that speaks Request and Response. It stores finished runs; it never builds, runs or
-// serves what it receives, and it only accepts images, videos and JSON.
+// The cloud's entry point and its receive-only upload API: web-standard handle(request, deps) -> Response, so it runs
+// behind node:http (server.mjs), a Vercel function (api/index.mjs) or anything else that speaks Request and Response.
+// It stores finished runs; it never builds, runs or serves what it receives, and it only accepts images, videos and
+// JSON. What people use (sign-in, projects, the interface) is in web.mjs.
 //
 //   POST /v1/runs                 (Authorization: Bearer imk_...) register a run, get presigned upload URLs
 //   POST /v1/runs/:id/complete    check every file arrived as declared, mark the run ready, prune, get its URL
+//   GET|POST /v1/cron/retention   (Authorization: Bearer <CRON_SECRET>) prune every project, drop expired sessions
 //
-// deps: { db, storage, publicUrl, minCliVersion, allowUnverified, now, log }
+// deps: { db, storage, publicUrl, minCliVersion, allowUnverified, now, log, oidc, allowedEmails, adminToken,
+//   adminEmail, cronSecret }
 import { redact } from "../../src/redact.mjs";
 import { checkUpload, MAX_BODY_BYTES } from "../../src/upload.mjs";
+import { fail, json, readText, safeEqual, secure } from "./http.mjs";
 import { newId } from "./ids.mjs";
 import { mapLimit } from "./limit.mjs";
+import { noticePage } from "./pages.mjs";
+import { handleWeb } from "./web.mjs";
 
 export { MAX_BODY_BYTES };
 export const KEEP_RUNS = 50;
@@ -20,8 +26,6 @@ export const UNFINISHED_HOURS = 24;
 export const UPLOAD_SECONDS = 15 * 60;
 const HOUR = 3600 * 1000;
 
-const json = (status, value) => new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
-const fail = (status, error, extra = {}) => json(status, { error, ...extra });
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 const nowOf = (deps) => deps.now?.() || new Date();
 
@@ -32,18 +36,31 @@ export function parseVersion(text) {
 }
 const older = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
 
+export const UNAVAILABLE = "the database cannot be reached right now; try again in a minute";
+
+/** The answer for an error no route handled: 503 when the database is unreachable (db code "unavailable"), else 500. */
+export function failure(request, error) {
+  if (error?.code !== "unavailable") return fail(500, "the server failed to handle this request; try again");
+  const page = /\btext\/html\b/i.test(request.headers.get("accept") || "");
+  const headers = { "retry-after": "30" };
+  return page ? noticePage(503, "Imitor Cloud is unavailable", "Its database cannot be reached right now. Try again in a minute.", { link: null, headers }) : fail(503, UNAVAILABLE, {}, headers);
+}
+
 export async function handle(request, deps) {
+  let response;
   try {
-    return await route(request, deps);
+    response = await route(request, deps);
   } catch (error) {
     deps.log?.(error);
-    return fail(500, "the server failed to handle this request; try again");
+    response = failure(request, error);
   }
+  return secure(response, { https: String(deps.publicUrl || "").startsWith("https:") });
 }
 
 async function route(request, deps) {
   const { pathname } = new URL(request.url);
-  if (pathname !== "/v1" && !pathname.startsWith("/v1/")) return fail(404, `no endpoint ${request.method} ${pathname}`);
+  if (pathname === "/v1/cron/retention") return cron(request, deps);
+  if (pathname !== "/v1" && !pathname.startsWith("/v1/")) return handleWeb(request, deps);
 
   // Before the key, so an outdated CLI hears what to do about it whatever else is wrong.
   const agent = request.headers.get("user-agent") || "";
@@ -64,41 +81,22 @@ async function route(request, deps) {
   return fail(403, "a project key can only upload runs: POST /v1/runs and POST /v1/runs/<id>/complete");
 }
 
-/**
- * The body as JSON, read as a stream and abandoned past MAX_BODY_BYTES, so a chunked body without a content-length
- * (or with a false one) cannot make the server hold more than that.
- */
+/** The body as JSON, abandoned past MAX_BODY_BYTES (see readText). */
 async function readJson(request) {
-  if (Number(request.headers.get("content-length")) > MAX_BODY_BYTES) return { tooLarge: true };
-  const chunks = [];
-  let size = 0;
-  if (request.body) {
-    const reader = request.body.getReader();
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.byteLength;
-      if (size > MAX_BODY_BYTES) {
-        await reader.cancel().catch(() => {});
-        return { tooLarge: true };
-      }
-      chunks.push(value);
-    }
-  }
-  const bytes = new Uint8Array(size);
-  let at = 0;
-  for (const c of chunks) {
-    bytes.set(c, at);
-    at += c.byteLength;
-  }
+  const { text, tooLarge } = await readText(request, MAX_BODY_BYTES);
+  if (tooLarge) return { tooLarge };
   try {
-    return { body: JSON.parse(new TextDecoder().decode(bytes)) };
+    return { body: JSON.parse(text) };
   } catch {
     return { body: undefined };
   }
 }
 
-const runUrl = (deps, id) => `${String(deps.publicUrl || "").replace(/\/+$/, "")}/runs/${id}`;
+/** Where people see a run: in its project's interface. */
+const runUrl = async (deps, run) => {
+  const project = await deps.db.getProject(run.projectId);
+  return `${String(deps.publicUrl || "").replace(/\/+$/, "")}/p/${project.slug}/runs/${run.id}`;
+};
 const sameFiles = (a, b) => a.length === b.length && a.every((f, i) => f.path === b[i].path && f.size === b[i].size && f.sha256 === b[i].sha256 && f.contentType === b[i].contentType);
 const byPath = (files) => [...files].sort((x, y) => (x.path < y.path ? -1 : x.path > y.path ? 1 : 0));
 const runPrefix = (run) => `${run.projectId}/${run.id}/`;
@@ -144,9 +142,9 @@ async function createRun(request, deps, key) {
     const files = byPath(clean.files).map((f) => ({ ...f, key: `${key.projectId}/${id}/${f.path}` }));
     const { run, created } = await db.createRun({
       id, projectId: key.projectId, clientRunId: clean.clientRunId, schemaVersion: clean.schemaVersion, run: clean.run, manifest: clean.manifest, files, keyId: key.id,
+      lines: { captures: clean.captures || [], activity: clean.activity || [] },
     });
     if (created) {
-      for (const kind of ["captures", "activity"]) if (clean[kind]?.length) await db.addLines(kind, key.projectId, run.id, clean[kind]);
       await db.addAudit({ projectId: key.projectId, keyId: key.id, action: "run.create", detail: { runId: run.id, clientRunId: run.clientRunId } });
       return json(201, { id: run.id, status: run.status, uploads: await uploadsFor(storage, run.files), complete: `/v1/runs/${run.id}/complete` });
     }
@@ -156,7 +154,7 @@ async function createRun(request, deps, key) {
   if (!sameFiles(run.files, byPath(clean.files))) {
     return fail(409, `run ${clean.clientRunId} was already pushed to this project with different files; push it again under a new run`, { id: run.id });
   }
-  if (run.status === "ready") return json(200, { id: run.id, status: run.status, uploads: [], complete: `/v1/runs/${run.id}/complete`, url: runUrl(deps, run.id) });
+  if (run.status === "ready") return json(200, { id: run.id, status: run.status, uploads: [], complete: `/v1/runs/${run.id}/complete`, url: await runUrl(deps, run) });
   return json(200, { id: run.id, status: run.status, uploads: await uploadsFor(storage, await missingFiles(storage, run)), complete: `/v1/runs/${run.id}/complete` });
 }
 
@@ -186,7 +184,7 @@ async function completeRun(deps, key, id) {
     await db.addAudit({ projectId: key.projectId, keyId: key.id, action: "run.complete", detail: { runId: run.id } });
   }
   await prune(deps, key.projectId, key.id);
-  return json(200, { id: run.id, status: "ready", url: runUrl(deps, run.id) });
+  return json(200, { id: run.id, status: "ready", url: await runUrl(deps, run) });
 }
 
 /**
@@ -221,4 +219,33 @@ export async function prune(deps, projectId, keyId = null) {
     }
   }
   return doomed.map(([r]) => r.id);
+}
+
+/**
+ * Retention for every project, for a scheduled call: unfinished uploads past UNFINISHED_HOURS, runs past KEEP_DAYS or
+ * beyond the newest KEEP_RUNS, and storage deletions that failed before; then expired sessions. A project that fails
+ * is logged and the others still run. Returns { projects, pruned, failed, sessions }.
+ */
+export async function retention(deps) {
+  const result = { projects: 0, pruned: 0, failed: 0, sessions: 0 };
+  for (const project of await deps.db.listProjects()) {
+    result.projects++;
+    try {
+      result.pruned += (await prune(deps, project.id)).length;
+    } catch (error) {
+      result.failed++;
+      deps.log?.(error);
+    }
+  }
+  result.sessions = await deps.db.deleteExpiredSessions(nowOf(deps).toISOString());
+  return result;
+}
+
+/** The scheduled retention call. Vercel Cron sends a GET with Authorization: Bearer <CRON_SECRET>; POST works too. */
+async function cron(request, deps) {
+  if (!deps.cronSecret) return fail(404, "scheduled retention is off on this server: set CRON_SECRET to turn it on");
+  if (request.method !== "GET" && request.method !== "POST") return fail(405, "use GET or POST");
+  const auth = /^Bearer\s+(\S+)$/i.exec(request.headers.get("authorization") || "");
+  if (!auth || !safeEqual(auth[1], deps.cronSecret)) return fail(401, "this call needs Authorization: Bearer <CRON_SECRET>");
+  return json(200, await retention(deps));
 }

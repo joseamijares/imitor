@@ -2,12 +2,18 @@
   "name": "imitor-cloud",
   "version": "0.0.1",
   "private": true,
-  "description": "Imitor Cloud: a receive-only host for finished Imitor runs. Not deployable yet.",
+  "description": "Imitor Cloud: a receive-only host for finished Imitor runs, with Google sign-in and the review interface. In development; not hosted yet.",
   "license": "AGPL-3.0-only",
   "type": "module",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "node src/server.mjs",
+    "migrate": "node src/db/migrate.mjs",
     "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "pg": "8.16.3"
   }
 }
