@@ -7,6 +7,7 @@ import { pageHeader } from "./common.js";
 
 const SHOW = [{ value: "open", label: "Open" }, { value: "seen", label: "Seen" }, { value: "all", label: "All" }];
 const KINDS = { "flow-failed": "Flow failed", "page-error": "Page error", "stand-in": "Stand-in" };
+const isPhone = () => matchMedia("(max-width: 700px)").matches; // the phone layout in app.css
 const markFor = (p) => (p.kind === "flow-failed" ? "failed" : p.kind === "stand-in" ? "standin" : "off");
 
 export async function mount(ctx) {
@@ -85,7 +86,16 @@ export async function mount(ctx) {
       e.preventDefault();
       selected = rowEl.dataset.problem;
       // On a phone the list and the detail are two steps: the detail gets a history entry so "back" returns to the list.
-      if (isPhone()) { history.pushState({ problemFromList: true }, "", location.href); syncUrl(); render(); main.querySelector(".m-back")?.focus(); return; }
+      if (isPhone()) {
+        const listUrl = location.href;
+        syncUrl();
+        const detailUrl = location.href;
+        history.replaceState(null, "", listUrl);
+        history.pushState({ problemFromList: true }, "", detailUrl);
+        render();
+        main.querySelector(".m-back")?.focus();
+        return;
+      }
       syncUrl(); render();
       main.querySelector(`[data-problem="${CSS.escape(selected)}"]`)?.focus();
       return;

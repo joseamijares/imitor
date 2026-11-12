@@ -13,7 +13,8 @@
   "files": ["bin", "src", "README.md", "LICENSE"],
   "engines": { "node": ">=20" },
   "scripts": {
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "demo": "node demo/build.mjs"
   },
   "dependencies": {
     "sql.js": "^1.13.0"

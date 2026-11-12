@@ -101,7 +101,14 @@ function createLive(ctx, project, detail) {
         <p class="stage-caption mono"></p>
       </section>
       <aside class="live-inspector" aria-label="Fidelity and controls"></aside>
+      <div class="live-phone"></div>
+      <div class="live-sheet-backdrop" data-live="sheet-close" hidden></div>
     </div>`);
+  // Phone layout (app.css, below 700px): a step bar in place of the rail, a fidelity row that opens the inspector as a
+  // sheet, and a bar with the device and appearance. The preview fills the width without the device frame.
+  const phoneEl = main.querySelector(".live-phone");
+  const backdrop = main.querySelector(".live-sheet-backdrop");
+  const isPhone = () => matchMedia("(max-width: 700px)").matches;
   const rail = main.querySelector(".live-rail");
   const stage = main.querySelector(".live-stage");
   const fit = main.querySelector(".stage-fit");
@@ -210,6 +217,7 @@ function createLive(ctx, project, detail) {
     return list.find((f) => f.device === st.device?.name && f.scheme === st.scheme) || list.find((f) => f.scheme === st.scheme) || list[0] || null;
   }
   function renderRail() {
+    renderPhone();
     if (!flows.length) { rail.innerHTML = String(html`<p class="rail-empty">No flows in imitor.config.json.</p>`); return; }
     rail.innerHTML = String(html`${flows.map((f) => {
       const rf = runFlowFor(f.name);
@@ -253,6 +261,12 @@ function createLive(ctx, project, detail) {
 
   function renderCaption() {
     const d = st.device;
+    if (st.viewH) {
+      // Phone: the route, the app's size (and how much of its height is in view) and the run's commit.
+      const size = st.viewH < d.height ? `${d.width} × ${st.viewH} of ${d.height}` : `${d.width} × ${d.height}`;
+      caption.innerHTML = String(html`<span class="route" title="${st.route || "/"}">${st.route || "/"}</span><span class="dim">·</span><span>${size}</span>${run?.commit ? html`<span class="dim">·</span><span>${run.commit}</span>` : ""}`);
+      return;
+    }
     caption.innerHTML = String(html`<span>${st.route || "/"}</span><span class="dim">·</span><span>${d.width} × ${d.height}</span><span class="dim">·</span><span>${Math.round(st.scale * 100)}%</span>`);
   }
 
@@ -261,12 +275,12 @@ function createLive(ctx, project, detail) {
     const standIns = project.standIns || [];
     const onScreen = st.standIns.length
       ? html`On this screen: ${st.standIns.map((s, i) => html`${i ? ", " : ""}<span class="mono">${s.kind}</span>${s.count > 1 ? ` ×${s.count}` : ""}`)}`
-      : st.media === undefined ? "Waiting for the preview…" : "No stand-ins on this screen.";
+      : isStatic && !project.previewUrl ? "" : st.media === undefined ? "Waiting for the preview…" : "No stand-ins on this screen.";
     const d = st.device;
-    const appearanceNote = st.appearance ? "" : html`<p class="control-note">This preview was built before Imitor could switch its appearance and motion. Rebuild it to use these: <span class="mono">npx imitor build</span>. Until then the app follows this computer’s settings.</p>`;
+    const appearanceNote = st.appearance || (isStatic && !project.previewUrl) ? "" : html`<p class="control-note">This preview was built before Imitor could switch its appearance and motion. Rebuild it to use these: <span class="mono">npx imitor build</span>. Until then the app follows this computer’s settings.</p>`;
     inspector.innerHTML = String(html`
       <section class="insp-section">
-        <div class="insp-head"><h2>Fidelity</h2>${pill("Web imitation", "acc")}</div>
+        <div class="insp-head"><h2>Fidelity</h2>${pill("Web imitation", "acc")}<button type="button" class="m-icon-btn live-sheet-close" data-live="sheet-close" aria-label="Close">${icon("close", 16)}</button></div>
         <ul class="fidelity">
           ${standIns.map((s) => {
             const n = visible.get(s.kind);
@@ -278,20 +292,66 @@ function createLive(ctx, project, detail) {
         <p class="on-screen-line">${onScreen}</p>
       </section>
       <section class="insp-section controls">
-        <div class="control"><div class="control-label"><span>Device</span><span class="mono t3">${d.width} × ${d.height}</span></div>
+        <div class="control control-device"><div class="control-label"><span>Device</span><span class="mono t3">${d.width} × ${d.height}</span></div>
           <select class="field" data-live="device" aria-label="Device">${devices.map((x) => html`<option value="${x.name}"${x.name === d.name ? raw(" selected") : ""}>${deviceName(x.name)}</option>`)}</select></div>
-        <div class="control row"><span class="control-label">Appearance</span>
+        <div class="control row control-appearance"><span class="control-label">Appearance</span>
           <div class="seg" role="group" aria-label="Appearance" data-seg="appearance">${["light", "dark"].map((s) => html`<button type="button" data-value="${s}" aria-pressed="${st.scheme === s ? "true" : "false"}"${st.appearance ? "" : raw(" disabled")}>${s === "light" ? "Light" : "Dark"}</button>`)}</div></div>
         <div class="control row"><span class="control-label">Reduce motion</span>${switchEl(st.motion, "Reduce motion", `data-live="motion"${st.appearance ? "" : " disabled"}`)}</div>
         ${appearanceNote}
         <div class="control row"><span class="control-label">Reload<span class="t3 control-sub">Start again from an empty state</span></span>
           <button type="button" class="btn btn-secondary" data-live="reload"${st.busy ? raw(" disabled") : ""}>${icon("retry", 14)}Reload</button></div>
       </section>`);
+    renderPhone();
+  }
+
+  /** Phone: the step bar (previous, the shot on screen, next), the fidelity row and the device and appearance bar. */
+  function renderPhone() {
+    const all = flows.flatMap((f) => f.shots.map((s, i) => ({ flow: f, shot: s, pos: i + 1 })));
+    const at = st.current ? all.findIndex((x) => x.flow.name === st.current.flow && x.shot.index === st.current.index) : -1;
+    const cur = all[at] || null;
+    const prev = at > 0 ? all[at - 1] : null;
+    const next = at + 1 < all.length ? all[at + 1] : null;
+    const name = (x) => { const { num, label } = stepLabel({ name: x.shot.label, index: x.shot.index }); return { num, label: label === num ? `Shot ${num}` : label }; };
+    const go = (x, dir) => x
+      ? html`<button type="button" class="m-icon-btn" data-live="step" data-dir="${dir}" data-flow="${x.flow.name}" data-index="${x.shot.index}" aria-label="${dir === "prev" ? "Previous" : "Next"} shot: ${name(x).num} ${name(x).label}">${icon(dir === "prev" ? "back" : "chevron", 16)}</button>`
+      : html`<button type="button" class="m-icon-btn" disabled aria-label="${dir === "prev" ? "No previous shot" : "No next shot"}">${icon(dir === "prev" ? "back" : "chevron", 16)}</button>`;
+    let middle;
+    if (cur) {
+      const { num, label } = name(cur);
+      const rs = runFlowFor(cur.flow.name)?.steps.find((x) => x.index === cur.shot.index);
+      const busy = st.busy && st.busy.flow === cur.flow.name && st.busy.target === cur.shot.index;
+      const mark = busy ? statusMark("progress", "Replaying") : st.error ? statusMark("failed", "Could not reach") : rs?.status === "failed" ? statusMark("failed", "Failed in this run") : rs?.status === "stand-in" ? html`<span class="standin-dot" role="img" aria-label="Contains a stand-in"></span>` : "";
+      middle = html`<span class="m-step-num mono">${num}</span><span class="m-step-label">${label}</span>${mark}<span class="m-step-of">${humanize(cur.flow.name)} · ${cur.pos} of ${cur.flow.shots.length}</span>`;
+    } else {
+      middle = all.length ? html`<span class="m-step-label">Start</span><span class="m-step-of">${humanize(all[0].flow.name)} · before shot 1</span>` : html`<span class="m-step-of">No flows in imitor.config.json</span>`;
+    }
+    const standIns = (project.standIns || []).filter((s) => s.fidelity !== "genuine").length;
+    const notShown = (project.notCovered || []).length;
+    const summary = [standIns ? plural(standIns, "stand-in") : "No stand-ins", notShown ? `${notShown} ${notShown === 1 ? "thing" : "things"} not shown` : null].filter(Boolean).join(" · ");
+    const d = st.device;
+    const dark = st.scheme === "dark";
+    phoneEl.innerHTML = String(html`
+      <div class="m-steps" role="group" aria-label="Shots">${go(prev, "prev")}<div class="m-step" aria-live="polite">${middle}</div>${go(next, "next")}</div>
+      <button type="button" class="m-fidelity" data-live="fidelity" aria-haspopup="dialog">${statusMark(standIns ? "standin" : "ok", standIns ? "Stand-ins in this preview" : "Genuine")}<span class="m-fid-title">Fidelity</span><span class="m-fid-sum">${summary}</span>${icon("chevron", 16)}</button>
+      <div class="m-live-bar">
+        ${d ? html`<label class="btn btn-secondary m-device">${icon("phone", 16)}<span>Device · ${deviceName(d.name)}</span>
+          <select data-live="device" aria-label="Device">${devices.map((x) => html`<option value="${x.name}"${x.name === d.name ? raw(" selected") : ""}>${deviceName(x.name)} (${x.width} × ${x.height})</option>`)}</select></label>` : ""}
+        <button type="button" class="btn btn-secondary" data-live="scheme-toggle"${st.appearance ? "" : raw(' disabled title="This preview was built before Imitor could switch its appearance"')} aria-label="Appearance: ${dark ? "Dark" : "Light"}. Switch to ${dark ? "light" : "dark"}">${icon(dark ? "moon" : "sun", 16)}${dark ? "Dark" : "Light"}</button>
+      </div>`);
+  }
+
+  function setSheet(open) {
+    inspector.classList.toggle("is-open", open);
+    backdrop.hidden = !open;
+    if (open) inspector.querySelector(".live-sheet-close")?.focus();
+    else phoneEl.querySelector(".m-fidelity")?.focus();
   }
 
   function layout() {
     if (!st.device) return;
     const d = st.device;
+    if (isPhone()) return layoutPhone(d);
+    st.viewH = null;
     const strip = STRIP[d.platform] ?? STRIP.ios;
     const r = stage.getBoundingClientRect();
     const availH = r.height - 40 /* top */ - 64 /* caption; the replay status floats over the stage */;
@@ -307,6 +367,25 @@ function createLive(ctx, project, detail) {
     if (frame) {
       frame.style.width = `${d.width}px`;
       frame.style.height = `${d.height}px`;
+      frame.style.transform = `scale(${st.scale})`;
+    }
+    renderCaption();
+  }
+
+  // Phone: no device frame. The app keeps the device's width, scaled to fill the stage's width; its viewport is as tall
+  // as the space allows (up to the device's height), so the app lays itself out for the screen that is visible.
+  function layoutPhone(d) {
+    const pad = 16, captionH = 34;
+    const availW = stage.clientWidth - 2 * pad;
+    const availH = stage.clientHeight - captionH;
+    if (availW <= 0 || availH <= 0) return;
+    st.scale = Math.min(1, availW / d.width);
+    st.viewH = Math.max(1, Math.min(d.height, Math.floor(availH / st.scale)));
+    fit.style.setProperty("--sw", `${Math.round(d.width * st.scale)}px`);
+    fit.style.setProperty("--sh", `${Math.round(st.viewH * st.scale)}px`);
+    if (frame) {
+      frame.style.width = `${d.width}px`;
+      frame.style.height = `${st.viewH}px`;
       frame.style.transform = `scale(${st.scale})`;
     }
     renderCaption();
@@ -370,7 +449,23 @@ function createLive(ctx, project, detail) {
       syncUrl(); renderInspector(); renderRail(); refresh();
       return;
     }
-    const act = e.target.closest("[data-live]")?.dataset.live;
+    const actEl = e.target.closest("[data-live]");
+    const act = actEl?.dataset.live;
+    // Phone controls: the step bar, the fidelity sheet and the appearance button.
+    if (act === "step" && !actEl.disabled) {
+      const dir = actEl.dataset.dir;
+      replay(actEl.dataset.flow, Number(actEl.dataset.index));
+      (phoneEl.querySelector(`[data-dir=${dir}]`) || phoneEl.querySelector("[data-dir]"))?.focus();
+      return;
+    }
+    if (act === "fidelity") { setSheet(true); return; }
+    if (act === "sheet-close") { setSheet(false); return; }
+    if (act === "scheme-toggle" && st.appearance) {
+      st.scheme = st.scheme === "dark" ? "light" : "dark";
+      syncUrl(); renderInspector(); renderRail(); refresh();
+      phoneEl.querySelector("[data-live=scheme-toggle]")?.focus();
+      return;
+    }
     if (act === "motion" && st.appearance) { st.motion = !st.motion; syncUrl(); renderInspector(); refresh(); }
     else if (act === "reload") {
       token++; st.error = null; st.busy = null;
@@ -387,6 +482,9 @@ function createLive(ctx, project, detail) {
       if (wrap) wrap.className = `device-wrap ${st.device.platform === "android" ? "android" : "ios"}`;
       syncUrl(); layout(); renderInspector(); renderRail();
     }
+  });
+  main.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && inspector.classList.contains("is-open")) { e.stopPropagation(); setSheet(false); }
   });
   let ro = null;
 

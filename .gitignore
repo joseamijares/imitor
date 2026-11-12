@@ -4,3 +4,6 @@ preview/
 
 # Impeccable engine binary (downloaded on first run)
 .claude/skills/impeccable/scripts/bin/
+
+# The demo site, built by `npm run demo` (and by Vercel from vercel.json)
+demo/site/

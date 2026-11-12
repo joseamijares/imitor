@@ -61,7 +61,7 @@ export async function main(args) {
     const { exportSite } = await import("./export.mjs");
     const site = exportSite(root, { out: opts.out || null, previewUrl: opts.previewUrl || null, demo: opts.demo === true });
     const mb = (site.bytes / 1024 / 1024).toFixed(1);
-    console.log(`Exported ${site.runs} run${site.runs === 1 ? "" : "s"} and ${site.files} file${site.files === 1 ? "" : "s"} (${mb} MB) to ${path.relative(root, site.dir) || site.dir}`);
+    console.log(`Exported ${site.runs} run${site.runs === 1 ? "" : "s"} and ${site.files} file${site.files === 1 ? "" : "s"} (${mb} MB) to ${path.relative(root, site.dir).startsWith("..") ? site.dir : path.relative(root, site.dir)}`);
     if (site.missing.length) console.log(`${site.missing.length} referenced file${site.missing.length === 1 ? " is" : "s are"} no longer on disk and will not load, e.g. ${site.missing[0]}`);
     console.log("It is read-only and holds this project's screenshots: publish it only where they may be seen. Serve it at the root of a domain.");
     return;

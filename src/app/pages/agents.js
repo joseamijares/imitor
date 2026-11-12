@@ -115,7 +115,7 @@ export async function mount(ctx) {
 
 /** A one-line shell command with a dim prompt and a working copy button (copies the command only). */
 function command(cmd) {
-  return html`<pre class="code cmd"><span class="c-dim" aria-hidden="true">$ </span>${cmd}<button type="button" class="copy-btn" data-copy="${cmd}" data-copy-toast="Copied “${cmd}”" aria-label="Copy command" title="Copy">${icon("copy", 14)}</button></pre>`;
+  return html`<pre class="code cmd"><code class="code-text"><span class="c-dim" aria-hidden="true">$ </span>${cmd}</code><button type="button" class="copy-btn" data-copy="${cmd}" data-copy-toast="Copied “${cmd}”" aria-label="Copy command" title="Copy">${icon("copy", 14)}</button></pre>`;
 }
 
 /** `name` in a tool description -> mono. */

@@ -137,7 +137,8 @@ export const field = (value, opts = {}) =>
 export function codeBlock(lines, copyText) {
   const list = lines.map((l) => (typeof l === "string" ? { text: l } : l));
   const text = copyText ?? list.map((l) => l.text).join("\n");
-  return html`<pre class="code">${list.map((l, i) => html`${i ? "\n" : ""}${l.tone ? html`<span class="c-${raw(l.tone)}">${l.text}</span>` : l.text}`)}<button type="button" class="copy-btn" data-copy="${text}" aria-label="Copy" title="Copy">${icon("copy", 14)}</button></pre>`;
+  // The text sits in its own element so that, on a phone, it can scroll sideways while the copy button stays put.
+  return html`<pre class="code"><code class="code-text">${list.map((l, i) => html`${i ? "\n" : ""}${l.tone ? html`<span class="c-${raw(l.tone)}">${l.text}</span>` : l.text}`)}</code><button type="button" class="copy-btn" data-copy="${text}" aria-label="Copy" title="Copy">${icon("copy", 14)}</button></pre>`;
 }
 
 /** Sidebar navigation item. */
