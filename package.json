@@ -50,7 +50,7 @@
     "sql.js": "^1.13.0"
   },
   "peerDependencies": {
-    "playwright": ">=1.40"
+    "playwright": ">=1.45"
   },
   "peerDependenciesMeta": {
     "playwright": {

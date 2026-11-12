@@ -127,3 +127,13 @@ test("metro: stand-ins replace a module on web only, and a stand-in that imports
     else process.env.IMITOR = before;
   }
 });
+
+test("the playwright peer range starts at 1.45, the first with clock.install, in package.json and its lock", () => {
+  const fs = require("node:fs");
+  const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+  const lock = JSON.parse(fs.readFileSync(new URL("../package-lock.json", import.meta.url), "utf8"));
+  assert.equal(pkg.peerDependencies.playwright, ">=1.45");
+  assert.equal(lock.packages[""].peerDependencies.playwright, ">=1.45");
+  const state = fs.readFileSync(new URL("../src/state.mjs", import.meta.url), "utf8");
+  assert.match(state, /context\.clock\.install/); // the reason for the floor
+});
