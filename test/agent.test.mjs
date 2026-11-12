@@ -91,6 +91,26 @@ test("uniqueSuffix differs between calls in the same millisecond", () => {
   assert.match(uniqueSuffix(), /^[a-z0-9]{8,}$/);
 });
 
+test("alert and confirm dialogs are recorded and dismissed, in flow results and in full runs", browser, async () => {
+  const root = fixture();
+  fs.writeFileSync(path.join(root, "preview", "app", "index.html"), `<!doctype html><body><p id="t">Ready</p><button onclick="alert('Error\\n\\nNo connection');document.getElementById('t').textContent=confirm('Delete?')?'Deleted':'Kept'">Save</button></body>`);
+  fs.writeFileSync(path.join(root, "imitor.config.json"), JSON.stringify({ schemes: ["light"], flows: [{ name: "save", start: "/", steps: [{ tap: "Save" }, { waitFor: "Kept" }, { shot: "after" }] }] }));
+  const r = await runFlow(root, { flow: "save" });
+  assert.equal(r.passed, true);
+  assert.deepEqual(r.dialogs, ["alert: Error No connection", "confirm: Delete?"]);
+  const { serve } = await import("../src/serve.mjs");
+  const { shoot } = await import("../src/shoot.mjs");
+  const { loadConfig } = await import("../src/config.mjs");
+  const server = await serve(path.join(root, "preview", "app"));
+  try {
+    const run = await shoot(root, loadConfig(root), server.url);
+    const dialogs = run.problems.filter((p) => p.kind === "dialog");
+    assert.deepEqual(dialogs.map((p) => [p.message, p.step]), [["alert: Error No connection", 1], ["confirm: Delete?", 1]]);
+  } finally {
+    await server.close();
+  }
+});
+
 test("recordVideo writes a webm", browser, async () => {
   const root = fixture();
   const r = await recordVideo(root, { flow: "welcome", holdMs: 100 });
@@ -126,4 +146,30 @@ test("MCP screenshot returns the image inline", browser, async () => {
   assert.equal(r.result.content[1].mimeType, "image/png");
   assert.ok(r.result.content[1].data.length > 1000);
   server.close();
+});
+
+test("a scroll step scrolls an inner scroll view (as React Native Web renders one), not only the document", browser, async () => {
+  const { chromium } = createRequire(import.meta.url)("playwright");
+  const { doStep } = await import("../src/shoot.mjs");
+  const b = await chromium.launch();
+  try {
+    const page = await b.newPage({ viewport: { width: 390, height: 600 }, isMobile: true, hasTouch: true });
+    await page.setContent(`<body style="margin:0;height:100vh;overflow:hidden"><div style="height:80px;background:#ddd">Header</div><div id="s" style="height:520px;overflow-y:auto"><div style="height:3000px">Long</div></div></body>`);
+    await doStep(page, { scroll: 400 }, "");
+    await page.waitForTimeout(300);
+    assert.ok((await page.evaluate(() => document.getElementById("s").scrollTop)) > 0);
+  } finally {
+    await b.close();
+  }
+});
+
+test("an absolute out folder is used as given, not placed under the app folder", () => {
+  const root = fixture();
+  const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), "imitor-out-"));
+  fs.mkdirSync(path.join(elsewhere, "app"));
+  fs.writeFileSync(path.join(elsewhere, "app", "index.html"), "<!doctype html>");
+  fs.writeFileSync(path.join(root, "imitor.config.json"), JSON.stringify({ out: elsewhere }));
+  assert.equal(describe(root).built, true);
+  fs.writeFileSync(path.join(elsewhere, "manifest.json"), JSON.stringify({ commit: null, generatedAt: "x", shots: [], problems: [], notCovered: [] }));
+  assert.equal(readProblems(root).shots, 0);
 });

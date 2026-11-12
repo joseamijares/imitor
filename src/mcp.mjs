@@ -28,7 +28,7 @@ export function createServer(root) {
   let preview = null;
   let clientName = null; // from initialize clientInfo.name; names who made each capture and call
   const by = () => resolveBy({ clientName, root });
-  const out = () => path.join(root, loadConfig(root).out);
+  const out = () => path.resolve(root, loadConfig(root).out);
   const text = (value) => ({ type: "text", text: typeof value === "string" ? value : JSON.stringify(value, null, 2) });
   // Each handler returns { content, summary }: the MCP result and a short plain-words line for the activity log.
   const handlers = {
@@ -66,7 +66,7 @@ export function createServer(root) {
     },
     imitor_open_preview: async (args) => {
       const config = loadConfig(root);
-      const dir = path.join(root, config.out, "app");
+      const dir = path.resolve(root, config.out, "app");
       if (!fs.existsSync(path.join(dir, "index.html"))) throw new Error("no preview build. Call imitor_build first.");
       preview ||= await serve(dir);
       return { content: [text({ url: preview.url + (args.route || "/"), note: "Local to this machine. State starts empty; it is an imitation rendered on the web, not a phone." })], summary: `opened the preview at ${args.route || "/"}` };

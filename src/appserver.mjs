@@ -110,7 +110,7 @@ export function projectData(root, { previewUrl = null, git = null } = {}) {
     commit: info.commit,
     built: describe(root).built,
     previewUrl,
-    ...previewInfo(path.join(root, config.out)),
+    ...previewInfo(path.resolve(root, config.out)),
     devices: [...config.devices, ...builtIn].map((d) => ({ name: d.name, width: d.width, height: d.height, platform: d.platform || null })),
     schemes: config.schemes,
     flows: config.flows.map((f) => ({ name: f.name, start: f.start || "/", steps: (f.steps || []).map((step, i) => ({ index: i + 1, action: Object.keys(step)[0], label: stepLabel(step), step })) })),
@@ -137,7 +137,7 @@ function readBody(req) {
  * opts: { previewUrl, git } for /api/project.
  */
 export function apiGet(root, route, opts = {}) {
-  const out = path.join(root, loadConfig(root).out);
+  const out = path.resolve(root, loadConfig(root).out);
   if (route === "/api/project") return { status: 200, body: projectData(root, opts) };
   if (route === "/api/runs") return { status: 200, body: { runs: listRuns(out) } };
   const m = /^\/api\/runs\/([^/]+)$/.exec(route);
@@ -188,7 +188,7 @@ export async function startAppServer(root, { port = 4173, appDir = APP_DIR } = {
         return json(res, 400, { error: "bad url" });
       }
       if (route.includes("\0")) return json(res, 400, { error: "bad url" });
-      const out = path.join(root, loadConfig(root).out);
+      const out = path.resolve(root, loadConfig(root).out);
       if (route === "/api" || route.startsWith("/api/")) return await api(req, res, root, out, route, previewUrl);
       if (req.method !== "GET" && req.method !== "HEAD") return json(res, 405, { error: "method not allowed" });
       if (route.startsWith("/files/")) {
@@ -220,7 +220,7 @@ export async function startAppServer(root, { port = 4173, appDir = APP_DIR } = {
   let preview;
   try {
     const parents = [`http://127.0.0.1:${actual}`, `http://localhost:${actual}`];
-    preview = await serve(path.join(root, loadConfig(root).out, "app"), { html: withDriver(parents), files: { [DRIVER_PATH]: { type: "text/javascript", body: DRIVER } } });
+    preview = await serve(path.resolve(root, loadConfig(root).out, "app"), { html: withDriver(parents), files: { [DRIVER_PATH]: { type: "text/javascript", body: DRIVER } } });
   } catch (error) {
     await closeApp();
     throw error;

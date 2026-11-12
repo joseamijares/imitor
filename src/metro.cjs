@@ -34,7 +34,9 @@ function withImitor(config, options = {}) {
     const next = previous || context.resolveRequest;
     if (platform === "web") {
       const hit = names.find((n) => moduleName === n || moduleName.startsWith(n + "/"));
-      if (hit) return { type: "sourceFile", filePath: shimPath(projectRoot, shims[hit]) };
+      const filePath = hit && shimPath(projectRoot, shims[hit]);
+      // A stand-in that imports the module it replaces (to wrap or re-export parts of it) gets the real one.
+      if (hit && context.originModulePath !== filePath) return { type: "sourceFile", filePath };
     }
     // Stand-ins live outside the app; resolve their imports as if from the app.
     if (!moduleName.startsWith(".") && context.originModulePath && context.originModulePath.startsWith(SHIM_DIR)) {

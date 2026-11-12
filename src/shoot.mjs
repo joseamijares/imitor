@@ -35,10 +35,27 @@ export async function doStep(page, step, baseUrl) {
   else if (step.goto) await page.goto(baseUrl + step.goto);
   else if (step.wait) await page.waitForTimeout(step.wait);
   else if (step.waitFor) await locate(page, step.waitFor).waitFor({ timeout: 15000 });
-  else if (step.scroll) await page.mouse.wheel(0, step.scroll);
+  else if (step.scroll) {
+    // The wheel scrolls whatever is under the pointer. React Native Web apps scroll an inner ScrollView, not the
+    // document, and the pointer starts at (0, 0), usually over a header, so aim at the middle of the viewport.
+    const size = page.viewportSize();
+    if (size) await page.mouse.move(size.width / 2, size.height / 2);
+    await page.mouse.wheel(0, step.scroll);
+  }
   else if (step.shot) return false;
   else throw new Error(`unknown step ${JSON.stringify(step)}`);
   return true;
+}
+
+/**
+ * Record alert / confirm / prompt dialogs and dismiss them (as Playwright does by default). Apps often show errors with
+ * window.alert on web, and a browser dialog never appears in a screenshot, so without this its text is lost.
+ */
+export function watchDialogs(page, onDialog) {
+  page.on("dialog", (dialog) => {
+    onDialog(`${dialog.type()}: ${dialog.message().replace(/\s+/g, " ").trim().slice(0, 300)}`);
+    dialog.dismiss().catch(() => {});
+  });
 }
 
 /** The names of stand-ins visible on the page right now. */
@@ -47,7 +64,7 @@ export const visibleStandIns = (page) =>
 
 export async function shoot(root, config, baseUrl) {
   const { chromium } = loadPlaywright(root);
-  const outDir = path.join(root, config.out);
+  const outDir = path.resolve(root, config.out);
   const shotDir = path.join(outDir, "screens");
   fs.rmSync(shotDir, { recursive: true, force: true });
   fs.mkdirSync(shotDir, { recursive: true });
@@ -77,6 +94,7 @@ export async function shoot(root, config, baseUrl) {
           const at = { flow: flow.name, device: device.name, scheme };
           const steps = flow.steps || [];
           let index = 0; // 1-based index of the step being run; 0 while opening the start route
+          watchDialogs(page, (message) => problems.push({ where, kind: "dialog", message, ...at, step: index }));
           let lastGoodShot = null;
           try {
             await page.goto(baseUrl + (flow.start || "/"));

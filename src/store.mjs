@@ -212,13 +212,13 @@ function runProblems(loaded, previous) {
   const ref = { id: run.id, pr: run.pr, commit: run.commit, title: run.title };
   const out = [];
   for (const p of manifest.problems) {
-    if (p.kind !== "flow-failed" && p.kind !== "page-error") continue;
+    if (p.kind !== "flow-failed" && p.kind !== "page-error" && p.kind !== "dialog") continue;
     const { flow, device, scheme } = locate(p);
     const failed = p.kind === "flow-failed";
     out.push({
       id: problemId(run.id, p.kind, flow, device, scheme, p.message),
       kind: p.kind,
-      title: failed ? (p.step ? `${flow} failed at step ${p.step}` : `${flow} failed before its first step`) : `Page error in ${flow}`,
+      title: failed ? (p.step ? `${flow} failed at step ${p.step}` : `${flow} failed before its first step`) : p.kind === "dialog" ? `Dialog in ${flow}${p.step ? ` at step ${p.step}` : ""}` : `Page error in ${flow}`,
       run: ref,
       device,
       scheme,

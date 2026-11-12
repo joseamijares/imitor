@@ -70,7 +70,7 @@ export async function main(args) {
   }
   if (command === "describe") return print(describe(root));
   if (command === "problems") return print(readProblems(root));
-  const out = () => path.join(root, loadConfig(root).out);
+  const out = () => path.resolve(root, loadConfig(root).out);
   if (command === "screenshot") {
     const result = await screenshot(root, opts);
     recordCaptures(out(), root, "screenshot", { ...result, flow: opts.flow || null }, resolveBy({ root }));
@@ -85,7 +85,7 @@ export async function main(args) {
     return;
   }
   const config = loadConfig(root);
-  const appDir = path.join(root, config.out, "app");
+  const appDir = path.resolve(root, config.out, "app");
   const startedAt = new Date().toISOString();
 
   const gate = command === "gate";
@@ -107,7 +107,7 @@ export async function main(args) {
   try {
     const result = await shoot(root, config, server.url);
     const manifest = writeReport(root, config, result);
-    recordRun(path.join(root, config.out), { root, config, manifest, startedAt, by: resolveBy({ root }) });
+    recordRun(path.resolve(root, config.out), { root, config, manifest, startedAt, by: resolveBy({ root }) });
     const report = path.join(config.out, "index.html");
     if (gate) {
       const { evaluate, formatText, reportToGitHub } = await import("./gate.mjs");

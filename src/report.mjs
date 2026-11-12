@@ -14,7 +14,7 @@ function commit(root) {
 }
 
 export function writeReport(root, config, result) {
-  const outDir = path.join(root, config.out);
+  const outDir = path.resolve(root, config.out);
   const app = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).name || path.basename(root);
   const manifest = {
     tool: "imitor",
