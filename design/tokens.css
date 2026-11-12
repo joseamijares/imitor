@@ -1,0 +1,85 @@
+/* Imitor design tokens (Signal identity). Dark is the default; light applies with the system setting or data-theme="light". */
+:root {
+  --color-bg: #0B0B0C; /* App ground */
+  --color-side: #0B0B0C; /* Sidebar ground */
+  --color-panel: #141415; /* Inputs, code blocks, chips */
+  --color-raised: #1B1B1D; /* Disabled fills, neutral avatars */
+  --color-line: #222224; /* Hairlines; selected row and nav fill */
+  --color-line-2: #303033; /* Control borders; selected segment; switch off */
+  --color-t-1: #F5F5F2; /* Primary text */
+  --color-t-2: #A8A8A3; /* Secondary text */
+  --color-t-3: #85857F; /* Meta text only (never essential) */
+  --color-acc: #FFD60A; /* Accent text and strokes */
+  --color-acc-bg: #FFD60A; /* Accent fill: primary button, switch on */
+  --color-on-acc: #0B0B0C; /* Text and icons on accent fill */
+  --color-acc-tint: #262105; /* Accent pill fill */
+  --color-acc-line: #5C4E0A; /* Accent pill border */
+  --color-warn: #FFD60A; /* Stand-in text and dashed strokes */
+  --color-ok: #4CB782; /* Genuine, passed */
+  --color-bad: #FF5C5C; /* Failed */
+  --color-in-device: #B58900; /* Stand-in outline drawn over the app */
+  --color-ghost: #FFD60A; /* Dashed ghost copy behind the device */
+
+  --font-sans: "Geist", system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, monospace;
+  --font-wordmark: "Instrument Serif", serif; /* The "Imitor" wordmark only, italic */
+  --text-28: 28px; --leading-28: 34px; /* Onboarding title */
+  --text-20: 20px; --leading-20: 26px; /* Large title */
+  --text-16: 16px; --leading-16: 22px; /* Section title */
+  --text-14: 14px; --leading-14: 20px; /* Page title, emphasis */
+  --text-13: 13px; --leading-13: 18px; /* Body and controls */
+  --text-12: 12px; --leading-12: 16px; /* Secondary */
+  --text-11: 11px; --leading-11: 16px; /* Meta, code, numbers */
+  --radius-chip: 5px; /* Commit chips, key chips */
+  --radius-control: 6px; /* Buttons, rows, nav items, fields */
+  --radius-segment: 7px; /* Segmented control shell */
+  --radius-block: 8px; /* Code blocks, tables, panels */
+  --radius-pill: 10px; /* Status pills */
+  --radius-device: 50px; /* Device frame at 330px wide */
+  --spacing-2: 2px;   --spacing-4: 4px;   --spacing-6: 6px;   --spacing-8: 8px;   --spacing-10: 10px;   --spacing-12: 12px;   --spacing-16: 16px;   --spacing-24: 24px;   --spacing-32: 32px;   --spacing-48: 48px;
+  --container-sidebar: 220px; --container-inspector: 320px; --container-rail: 232px; --container-onboarding: 560px;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --color-bg: #FFFFFF; /* App ground */
+    --color-side: #FAFAF8; /* Sidebar ground */
+    --color-panel: #F4F4F1; /* Inputs, code blocks, chips */
+    --color-raised: #ECECE8; /* Disabled fills, neutral avatars */
+    --color-line: #E6E6E1; /* Hairlines; selected row and nav fill */
+    --color-line-2: #D2D2CC; /* Control borders; selected segment; switch off */
+    --color-t-1: #0B0B0C; /* Primary text */
+    --color-t-2: #55554F; /* Secondary text */
+    --color-t-3: #6F6F68; /* Meta text only (never essential) */
+    --color-acc: #8F6B00; /* Accent text and strokes */
+    --color-acc-bg: #FFD60A; /* Accent fill: primary button, switch on */
+    --color-on-acc: #0B0B0C; /* Text and icons on accent fill */
+    --color-acc-tint: #FFF8D6; /* Accent pill fill */
+    --color-acc-line: #EAD27A; /* Accent pill border */
+    --color-warn: #8F6B00; /* Stand-in text and dashed strokes */
+    --color-ok: #178A52; /* Genuine, passed */
+    --color-bad: #D92D20; /* Failed */
+    --color-in-device: #B58900; /* Stand-in outline drawn over the app */
+    --color-ghost: #C9A400; /* Dashed ghost copy behind the device */
+  }
+}
+:root[data-theme="light"] {
+  --color-bg: #FFFFFF; /* App ground */
+  --color-side: #FAFAF8; /* Sidebar ground */
+  --color-panel: #F4F4F1; /* Inputs, code blocks, chips */
+  --color-raised: #ECECE8; /* Disabled fills, neutral avatars */
+  --color-line: #E6E6E1; /* Hairlines; selected row and nav fill */
+  --color-line-2: #D2D2CC; /* Control borders; selected segment; switch off */
+  --color-t-1: #0B0B0C; /* Primary text */
+  --color-t-2: #55554F; /* Secondary text */
+  --color-t-3: #6F6F68; /* Meta text only (never essential) */
+  --color-acc: #8F6B00; /* Accent text and strokes */
+  --color-acc-bg: #FFD60A; /* Accent fill: primary button, switch on */
+  --color-on-acc: #0B0B0C; /* Text and icons on accent fill */
+  --color-acc-tint: #FFF8D6; /* Accent pill fill */
+  --color-acc-line: #EAD27A; /* Accent pill border */
+  --color-warn: #8F6B00; /* Stand-in text and dashed strokes */
+  --color-ok: #178A52; /* Genuine, passed */
+  --color-bad: #D92D20; /* Failed */
+  --color-in-device: #B58900; /* Stand-in outline drawn over the app */
+  --color-ghost: #C9A400; /* Dashed ghost copy behind the device */
+}
