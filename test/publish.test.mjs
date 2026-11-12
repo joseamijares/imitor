@@ -125,6 +125,29 @@ test("refuses outside GitHub Actions, on the working branch, and without a pull 
   assert.equal(git(remote, "rev-list", "--count", "main"), "1");
 });
 
+test("refuses a branch that exists without Imitor's index, and pushes nothing to it", () => {
+  const { dir, remote, ws } = setup();
+  writeRun(ws, "x");
+  // Someone's own branch named like the shots branch (here: "docs", with two commits of history).
+  const other = path.join(dir, "docs");
+  git(dir, "clone", "--quiet", remote, other);
+  git(other, "checkout", "--quiet", "-b", "docs");
+  for (const n of ["one", "two"]) {
+    fs.writeFileSync(path.join(other, `${n}.md`), `fernwood notes ${n}\n`);
+    git(other, "add", ".");
+    git(other, "commit", "--quiet", "-m", `notes ${n}`);
+  }
+  git(other, "push", "--quiet", "origin", "docs");
+  const before = git(remote, "rev-parse", "docs");
+  assert.throws(() => publishShots(ws, { remote, pr: 3, sha: sha("a"), branch: "docs" }, env), /refusing to publish to "docs": the branch already exists and has no readable imitor-shots\.json.*Use a dedicated branch.*such as imitor-shots\./);
+  assert.equal(git(remote, "rev-parse", "docs"), before);
+  assert.equal(git(remote, "rev-list", "--count", "docs"), "3"); // main's commit and the two notes
+  // The same for a non-Imitor branch that already has the default name.
+  git(other, "push", "--quiet", "origin", "docs:imitor-shots");
+  assert.throws(() => publishShots(ws, { remote, pr: 3, sha: sha("a") }, env), /refusing to publish to "imitor-shots".*such as imitor-shots-preview\./);
+  assert.equal(git(remote, "rev-parse", "imitor-shots"), before);
+});
+
 test("reads the pull request and head commit from the GitHub event; the CLI prints the image base", () => {
   const { dir, remote, ws } = setup();
   writeRun(ws, "event");

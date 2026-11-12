@@ -66,6 +66,13 @@ test("config: unknown flows, cycles and bad values are errors when the config lo
   assert.throws(load({ flows: [{ name: "a", after: "b" }, { name: "b", after: "c" }, { name: "c", after: "a" }] }), /flows "a" -> "b" -> "c" -> "a" run after each other in a cycle/);
   assert.throws(load({ flows: [{ name: "a", after: "a" }] }), /cycle/);
   assert.throws(load({ clock: "next tuesday" }), /"clock" must be an ISO date-time/);
+  // An instant, not a guess: a zone is required, and impossible dates are rejected rather than rolled over.
+  for (const clock of ["2026-02-30T09:30:00Z", "2025-02-29T00:00:00Z", "2026-04-31T12:00:00Z", "2026-13-01T00:00:00Z", "2026-03-14T24:00:00Z", "2026-03-14T09:30:00", "2026-03-14", "2026-03-14T09:30:00+0200", "March 14, 2026 09:30 UTC", 1773480600000]) {
+    assert.throws(load({ clock }), /"clock" must be an ISO date-time with "Z" or an offset, such as "2026-03-14T09:30:00Z"/, String(clock));
+  }
+  assert.throws(load({ flows: [{ name: "a", clock: "2026-02-30T00:00:00Z" }] }), /flow "a": "clock" must be/);
+  const clocks = { "2026-03-14T09:30:00Z": "2026-03-14T09:30:00.000Z", "2026-03-02T15:00:00-06:00": "2026-03-02T21:00:00.000Z", "2024-02-29T08:00:00.250+01:00": "2024-02-29T07:00:00.250Z", "2026-03-14T09:30Z": "2026-03-14T09:30:00.000Z" };
+  for (const [clock, iso] of Object.entries(clocks)) assert.equal(loadConfig(project({ ...base, clock })).flows[0].clock, iso);
   assert.throws(load({ state: 3 }), /"state" must be a string/);
   assert.throws(load({ seed: { storage: { k: { a: 1 } } } }), /value for "k" must be a string/);
   assert.throws(load({ seed: { sql: ["SELECT 1"] } }), /"seed.sql" needs the sqljs stand-in/);

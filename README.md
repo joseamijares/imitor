@@ -27,7 +27,16 @@ preview/
 
 ## Set up
 
-In the app's folder:
+In the app's folder, install Imitor and Playwright with its Chromium.
+
+**Not on npm yet:** until the first release is published, install from GitHub instead: `npm i -D github:joseamijares/imitor playwright`.
+
+```bash
+npm i -D imitor playwright
+npx playwright install chromium
+```
+
+Then, in the same folder:
 
 ```bash
 npx imitor init --dry-run   # show every change it would make, as diffs
@@ -35,15 +44,6 @@ npx imitor init             # make them
 ```
 
 `imitor init` works on Expo apps (with or without their own `ios/` and `android/` folders). It stops and explains on a bare React Native app without Expo. It never installs anything: it ends with the exact install command for what is missing, for the package manager your lockfile shows (npm, yarn, pnpm or bun), and the next commands to run. It is safe to run twice; the second run changes nothing. An agent can do the same through the `imitor_init` MCP tool.
-
-Install (once Imitor is on npm):
-
-```bash
-npm i -D imitor playwright
-npx playwright install chromium
-```
-
-**Not on npm yet:** until the first release is published, install from GitHub instead: `npm i -D github:joseamijares/imitor playwright`.
 
 ### What init does
 
@@ -58,7 +58,7 @@ These are the steps `imitor init` takes. Do them by hand if you prefer, or when 
 
    init makes this one-line edit when `metro.config.js` (or `.cjs`) exports a variable or a call, creates the standard Expo config already wrapped when there is none, and otherwise leaves the file alone and prints these instructions (an ES module `metro.config.mjs` or `.ts`, or a shape it does not recognise).
 
-2. Keep the output folder (`preview/` by default) out of git: init adds it to `.gitignore`, and to `.easignore` when there is one. If the app's runtime version comes from Expo's fingerprint (`"runtimeVersion": { "policy": "fingerprint" }`, or a `fingerprint.config.js`), editing `.gitignore` would change the runtime version and force new store builds, so init leaves it alone and sets `"out"` to a folder it already ignores, such as `dist/imitor`. It also tells you when an ESLint flat config would lint the output folder; it does not edit lint config.
+2. Keep the output folder (`preview/` by default) out of git: init adds it to `.gitignore`, and to `.easignore` when there is one. If the app's runtime version comes from Expo's fingerprint (`"runtimeVersion": { "policy": "fingerprint" }`, or a `fingerprint.config.js`), editing `.gitignore` would change the runtime version and force new store builds, so init leaves it alone and sets `"out"` to a folder it already ignores, such as `dist/imitor`. It does the same, and says why, when it cannot evaluate a dynamic `app.config.js` or `app.config.ts` (for example before the app's packages are installed), since that config may set the policy. It also tells you when an ESLint flat config would lint the output folder; it does not edit lint config.
 
 3. Add `imitor.config.json` next to `package.json`. init writes stand-ins for the app's dependencies (see [Stand-ins](#stand-ins)), one device, the colour schemes the app has (`userInterfaceStyle`) and a first flow that opens `/` and takes one shot. It lists packages it does not know that have native code and no web build as "may need a stand-in", without adding them; most Expo packages need none. If the file exists, init shows what would change and writes nothing unless you pass `--force`. A fuller config:
 
@@ -181,7 +181,7 @@ Stand-ins only apply to the web build Imitor makes (`IMITOR=1`). Your iOS and An
 
 ### Real Skia drawing
 
-With `"@shopify/react-native-skia": "canvaskit"`, Imitor bundles the real React Native Skia and draws every `<Canvas>` with CanvasKit, as React Native Skia does on any website. Nothing in the app changes: `imitor build` copies CanvasKit from the app's own `canvaskit-wasm` (the copy `@shopify/react-native-skia` depends on, so the versions match) into the build, and loads it before the app's scripts. If the app already calls `LoadSkiaWeb` itself, that call finds CanvasKit loaded and does nothing. If `canvaskit-wasm` cannot be found, the build stops and says which version to install.
+With `"@shopify/react-native-skia": "canvaskit"`, Imitor bundles the real React Native Skia and draws every `<Canvas>` with CanvasKit, as React Native Skia does on any website. Nothing in the app changes: `imitor build` copies CanvasKit from the app's own `canvaskit-wasm` (the copy `@shopify/react-native-skia` depends on, so the versions match) into the build, and loads it before the app's scripts. If the app already calls `LoadSkiaWeb` itself, that call finds CanvasKit loaded and does nothing. If `canvaskit-wasm` cannot be found, the build stops and says which version to install. If CanvasKit (or sql.js) then fails to load in the page, the app never starts: the flow fails with "the app did not start" instead of taking a shot of a blank page, and the gate blocks.
 
 What can still differ from a phone:
 
@@ -246,7 +246,7 @@ Most of an app sits behind onboarding or sign-in, and screens that show today's 
 | `"after": "<flow>"` | Runs that flow's steps first (its shots are skipped), then this flow's. Chains may nest. The chain starts at the first flow's `start`; a later flow's own `start`, if it has one, is opened after the flows before it (a full reload, so in-memory state is lost). Unknown names and cycles are errors when the config loads. A top-level `after` does not apply to the flow it names, nor to the flows that one runs after. |
 | `"state": "<label>"` | A free-form label handed to the app's stand-ins before any app code runs, as `globalThis.__imitor.state` (a string, or `null`). |
 | `"seed"` | Data put in place before the app's first script runs: `storage` and `sql`, below. |
-| `"clock": "<ISO date-time>"` | Starts the page's clock at that instant, so screens that show today's date look the same whichever day the run happens. |
+| `"clock": "<ISO date-time>"` | Starts the page's clock at that instant, so screens that show today's date look the same whichever day the run happens. Give the zone, `Z` or an offset: `"2026-03-14T09:30:00Z"`, `"2026-03-02T15:00:00-06:00"`. |
 
 A run of a flow uses that flow's `state`, `seed` and `clock` (its own, else the top level's) for the whole chain; the flows named in `after` contribute only their start and steps.
 
@@ -263,7 +263,7 @@ const signedOut = (globalThis.__imitor && globalThis.__imitor.state) === "signed
 
 The seed is applied once per browser session: a reload or a `goto` step keeps what the app has done since (the stand-in mirrors the database to `sessionStorage`, and a marker there stops the seed running again). Each flow runs in a fresh browser, so each starts from its seed.
 
-**Clock.** Runs, `flow`, `screenshot` and `record` use Playwright's clock (`clock.install`): `Date`, `performance`, timers and `requestAnimationFrame` start at the instant and then run at normal speed, so animations and timers behave as usual and the time on screen moves on by the seconds the flow takes. A run on 12 November and one with the machine's date set to 20 January gave byte-identical shots. Imitor does not freeze the time outright: a frozen `Date` stops React Native's `Animated` timing animations, which measure progress with `Date.now()`; on a real app a card that fades in stayed invisible. In the live preview there is no Playwright: only `Date` is moved to the clock (and runs on from it); timers and animations run as usual.
+**Clock.** Runs, `flow`, `screenshot` and `record` use Playwright's clock (`clock.install`, Playwright 1.45 or newer): `Date`, `performance`, timers and `requestAnimationFrame` start at the instant and then run at normal speed, so animations and timers behave as usual and the time on screen moves on by the seconds the flow takes. A run on 12 November and one with the machine's date set to 20 January gave byte-identical shots. Imitor does not freeze the time outright: a frozen `Date` stops React Native's `Animated` timing animations, which measure progress with `Date.now()`; on a real app a card that fades in stayed invisible. In the live preview there is no Playwright: only `Date` is moved to the clock (and runs on from it); timers and animations run as usual.
 
 The run's `manifest.json` lists each flow's `after`, `state`, `seeded` and `clock` under `flows`, and each shot carries `state` and `seeded`, so a reviewer can tell a shot came from invented data. The review interface marks those shots next to the stand-in marker, and `imitor describe` and `GET /api/project` show each flow's settings. Invented data is not the real app's data: treat seeded screens like stand-ins.
 
@@ -297,6 +297,9 @@ on: pull_request
 jobs:
   imitor:
     runs-on: ubuntu-latest
+    concurrency:            # a newer push cancels this pull request's older run
+      group: imitor-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     permissions:
       contents: write       # push the screenshots to the imitor-shots branch
       pull-requests: write  # post and update the comment
@@ -321,7 +324,7 @@ The action installs Chromium, runs the gate, and uploads the report as an artifa
 
 #### The pull-request comment
 
-On `pull_request` events the action also posts the run on the pull request as one comment, so a reviewer sees the shots without downloading anything, on a phone too. The comment has the verdict, a line of counts, each failed flow with the step it stopped at, the error and the screenshot of where it stopped, and then the shots of each flow in step order as small images (tap one for full size), each with its step name and a note when it contains a stand-in or started from invented data (a flow's `state` or `seed`). The counts line says how many shots used invented data, and lists the kinds that run the real library on the web (`sqljs`, `canvaskit`) so they are not mistaken for stand-ins. A flow that failed inside a flow it runs `after` is reported at that flow's step (`step 2 of "welcome"`), here and in the gate's output. It shows one device and scheme (the first configured) and at most `max-shots` shots per flow (default 12), and says how many more are in the full report. On every push the same comment is updated in place (it is found by a hidden `<!-- imitor-comment -->` line); the action never posts a second one.
+On `pull_request` events the action also posts the run on the pull request as one comment, so a reviewer sees the shots without downloading anything, on a phone too. The comment has the verdict, a line of counts, each failed flow with the step it stopped at, the error and the screenshot of where it stopped, and then the shots of each flow in step order as small images (tap one for full size), each with its step name and a note when it contains a stand-in or started from invented data (a flow's `state` or `seed`). The counts line says how many shots used invented data, and lists the kinds that run the real library on the web (`sqljs`, `canvaskit`) so they are not mistaken for stand-ins. A flow that failed inside a flow it runs `after` is reported at that flow's step (`step 2 of "welcome"`), here and in the gate's output. It shows one device and scheme (the first configured) and at most `max-shots` shots per flow (default 12), and says how many more are in the full report. On every push the same comment is updated in place (it is found by a hidden `<!-- imitor-comment -->` line); the action never posts a second one. If the gate stops before it writes this run's report (the build failed, say), the action publishes and uploads nothing, and the comment says there is no report for that commit instead of showing an earlier run's shots.
 
 | Input | Default | |
 | --- | --- | --- |
@@ -331,9 +334,11 @@ On `pull_request` events the action also posts the run on the pull request as on
 
 Where the images live: GitHub only shows images in a comment on a private repository when they come from somewhere the viewer can already read, so the action commits the run's screenshots (and its `manifest.json`) to a separate branch of the same repository, `imitor-shots`, under `pr-<number>/<short commit>/`, using the job's own `GITHUB_TOKEN`. No other service and no secret is involved. The screenshots of your app are therefore stored in your repository and stay exactly as private as the repository is: anyone who can read the repository can open them. On a private repository viewers must be signed in to GitHub with read access to see the images (GitHub's rule for images in comments; the links have the form `https://github.com/<owner>/<repo>/blob/imitor-shots/<path>?raw=true`). Whether the GitHub mobile app shows them has not been checked yet.
 
-The branch has no shared history with your code and never touches your working branch. On every push it keeps only the newest 3 commits' folders per pull request and is rewritten as a single commit, so it does not grow with history (Git hosts can still keep unreferenced old images for a while before cleaning them up). Folders of closed pull requests stay until removed; deleting the branch at any time is safe, the next run creates it again.
+The branch has no shared history with your code and never touches your working branch. On every push it keeps only the newest 3 commits' folders per pull request and is rewritten as a single commit, so it does not grow with history (Git hosts can still keep unreferenced old images for a while before cleaning them up). Folders of closed pull requests stay until removed; deleting the branch at any time is safe, the next run creates it again. A branch of that name that already exists and was not made by Imitor (it has no `imitor-shots.json`) is never overwritten: publishing stops and asks for a dedicated branch (the `shots-branch` input).
 
 The workflow needs the `permissions:` block above: `contents: write` to push the branch and `pull-requests: write` for the comment. Without them (and always for a pull request from a fork, whose token is read-only) the action prints a notice naming the missing permission and carries on: the comment falls back to file paths, or is skipped, and the job's result is still the gate's.
+
+Keep the `concurrency` block above: two pushes in quick succession start two runs, and without it the older one can finish last and put its shots and verdict on the comment after the newer one. With it, a new push cancels the pull request's run in progress, and a cancelled run publishes and comments nothing.
 
 Turn it off with `comment: "false"`. To delete what was stored, delete the `imitor-shots` branch.
 
