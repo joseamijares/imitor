@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 
 // Prefer the app's own playwright, then Imitor's, then a global install.
-function loadPlaywright(root) {
+export function loadPlaywright(root) {
   for (const from of [path.join(root, "package.json"), import.meta.url]) {
     try {
       return createRequire(from)("playwright");
@@ -12,7 +12,7 @@ function loadPlaywright(root) {
   throw new Error("playwright is not installed. Run: npm i -D playwright && npx playwright install chromium");
 }
 
-function locate(page, target) {
+export function locate(page, target) {
   if (typeof target === "string") return page.getByText(target, { exact: true }).first();
   if (target.testId) return page.getByTestId(target.testId).first();
   if (target.label) return page.getByLabel(target.label, { exact: true }).first();
@@ -22,11 +22,28 @@ function locate(page, target) {
   throw new Error(`cannot locate ${JSON.stringify(target)}`);
 }
 
-async function settle(page, ms) {
+export async function settle(page, ms) {
   await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
   await page.evaluate(() => document.fonts && document.fonts.ready).catch(() => {});
   await page.waitForTimeout(ms);
 }
+
+/** Perform one non-screenshot step. Returns false for a shot step (the caller handles those). */
+export async function doStep(page, step, baseUrl) {
+  if (step.tap !== undefined) await locate(page, step.tap).click({ timeout: 10000 });
+  else if (step.fill) await locate(page, step.fill).fill(String(step.fill.value), { timeout: 10000 });
+  else if (step.goto) await page.goto(baseUrl + step.goto);
+  else if (step.wait) await page.waitForTimeout(step.wait);
+  else if (step.waitFor) await locate(page, step.waitFor).waitFor({ timeout: 15000 });
+  else if (step.scroll) await page.mouse.wheel(0, step.scroll);
+  else if (step.shot) return false;
+  else throw new Error(`unknown step ${JSON.stringify(step)}`);
+  return true;
+}
+
+/** The names of stand-ins visible on the page right now. */
+export const visibleStandIns = (page) =>
+  page.evaluate(() => [...new Set([...document.querySelectorAll("[data-imitor-stub]")].map((n) => n.getAttribute("data-imitor-stub")))]);
 
 export async function shoot(root, config, baseUrl) {
   const { chromium } = loadPlaywright(root);
@@ -61,23 +78,15 @@ export async function shoot(root, config, baseUrl) {
             await page.goto(baseUrl + (flow.start || "/"));
             await settle(page, config.settleMs);
             for (const step of flow.steps || []) {
-              if (step.tap !== undefined) await locate(page, step.tap).click({ timeout: 10000 });
-              else if (step.fill) await locate(page, step.fill).fill(String(step.fill.value), { timeout: 10000 });
-              else if (step.goto) await page.goto(baseUrl + step.goto);
-              else if (step.wait) await page.waitForTimeout(step.wait);
-              else if (step.waitFor) await locate(page, step.waitFor).waitFor({ timeout: 15000 });
-              else if (step.scroll) await page.mouse.wheel(0, step.scroll);
-              else if (step.shot) {
-                await settle(page, config.settleMs);
-                const file = `screens/${flow.name}-${step.shot}-${device.name}-${scheme}.png`;
-                await page.screenshot({ path: path.join(outDir, file), fullPage: step.fullPage === true });
-                const stubs = await page.evaluate(() =>
-                  [...new Set([...document.querySelectorAll("[data-imitor-stub]")].map((n) => n.getAttribute("data-imitor-stub")))]
-                );
-                shots.push({ file, flow: flow.name, shot: step.shot, device: device.name, platform: device.platform, width: device.width, height: device.height, scheme, route: new URL(page.url()).pathname, stubs });
+              if (await doStep(page, step, baseUrl)) {
+                if (!step.wait) await settle(page, 150);
                 continue;
-              } else throw new Error(`unknown step ${JSON.stringify(step)}`);
-              if (!step.wait) await settle(page, 150);
+              }
+              await settle(page, config.settleMs);
+              const file = `screens/${flow.name}-${step.shot}-${device.name}-${scheme}.png`;
+              await page.screenshot({ path: path.join(outDir, file), fullPage: step.fullPage === true });
+              const stubs = await visibleStandIns(page);
+              shots.push({ file, flow: flow.name, shot: step.shot, device: device.name, platform: device.platform, width: device.width, height: device.height, scheme, route: new URL(page.url()).pathname, stubs });
             }
           } catch (error) {
             const file = `screens/${flow.name}-FAILED-${device.name}-${scheme}.png`;

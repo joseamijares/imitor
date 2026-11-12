@@ -19,6 +19,7 @@ preview/
   index.html      one page with every shot, grouped by flow
   manifest.json   what was rendered, from which commit, and what was not covered
   screens/*.png   <flow>-<shot>-<device>-<scheme>.png
+  captures/       screenshots and videos taken on request by agents or scripts
   app/            the web build itself (static; host it anywhere for a live preview)
 ```
 
@@ -73,6 +74,40 @@ preview/
 
 Other commands: `imitor build`, `imitor shoot` (reuse the last build), `imitor serve` (click around by hand).
 
+## For agents
+
+Imitor is built to be driven by coding agents. Connect it as an MCP server from the app's folder:
+
+```bash
+claude mcp add imitor -- npx imitor mcp
+```
+
+Any MCP client works the same way: the command is `npx imitor mcp`, over stdio.
+
+| Tool | What it does |
+| --- | --- |
+| `imitor_describe` | Lists the flows, devices and stand-ins configured, and whether a build exists |
+| `imitor_build` | Builds the web preview of the app as it is on disk |
+| `imitor_screenshot` | Takes one screenshot and returns the image. Reach the screen by `route`, by `flow`, or with inline `steps` |
+| `imitor_run_flow` | Runs one flow and reports every step, its shots, and where it failed |
+| `imitor_record_video` | Records a `.webm` video of a flow with animations on |
+| `imitor_read_problems` | Failed steps, page errors, stand-ins seen and coverage limits from the last full run |
+| `imitor_open_preview` | Serves the build locally and returns a URL a person can open |
+
+Every result names the stand-ins visible in the shot, so an agent knows which parts are not drawn like the real app.
+
+The same operations exist as commands that print JSON, for scripts and CI:
+
+```bash
+npx imitor describe
+npx imitor screenshot --flow first-run --device pixel-9 --scheme dark
+npx imitor flow --flow first-run
+npx imitor record --flow first-run
+npx imitor problems
+```
+
+Screenshots and videos from these land in `preview/captures/`. Each call starts from a fresh, empty app state, so use a flow (or inline steps) to get past setup screens.
+
 ## Stand-ins
 
 | Value | Replaces | Behaviour |
@@ -118,6 +153,7 @@ Other config keys: `locale` (default `en-US`), `timezone` (`UTC`), `settleMs` (`
 - "Pretend iOS / Android" mode so platform-specific styles render
 - Real Skia drawing on web (CanvasKit) instead of an empty box
 - Seeded data states, so flows don't have to click through setup
+- The review interface (runs, captures, problems, agents), designed in `design/`
 - Android widget and notification renders on a plain JVM
 - Bare React Native (no Expo) adapter
 - Apple surfaces on a macOS runner
