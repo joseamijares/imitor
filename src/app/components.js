@@ -65,6 +65,10 @@ const ICONS = {
   sun: '<circle cx="8" cy="8" r="2.8"/><path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1 1M11.6 11.6l1 1M3.4 12.6l1-1M11.6 4.4l1-1"/>',
   moon: '<path d="M13 9.5A5.5 5.5 0 016.5 3a5.5 5.5 0 106.5 6.5z"/>',
   auto: '<circle cx="8" cy="8" r="5.5"/><path d="M8 2.5v11" /><path d="M8 2.5a5.5 5.5 0 010 11z" fill="currentColor" stroke="none"/>',
+  // Phone layouts: the "more" control, the device button and back / previous.
+  more: '<circle cx="3.5" cy="8" r=".6" fill="currentColor"/><circle cx="8" cy="8" r=".6" fill="currentColor"/><circle cx="12.5" cy="8" r=".6" fill="currentColor"/>',
+  phone: '<rect x="4.5" y="1.8" width="7" height="12.4" rx="2"/><path d="M7.2 12h1.6"/>',
+  back: '<path d="M10 4L6 8l4 4"/>',
 };
 export function icon(name, size = 16) {
   return raw(`<svg width="${size}" height="${size}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ""}</svg>`);
@@ -99,6 +103,8 @@ export function statusMark(kind, label) {
 /* ---------- Small pieces ---------- */
 /** tone: neutral | ok | warn | bad | acc */
 export const pill = (label, tone = "neutral") => html`<span class="pill pill-${raw(tone)}">${label}</span>`;
+/** Shown in the shell of the public demo (imitor export --demo), so its invented data is not mistaken for a project. */
+export const demoPill = () => html`<span class="demo-pill" title="This is a demo: the app, runs and shots are invented.">${pill("Demo data")}</span>`;
 export const chip = (text, title) => html`<span class="chip"${title ? html` title="${title}"` : ""}>${text}</span>`;
 
 /** kind: primary | secondary | ghost. opts: { icon, attrs (trusted string), disabled, href, title } */
@@ -131,7 +137,8 @@ export const field = (value, opts = {}) =>
 export function codeBlock(lines, copyText) {
   const list = lines.map((l) => (typeof l === "string" ? { text: l } : l));
   const text = copyText ?? list.map((l) => l.text).join("\n");
-  return html`<pre class="code">${list.map((l, i) => html`${i ? "\n" : ""}${l.tone ? html`<span class="c-${raw(l.tone)}">${l.text}</span>` : l.text}`)}<button type="button" class="copy-btn" data-copy="${text}" aria-label="Copy" title="Copy">${icon("copy", 14)}</button></pre>`;
+  // The text sits in its own element so that, on a phone, it can scroll sideways while the copy button stays put.
+  return html`<pre class="code"><code class="code-text">${list.map((l, i) => html`${i ? "\n" : ""}${l.tone ? html`<span class="c-${raw(l.tone)}">${l.text}</span>` : l.text}`)}</code><button type="button" class="copy-btn" data-copy="${text}" aria-label="Copy" title="Copy">${icon("copy", 14)}</button></pre>`;
 }
 
 /** Sidebar navigation item. */

@@ -1,6 +1,6 @@
 // Agents: how to connect an agent (per client) and CI, the MCP tools agents can call, which agents
 // called Imitor in the last 7 days, and their recent activity. Refreshes every 5 seconds while open.
-import { api } from "../api.js";
+import { api, isStatic } from "../api.js";
 import { html, icon, pill, avatar, button, skeletonRows, errorState } from "../components.js";
 import { ago, plural } from "../format.js";
 import { pageHeader } from "./common.js";
@@ -110,12 +110,12 @@ export async function mount(ctx) {
     }
     if (ctx.isCurrent()) setTimeout(tick, REFRESH_MS);
   };
-  setTimeout(tick, REFRESH_MS);
+  if (!isStatic) setTimeout(tick, REFRESH_MS); // an exported site never changes
 }
 
 /** A one-line shell command with a dim prompt and a working copy button (copies the command only). */
 function command(cmd) {
-  return html`<pre class="code cmd"><span class="c-dim" aria-hidden="true">$ </span>${cmd}<button type="button" class="copy-btn" data-copy="${cmd}" data-copy-toast="Copied “${cmd}”" aria-label="Copy command" title="Copy">${icon("copy", 14)}</button></pre>`;
+  return html`<pre class="code cmd"><code class="code-text"><span class="c-dim" aria-hidden="true">$ </span>${cmd}</code><button type="button" class="copy-btn" data-copy="${cmd}" data-copy-toast="Copied “${cmd}”" aria-label="Copy command" title="Copy">${icon("copy", 14)}</button></pre>`;
 }
 
 /** `name` in a tool description -> mono. */

@@ -27,6 +27,8 @@ Usage (run in the app's folder):
   imitor shoot              only run the flows from an existing build
   imitor serve              serve an existing build for manual clicking
   imitor app [--port n]     open the review interface on this machine (runs, captures, problems, agents)
+  imitor export             write the interface and its data as a read-only static site:
+                            [--out dir] (default <out>/site) [--preview-url url] [--demo]
 
 For agents and scripts (each prints JSON):
   imitor describe           flows, devices and stand-ins configured for this app
@@ -53,6 +55,16 @@ export async function main(args) {
       throw error.code === "EADDRINUSE" ? new Error(`port ${port} is in use. Try: imitor app --port ${port + 1}`) : error;
     });
     return console.log(`Imitor app at ${server.url} (this machine only; Ctrl+C to stop)`);
+  }
+  if (command === "export") {
+    for (const k of ["out", "previewUrl"]) if (opts[k] === true) throw new Error(`--${k === "out" ? "out" : "preview-url"} needs a value`);
+    const { exportSite } = await import("./export.mjs");
+    const site = exportSite(root, { out: opts.out || null, previewUrl: opts.previewUrl || null, demo: opts.demo === true });
+    const mb = (site.bytes / 1024 / 1024).toFixed(1);
+    console.log(`Exported ${site.runs} run${site.runs === 1 ? "" : "s"} and ${site.files} file${site.files === 1 ? "" : "s"} (${mb} MB) to ${path.relative(root, site.dir).startsWith("..") ? site.dir : path.relative(root, site.dir)}`);
+    if (site.missing.length) console.log(`${site.missing.length} referenced file${site.missing.length === 1 ? " is" : "s are"} no longer on disk and will not load, e.g. ${site.missing[0]}`);
+    console.log("It is read-only and holds this project's screenshots: publish it only where they may be seen. Serve it at the root of a domain.");
+    return;
   }
   if (command === "describe") return print(describe(root));
   if (command === "problems") return print(readProblems(root));

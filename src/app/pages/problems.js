@@ -7,6 +7,7 @@ import { pageHeader } from "./common.js";
 
 const SHOW = [{ value: "open", label: "Open" }, { value: "seen", label: "Seen" }, { value: "all", label: "All" }];
 const KINDS = { "flow-failed": "Flow failed", "page-error": "Page error", "stand-in": "Stand-in" };
+const isPhone = () => matchMedia("(max-width: 700px)").matches; // the phone layout in app.css
 const markFor = (p) => (p.kind === "flow-failed" ? "failed" : p.kind === "stand-in" ? "standin" : "off");
 
 export async function mount(ctx) {
@@ -57,9 +58,9 @@ export async function mount(ctx) {
           <label class="select-ghost">Flow <select data-filter="flow"><option value="">Any</option>${flows.map((f) => html`<option value="${f}"${f === flow ? raw(" selected") : ""}>${humanize(f)}</option>`)}</select></label>
         </div>
       </div>
-      ${problems.length ? html`<div class="split">
+      ${problems.length ? html`<div class="split${selected && current ? " has-selection" : ""}">
         <div class="problem-list" role="list">${list.length ? list.map((p) => row(p, p === current)) : html`<p class="placeholder-page">${show === "open" ? "No open problems." : "No problems match these filters."}</p>`}</div>
-        <div class="problem-detail">${current ? detail(current, ctx.state?.project) : html`<p class="detail-empty">Select a problem to see what happened.</p>`}</div>
+        <div class="problem-detail">${current ? html`<button type="button" class="m-back" data-act="back">${icon("back")}Problems</button>${detail(current, ctx.state?.project)}` : html`<p class="detail-empty">Select a problem to see what happened.</p>`}</div>
       </div>` : html`<div class="state"><h2>No problems</h2><p>Nothing failed, errored or needed a new stand-in in the last 20 runs.</p></div>`}`);
     if (current) labelSteps(main, current, ctx);
   }
@@ -84,12 +85,30 @@ export async function mount(ctx) {
     if (rowEl) {
       e.preventDefault();
       selected = rowEl.dataset.problem;
+      // On a phone the list and the detail are two steps: the detail gets a history entry so "back" returns to the list.
+      if (isPhone()) {
+        const listUrl = location.href;
+        syncUrl();
+        const detailUrl = location.href;
+        history.replaceState(null, "", listUrl);
+        history.pushState({ problemFromList: true }, "", detailUrl);
+        render();
+        main.querySelector(".m-back")?.focus();
+        return;
+      }
       syncUrl(); render();
       main.querySelector(`[data-problem="${CSS.escape(selected)}"]`)?.focus();
       return;
     }
     const act = e.target.closest("[data-act]")?.dataset.act;
     if (!act) return;
+    if (act === "back") {
+      if (history.state?.problemFromList) { history.back(); return; }
+      const was = selected;
+      selected = null; syncUrl(); render();
+      main.querySelector(`[data-problem="${CSS.escape(was)}"]`)?.focus();
+      return;
+    }
     if (act === "seen-all") return setSeen(problems.filter((p) => !p.seen).map((p) => p.id), true);
     if (act === "seen" || act === "unseen") return setSeen([e.target.closest("[data-act]").dataset.id], act === "seen");
     if (act === "copy-open" || act === "copy-one") {

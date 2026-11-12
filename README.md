@@ -72,7 +72,7 @@ preview/
    npx imitor
    ```
 
-Other commands: `imitor build`, `imitor shoot` (reuse the last build), `imitor serve` (click around by hand).
+Other commands: `imitor build`, `imitor shoot` (reuse the last build), `imitor serve` (click around by hand), `imitor app` (the review interface), `imitor export` (the interface as a static site).
 
 ## For agents
 
@@ -123,6 +123,20 @@ The live preview (`/live`, or Live on a run) shows the built app itself, running
 The Appearance and Reduce motion controls rely on an override that `imitor build` adds to every page of the build: with `?imitor-scheme=dark|light` or `?imitor-motion=reduce|no-preference` in the address, the app's `matchMedia` answers `prefers-color-scheme` and `prefers-reduced-motion` accordingly (it is kept for the browser tab's session; `auto` clears it). Builds made before this have no override: the live preview says so and the app follows the computer's settings until you run `imitor build` again. An app that ignores the system scheme (for example `userInterfaceStyle: "light"` and no `useColorScheme`) looks the same in both.
 
 The iPhone status bar and the Android camera are drawn above the app, not over it: the web build has no safe-area insets, so drawing them on top would hide what the shots show.
+
+A public demo of the interface, with invented data for an invented plant-care app ("fernwood"), is built from `demo/` with `npm run demo` (it writes `demo/site/`). `vercel.json` deploys it: import this repository into Vercel and it builds with no dashboard settings.
+
+## Publish a run
+
+```bash
+npx imitor export                                  # writes preview/site/
+npx imitor export --out review-site                # or anywhere else
+npx imitor export --preview-url https://my-preview.example.com
+```
+
+`imitor export` writes the interface and its data as plain static files, for any static host (Vercel, Netlify, GitHub Pages, an S3 bucket): the interface, every API response as a `.json` file, and the shots, failure screenshots and captures those responses point to (nothing else from the output folder). It is read-only: marking a problem seen is kept in each visitor's browser, and nothing can start a run. The live preview needs a running build, so it is left out and the Live page says so, unless `--preview-url` names a deployed web build of the app. Serve the folder at the root of a domain; it includes a `404.html`, a `vercel.json` and a `_redirects` file so deep links like `/runs/<id>` load the interface.
+
+The site holds the app's screenshots and videos. Publish it only where those may be seen, for example a team-only or password-protected deployment, not a public URL for an unreleased app.
 
 ## Stand-ins
 

@@ -1,6 +1,6 @@
 // Settings: what Imitor knows about this project, read-only (from GET /api/project), and the app's
 // appearance. There is no settings API: the preview configuration lives in imitor.config.json.
-import { api } from "../api.js";
+import { api, isStatic } from "../api.js";
 import { html, seg, pill, chip, skeletonRows, errorState } from "../components.js";
 import { deviceName, schemeName, humanize, plural } from "../format.js";
 import { pageHeader } from "./common.js";
@@ -40,7 +40,7 @@ export async function mount(ctx) {
     <div class="set-body">
       <section id="project" class="set-section" aria-labelledby="project-h">
         <h2 id="project-h">Project</h2>
-        <p class="set-note">Read from the app’s folder and its git checkout when <span class="mono">imitor app</span> started.</p>
+        <p class="set-note">${isStatic ? "Read from the app’s folder and its git checkout when this site was exported." : html`Read from the app’s folder and its git checkout when <span class="mono">imitor app</span> started.`}</p>
         ${row("Name", p.name || "—")}
         ${row("Branch", p.branch ? html`<span class="mono">${p.branch}</span>` : "—")}
         ${row("Commit", p.commit ? chip(p.commit) : "—")}
