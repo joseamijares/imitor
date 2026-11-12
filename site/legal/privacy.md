@@ -19,8 +19,8 @@ imitor.dev is a static site. It has no analytics, no advertising and no cookies.
 - **Your account:** the email address, name and account id that Google returns when you sign in. Sign-in asks Google only for `openid`, `email` and `profile`.
 - **Sessions:** a random sign-in token in a cookie on app.imitor.dev. The service keeps only a hash of it.
 - **Projects and access keys:** project names, who belongs to them, and a hash of each key. The key itself is shown once and not stored.
-- **Runs you upload:** each run's data (flows, steps, shots, problems, the commit and branch), its screenshots and videos, and the agent activity that goes with it. Values a flow types into a field, such as passwords, are replaced with dots before upload and again on arrival. The service never stores or runs your app's code.
-- **An audit log:** sign-ins and access-key creation, use and revocation. Repeated failed admin sign-ins record the address they came from.
+- **Runs you upload:** each run's data (flows, steps, shots, problems, the commit and branch), its screenshots and videos, and, if the uploader sends them, the agent activity and captures that go with it. Values a flow types into a field, such as passwords, are replaced with dots before upload and again on arrival. The service never stores or runs your app's code.
+- **An audit log:** sign-ups, sign-ins, project creation, access-key creation and revocation, and run uploads and removals. Repeated failed admin sign-ins record the address they came from.
 
 ### Why
 
@@ -43,10 +43,10 @@ These providers may process data outside your country.
 
 ### Your choices
 
-You can ask to see, export or delete your account, a project or a run by writing to {{contact}}. A project can be exported in the same format as `imitor export`. Deleting your account deletes your sessions and your access to every project. Projects you own are deleted with their runs unless you ask otherwise.
+You can ask to see, export or delete your account, a project or a run by writing to {{contact}}. An export is a copy of the stored files: each run's data, screenshots and videos. Deleting your account deletes your sessions and your access to every project. Projects you own are deleted with their runs unless you ask otherwise.
 
 ## Changes
 
-If this page changes, the new version is published here with a new date. Changes that affect data you have already uploaded will be announced to Imitor Cloud users by email first.
+If this page changes, the new version is published here with a new date. Changes that affect data you have already uploaded are also announced in the repository on GitHub before they take effect, and may be emailed to the address on your account.
 
 Last updated: 12 November 2026.

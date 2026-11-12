@@ -8,7 +8,7 @@ These terms cover this website and Imitor Cloud, the hosted service at app.imito
 
 ## Imitor Cloud during development
 
-Imitor Cloud is in development and open only to people on its allowlist. It is free while it is in development. If paid plans are introduced, they will be announced first, and nothing will be charged without your agreement.
+Imitor Cloud is in development and open only to people on its allowlist. It is free while it is in development. If paid plans are introduced, they will be announced on this site first, and nothing will be charged without your agreement.
 
 - **It is an imitation.** Imitor shows a web build of a React Native / Expo app with native-only parts replaced by stand-ins. It is not a simulator and does not replace a check on a real phone. Every result lists what was stood in and what it cannot show.
 - **Your content stays yours.** You keep every right to the runs, screenshots and videos you upload. You give Imitor permission only to store them and show them to the members of your project, so the service can work.
@@ -22,10 +22,10 @@ The service is provided as it is, while it is being built. It may change, be una
 
 ## Ending
 
-You can stop using Imitor Cloud and ask for your data to be deleted at any time. Access can be removed from accounts that break these terms. If the service shuts down, you will be told in advance and given a way to export your projects.
+You can stop using Imitor Cloud and ask for your data to be deleted at any time. Access can be removed from accounts that break these terms. If the service shuts down, it will be announced on this site and in the repository on GitHub in advance, and you can ask for a copy of your projects' stored files until it closes.
 
 ## Changes
 
-If these terms change, the new version is published here with a new date, and Imitor Cloud users are told by email before a change affects them.
+If these terms change, the new version is published here with a new date, and changes that affect Imitor Cloud users are announced in the repository on GitHub before they take effect, and may be emailed to the address on your account.
 
 Last updated: 12 November 2026.
