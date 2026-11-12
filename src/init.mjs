@@ -139,9 +139,31 @@ function inCommentOrString(src, pos) {
   return false;
 }
 
+/** The code of a JavaScript file with its comments removed (strings are kept). */
+export function stripComments(src) {
+  let out = "";
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (c === "/" && src[i + 1] === "/") { const e = src.indexOf("\n", i); if (e < 0) break; i = e - 1; continue; }
+    if (c === "/" && src[i + 1] === "*") { const e = src.indexOf("*/", i + 2); if (e < 0) break; out += " "; i = e + 1; continue; }
+    if (c === '"' || c === "'" || c === "`") { const e = skipString(src, i); if (e < 0) return out + src.slice(i); out += src.slice(i, e + 1); i = e; continue; }
+    out += c;
+  }
+  return out;
+}
+
+/**
+ * Whether a Metro config already wraps its export with withImitor: the code (not a comment) loads imitor/metro and calls
+ * withImitor. A comment that mentions withImitor, as in "// TODO: add withImitor", does not count.
+ */
+export function usesWithImitor(src) {
+  const code = stripComments(src);
+  return /["']imitor\/metro["']/.test(code) && /\bwithImitor\s*\(/.test(code);
+}
+
 /** Wrap a CommonJS Metro config's export with withImitor. Returns { text } (unchanged when already wrapped) or { reason }. */
 export function wrapMetroConfig(src) {
-  if (/imitor\/metro["']\s*\)\s*\.withImitor\s*\(|withImitor\s*\(/.test(src) && src.includes("imitor/metro")) return { text: src, already: true };
+  if (usesWithImitor(src)) return { text: src, already: true };
   if (/^\s*export\s+(default|const|\{)/m.test(src) || /^\s*import\s.+from\s/m.test(src)) return { reason: "it is an ES module (import/export)" };
   const found = findExportExpression(src);
   if (found.reason) return found;
@@ -163,7 +185,7 @@ function planMetro(root, pkg, plan) {
   }
   const esm = name.endsWith(".mjs") || name.endsWith(".ts") || (name === "metro.config.js" && pkg.type === "module");
   const src = read(path.join(root, name));
-  if (src.includes("imitor/metro") && src.includes("withImitor")) return plan.unchanged.push(`${name} already uses withImitor`);
+  if (usesWithImitor(src)) return plan.unchanged.push(`${name} already uses withImitor`);
   if (esm || name.endsWith(".json")) return plan.manual.push({ file: name, reason: `${name} is ${name.endsWith(".json") ? "JSON" : "an ES module"}, which init does not edit`, how: METRO_MANUAL });
   const result = wrapMetroConfig(src);
   if (result.reason) return plan.manual.push({ file: name, reason: `init did not recognise the shape of ${name}: ${result.reason}`, how: METRO_MANUAL });

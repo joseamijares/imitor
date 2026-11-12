@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { detectPackageManager, diff, formatInit as formatInitOf, ignores, init, inspectPackage, wrapMetroConfig } from "../src/init.mjs";
+import { detectPackageManager, diff, formatInit as formatInitOf, ignores, init, inspectPackage, usesWithImitor, wrapMetroConfig } from "../src/init.mjs";
 import { createServer } from "../src/mcp.mjs";
 
 const BIN = fileURLToPath(new URL("../bin/imitor.mjs", import.meta.url));
@@ -56,6 +56,23 @@ test("wraps the common Metro shapes with a minimal edit", () => {
     assert.equal(text.slice(0, text.indexOf("module.exports = require")), src.slice(0, src.lastIndexOf("module.exports =")));
     assert.equal(wrapMetroConfig(text).already, true);
   }
+});
+
+test("a comment that mentions withImitor does not count as wrapped; code that calls it does", () => {
+  const mention = `${SDK}// TODO: wrap with require("imitor/metro").withImitor(config) once Imitor is installed\n/* withImitor( */\nconst config = getDefaultConfig(__dirname);\nmodule.exports = config;\n`;
+  const wrapped = wrapMetroConfig(mention);
+  assert.equal(wrapped.already, undefined);
+  assert.ok(wrapped.text.endsWith(`module.exports = require("imitor/metro").withImitor(config);\n`), wrapped.text);
+  assert.equal(usesWithImitor(mention), false);
+  // Wrapped in code, in the export or earlier, counts.
+  assert.equal(usesWithImitor(`const { withImitor } = require("imitor/metro");\nconst config = withImitor(getDefaultConfig(__dirname));\nmodule.exports = config;\n`), true);
+  assert.equal(usesWithImitor(`module.exports = require('imitor/metro').withImitor(config); // done\n`), true);
+  // init edits the file, and the next run sees it wrapped.
+  const root = app({ "metro.config.js": mention });
+  const r = init(root);
+  assert.ok(r.changes.some((c) => c.file === "metro.config.js"), JSON.stringify(r.unchanged));
+  assert.match(fs.readFileSync(path.join(root, "metro.config.js"), "utf8"), /^module\.exports = require\("imitor\/metro"\)\.withImitor\(config\);$/m);
+  assert.ok(init(root).unchanged.some((u) => /metro\.config\.js already uses withImitor/.test(u)));
 });
 
 test("refuses Metro shapes it does not recognise", () => {
