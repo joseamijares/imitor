@@ -4,7 +4,7 @@
 // the machine that pushed it, so file URLs (/p/<slug>/files/runs/<id>/...) and problem ids name the cloud's run.
 import { agentsSummary, captureEntries, listEntry, PROBLEM_RUNS, problemsAcross, runDetail, runProblems, withSeen } from "../../src/derive.mjs";
 import { DEVICES, NOT_COVERED } from "../../src/config.mjs";
-import { TOOLS } from "../../src/mcp.mjs";
+import { TOOLS } from "../../src/tools.mjs";
 
 export const filesPrefix = (slug) => `/p/${slug}/files/`;
 

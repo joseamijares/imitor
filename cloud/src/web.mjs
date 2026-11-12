@@ -14,7 +14,7 @@
 // Every request that changes something must come from a page of this server (Origin or Referer is PUBLIC_URL).
 import crypto from "node:crypto";
 import path from "node:path";
-import { markIndex } from "../../src/export.mjs";
+import { markIndex } from "../../src/app-index.mjs";
 import { loadAssets, typeOf } from "./assets.mjs";
 import { OidcError } from "./auth/oidc.mjs";
 import { cookieNames, currentUser, endSession, sameOrigin, startSession, clearSessionCookie } from "./auth/session.mjs";

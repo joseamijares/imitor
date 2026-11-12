@@ -133,9 +133,10 @@ The cloud runs in the same Vercel project as the public site, on a host of its o
 - **Functions.** `api/cloud.mjs` and `api/cron-retention.mjs` at the repository root are shims for
   [`src/vercel.mjs`](src/vercel.mjs). The root `vercel.json` rewrites the app host's `/p/*`, `/v1/*`, `/login`,
   `/logout`, `/auth/*`, `/projects` and `/static/*` to `/api/cloud` (with the original path in `?__imitor_path=`),
-  redirects the app host's `/` to `/projects/` and its other paths to the site, includes `src/`, `cloud/src/` and
-  `design/tokens.css` in the functions, installs only `cloud/`'s locked dependencies (`npm ci --prefix cloud`), and
-  runs retention daily at 04:17 UTC by calling `/api/cron-retention/` (the Hobby plan allows one run a day).
+  redirects the app host's `/` to `/projects/` and its other paths to the site, includes in the functions exactly what
+  they load or read (`src/app/**`, the pure modules of `src/` listed below, `cloud/src/**` and `design/tokens.css`;
+  never the CLI), installs only `cloud/`'s locked dependencies (`npm ci --prefix cloud`), and runs retention daily at
+  04:17 UTC by calling `/api/cron-retention/` (the Hobby plan allows one run a day).
 - **Static files win.** Vercel serves the site's files (`site/dist`) before it applies any rewrite, so `/` on the app
   host would be the site's landing page: that is why the cloud's home is `/projects` and `/` is a redirect (redirects
   run before files). No path the cloud answers may be a file or folder of the site (`/`, `/how-to-use/`, `/agents/`,
@@ -213,11 +214,14 @@ cloud/
   src/db/pg.mjs           the repository on Postgres (pg, loaded on first use)
   src/db/migrate.mjs      the migration runner (npm run migrate)
   src/storage/            the storage contract, in memory and on S3 (a hand-written SigV4 presigner, no SDK)
-  test/                   contract, API, sign-in, web, read-parity, Vercel, server and browser tests
+  test/                   contract, API, sign-in, web, read-parity, Vercel, bundle, server and browser tests
 ```
 
 The cloud imports the run format and the interface's data code from `../src` (`upload.mjs`, `redact.mjs`,
-`derive.mjs`), so a client, the local server and the cloud check and show a run with the same code. `../src` never
+`derive.mjs` with `state.mjs`, `config.mjs`, and the leaf modules `app-index.mjs` and `tools.mjs`), so a client, the
+local server and the cloud check and show a run with the same code. It never imports the CLI (`export.mjs`, `mcp.mjs`,
+`appserver.mjs`, `store.mjs`, builds, Playwright or child processes): `test/bundle.test.mjs` walks the functions'
+imports and checks that, and that `vercel.json`'s `includeFiles` covers every module they reach. `../src` never
 imports from `cloud/`, and the npm package does not include `cloud/`.
 
 Problem ids (`src/derive.mjs`) are computed from a problem's run id and its message, and the cloud only ever has the

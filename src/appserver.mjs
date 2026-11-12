@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { describe } from "./agent.mjs";
 import { MEDIA_MARKER } from "./build.mjs";
 import { DEVICES, fidelityOf, loadConfig, NOT_COVERED } from "./config.mjs";
-import { TOOLS } from "./mcp.mjs";
+import { TOOLS } from "./tools.mjs";
 import { serve } from "./serve.mjs";
 import { flowChain, flowSetup, preludeSource, stateInfo } from "./state.mjs";
 import { agentsData, gitInfo, listCaptures, listProblems, listRuns, readRun, setSeen } from "./store.mjs";

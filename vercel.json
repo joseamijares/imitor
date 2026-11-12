@@ -6,7 +6,7 @@
   "outputDirectory": "site/dist",
   "trailingSlash": true,
   "functions": {
-    "api/*.mjs": { "maxDuration": 30, "includeFiles": "{src/**,cloud/src/**,design/tokens.css}" }
+    "api/*.mjs": { "maxDuration": 30, "includeFiles": "{src/app/**,src/app-index.mjs,src/tools.mjs,src/config.mjs,src/derive.mjs,src/state.mjs,src/redact.mjs,src/upload.mjs,cloud/src/**,design/tokens.css}" }
   },
   "redirects": [
     {
