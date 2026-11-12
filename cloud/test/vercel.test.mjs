@@ -12,13 +12,13 @@ import { cloudFunction, cronFunction, originalRequest } from "../src/vercel.mjs"
 import { HOME } from "../src/web.mjs";
 import { cloud } from "./helpers.mjs";
 
-const APP = "https://imitor-app.vercel.app";
+const APP = "https://app.imitor.dev";
 const SECRET = crypto.randomBytes(32).toString("base64url");
 const ENV = { VERCEL_ENV: "production", PUBLIC_URL: APP, DATABASE_URL: "postgres://unused", S3_BUCKET: "unused", CRON_SECRET: SECRET };
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 
 /** A request as Vercel hands it to /api/cloud after the root vercel.json's rewrite. */
-const rewritten = (path, { host = "imitor-app.vercel.app", method = "GET", headers = {}, body } = {}) => {
+const rewritten = (path, { host = "app.imitor.dev", method = "GET", headers = {}, body } = {}) => {
   const [p, q = ""] = path.split("?");
   return new Request(`https://${host}/api/cloud?__imitor_path=${encodeURIComponent(p)}${q ? `&${q}` : ""}`, { method, headers: { "x-forwarded-host": host, ...headers }, body });
 };
@@ -33,7 +33,7 @@ test("only production, only the app host: everything else is 404 before the clou
   const { fn } = setup();
   assert.equal((await fn.fetch(rewritten("/login"))).status, 200);
   for (const [why, request, env] of [
-    ["the site's host", rewritten("/login", { host: "imitor.vercel.app" }), ENV],
+    ["the site's host", rewritten("/login", { host: "imitor.dev" }), ENV],
     ["a preview deployment's host", rewritten("/login", { host: "imitor-git-branch-x.vercel.app" }), ENV],
     ["a preview deployment", rewritten("/login"), { ...ENV, VERCEL_ENV: "preview" }],
     ["development", rewritten("/login"), { ...ENV, VERCEL_ENV: "development" }],
@@ -67,7 +67,7 @@ test("every answer is private, no-store, with the security headers; the path com
   const moved = originalRequest(rewritten("/p/fernwood/runs/?filter=main", { method: "POST", body: "{}" }));
   assert.equal(moved.url, `${APP}/p/fernwood/runs?filter=main`);
   assert.equal(await moved.text(), "{}");
-  const direct = originalRequest(new Request("https://x.vercel.app/login", { headers: { "x-forwarded-host": "imitor-app.vercel.app" } }));
+  const direct = originalRequest(new Request("https://x.vercel.app/login", { headers: { "x-forwarded-host": "app.imitor.dev" } }));
   assert.equal(direct.url, `${APP}/login`, "a runtime that shows the original URL works the same");
 });
 
@@ -76,7 +76,7 @@ test("a sign-in through the function: cookies and Origin checked against PUBLIC_
   const page = await fn.fetch(rewritten("/login/token", { method: "POST", headers: { origin: APP, "content-type": "application/x-www-form-urlencoded" }, body: `token=${SECRET}` }));
   assert.equal(page.status, 303);
   assert.match(page.headers.getSetCookie()[0], /^__Host-imitor_session=.*; Secure; Max-Age=2592000$/);
-  const csrf = await fn.fetch(rewritten("/login/token", { method: "POST", headers: { origin: "https://imitor.vercel.app", "content-type": "application/x-www-form-urlencoded" }, body: `token=${SECRET}` }));
+  const csrf = await fn.fetch(rewritten("/login/token", { method: "POST", headers: { origin: "https://imitor.dev", "content-type": "application/x-www-form-urlencoded" }, body: `token=${SECRET}` }));
   assert.equal(csrf.status, 403, "the site's origin is another site");
   assert.ok(await deps.db.findUserByEmail("admin"));
 });
@@ -84,7 +84,7 @@ test("a sign-in through the function: cookies and Origin checked against PUBLIC_
 test("cron: production only, Authorization: Bearer <CRON_SECRET>, runs retention", async () => {
   const { deps } = setup();
   const cron = cronFunction(ENV, { deps });
-  const call = (auth, at = "/api/cron-retention/") => cron.fetch(new Request(`https://imitor.vercel.app${at}`, { headers: auth ? { authorization: auth, "user-agent": "vercel-cron/1.0" } : {} }));
+  const call = (auth, at = "/api/cron-retention/") => cron.fetch(new Request(`https://imitor.dev${at}`, { headers: auth ? { authorization: auth, "user-agent": "vercel-cron/1.0" } : {} }));
   assert.equal((await call(null)).status, 401);
   assert.equal((await call(`Bearer ${SECRET}x`)).status, 401);
   const ok = await call(`Bearer ${SECRET}`);
@@ -98,7 +98,7 @@ test("cron: production only, Authorization: Bearer <CRON_SECRET>, runs retention
 
 /** vercel.json's redirect that sends the app host's other paths to the site, as a RegExp. */
 const toSite = (v) => {
-  const r = v.redirects.find((x) => x.destination.startsWith("https://imitor.vercel.app/"));
+  const r = v.redirects.find((x) => x.destination.startsWith("https://imitor.dev/"));
   return new RegExp(`^${r.source.replace("/(", "/(?:")}$`);
 };
 /** The rewrite of the app host's paths to /api/cloud ("/:first(a|b)/:rest*"), as a RegExp. */

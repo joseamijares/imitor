@@ -73,7 +73,7 @@ For people (a session cookie):
 
 | Variable | |
 | --- | --- |
-| `PUBLIC_URL` | The cloud's own address, e.g. `https://imitor-app.vercel.app`. Its origin is what every form and request that changes something must come from, and Google's redirect URI is `PUBLIC_URL/auth/google/callback`. `https://` only, or `http://` on `localhost`, `127.0.0.1` or `[::1]` for local runs. The Node server defaults to its own address. |
+| `PUBLIC_URL` | The cloud's own address, e.g. `https://app.imitor.dev`. Its origin is what every form and request that changes something must come from, and Google's redirect URI is `PUBLIC_URL/auth/google/callback`. `https://` only, or `http://` on `localhost`, `127.0.0.1` or `[::1]` for local runs. The Node server defaults to its own address. |
 | `DATABASE_URL` | Postgres. Without it, everything is in memory (local runs only). The Node server applies `cloud/migrations/` when it starts; on Vercel, run them yourself (`npm run migrate --prefix cloud`). |
 | `S3_ENDPOINT` | e.g. `https://<account>.r2.cloudflarestorage.com` or `http://127.0.0.1:9000` (MinIO). Path-style when set; AWS virtual-hosted when not. |
 | `S3_BUCKET`, `S3_REGION` | `S3_REGION` defaults to `auto` (R2). Without `S3_BUCKET`, files are kept in memory. |
@@ -127,9 +127,10 @@ private instance, `IMITOR_ADMIN_TOKEN`. Call the retention route once a day, e.g
 
 The cloud runs in the same Vercel project as the public site, on a host of its own:
 
-- **Its own host.** Add the domain `imitor-app.vercel.app` (later `app.<domain>`) to the project. `vercel.app` is on
-  the Public Suffix List, so it is a separate site from `imitor.vercel.app`, with its own cookies and storage. The
-  cloud is never served under a path of the site's host.
+- **Its own host.** The hosted instance uses `app.imitor.dev`, added to the project next to the site's `imitor.dev`.
+  A different host keeps its own cookies (`__Host-` cookies are bound to it) and storage, apart from the public site
+  and the demo. The cloud is never served under a path of the site's host. A self-hoster sets their own host in the
+  root `vercel.json` (`has.host`) and in `PUBLIC_URL`.
 - **Functions.** `api/cloud.mjs` and `api/cron-retention.mjs` at the repository root are shims for
   [`src/vercel.mjs`](src/vercel.mjs). The root `vercel.json` rewrites the app host's `/p/*`, `/v1/*`, `/login`,
   `/logout`, `/auth/*`, `/projects` and `/static/*` to `/api/cloud` (with the original path in `?__imitor_path=`),
@@ -148,7 +149,7 @@ The cloud runs in the same Vercel project as the public site, on a host of its o
   so preview deployments and the site's host never reach the cloud. Google's redirect URI is built from `PUBLIC_URL`
   only, never from a Host header. Every answer is `cache-control: private, no-store` with the strict
   Content-Security-Policy, `frame-ancestors 'none'`, `nosniff` and `Referrer-Policy: same-origin`.
-- **Environment.** Add, for Production only and as Sensitive: `PUBLIC_URL` (`https://imitor-app.vercel.app`),
+- **Environment.** Add, for Production only and as Sensitive: `PUBLIC_URL` (`https://app.imitor.dev`),
   `DATABASE_URL` (a pooled connection string; each function instance holds one connection), `S3_*`,
   `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `IMITOR_ALLOWED_EMAILS`, `CRON_SECRET`, and `IMITOR_ADMIN_TOKEN` only if
   you need it. Without `DATABASE_URL` and `S3_BUCKET` the function refuses to run rather than keep anything in memory.
