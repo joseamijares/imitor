@@ -8,3 +8,4 @@ preview/
 # The demo site, built by `npm run demo` (and by Vercel from vercel.json)
 demo/site/
 site/dist/
+.claude/worktrees/
