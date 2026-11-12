@@ -111,7 +111,7 @@ test("pushing the same run again returns the same id, and only the files not yet
 
   // A truncated object counts as missing.
   const welcome = `${s.fernwood.id}/${first.body.id}/screens/first-run-01-welcome-iphone-16-light.png`;
-  s.storage.objects.set(welcome, { body: Buffer.from("png"), contentType: "image/png" });
+  s.storage.objects.set(welcome, { body: Buffer.from("png"), contentType: "image/png", etag: "truncated" });
 
   const again = await call(s, "POST", "/v1/runs", { body: runBody() });
   assert.equal(again.status, 200);
@@ -151,6 +151,41 @@ test("a slow re-push never deletes a file another push has since verified, nor s
   assert.equal(slow.status, 200);
   assert.deepEqual(slow.body.uploads, [], "no URL for a run that is ready");
   assert.equal(s.storage.objects.get(key)?.etag, "verified", "the verified file is still there");
+});
+
+test("a slow complete never deletes a file another push has since verified, even one it found gone", async () => {
+  const s = await setup();
+  const first = await call(s, "POST", "/v1/runs", { body: runBody() });
+  await putAll(s, first.body.uploads);
+  const webm = first.body.uploads.find((u) => u.path.endsWith(".webm"));
+  const key = `${s.fernwood.id}/${first.body.id}/${webm.path}`;
+  const verified = s.storage.objects.get(key);
+
+  // This complete lists the file, then finds it gone (another request deleted it); meanwhile another push uploads
+  // the right bytes again and completes the run.
+  const head = s.storage.head;
+  s.storage.head = async (k) => {
+    if (k !== key) return head(k);
+    s.storage.objects.delete(key);
+    const answer = await head(k); // null
+    s.storage.objects.set(key, verified);
+    await s.db.updateRun(first.body.id, { status: "ready" });
+    return answer;
+  };
+  const slow = await call(s, "POST", `/v1/runs/${first.body.id}/complete`);
+  s.storage.head = head;
+  assert.equal(slow.status, 409, "this request saw the file missing");
+  assert.equal(s.storage.objects.get(key), verified, "and did not delete the verified file");
+});
+
+test("a store with conditional deletes never deletes an object it has no etag for", async () => {
+  const s = await setup();
+  const first = await call(s, "POST", "/v1/runs", { body: runBody() });
+  const key = `${s.fernwood.id}/${first.body.id}/screens/first-run.webm`;
+  s.storage.objects.set(key, { body: Buffer.from("cut"), contentType: "video/webm" }); // no etag
+  const again = await call(s, "POST", "/v1/runs", { body: runBody() });
+  assert.equal(again.status, 200);
+  assert.ok(s.storage.objects.has(key), "left alone rather than deleted blindly");
 });
 
 test("refuses file types, sizes and paths it does not take, before storing anything", async () => {
@@ -323,8 +358,8 @@ test("complete checks each file's size, content type and SHA-256, and drops one 
   const welcome = "screens/first-run-01-welcome-iphone-16-light.png";
   const clip = "screens/first-run.webm";
   // Written around the signed URLs (a store that ignored the checksum, or a bug): same size, other bytes or type.
-  s.storage.objects.set(at(welcome), { body: Buffer.from("PNG-1"), contentType: "image/png" });
-  s.storage.objects.set(at(clip), { body: Buffer.from("webm-333"), contentType: "text/html" });
+  s.storage.objects.set(at(welcome), { body: Buffer.from("PNG-1"), contentType: "image/png", etag: "wrong-bytes" });
+  s.storage.objects.set(at(clip), { body: Buffer.from("webm-333"), contentType: "text/html", etag: "wrong-type" });
 
   const done = await call(s, "POST", `/v1/runs/${created.body.id}/complete`);
   assert.equal(done.status, 409);

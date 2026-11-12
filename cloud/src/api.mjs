@@ -116,12 +116,14 @@ async function listMissing(storage, run) {
 /**
  * Delete objects only if they are still the ones that were listed or read ({ key, etag }), where the store can say so
  * (deleteIfUnchanged): a request that was slow to get here must not delete a file another request has since
- * uploaded and verified. Without that support (or an etag), a plain delete.
+ * uploaded and verified. On such a store an object without an etag is left alone, never deleted blindly. A store
+ * without conditional deletes (S3, whose upload URLs pin the SHA-256, so a deleted file can only come back as the
+ * declared bytes) gets a plain delete.
  */
 async function removeIfUnchanged(storage, objects) {
-  if (!objects.length) return;
-  if (storage.deleteIfUnchanged && objects.every((o) => o.etag)) return storage.deleteIfUnchanged(objects);
-  return storage.delete(objects.map((o) => o.key));
+  if (!storage.deleteIfUnchanged) return objects.length ? storage.delete(objects.map((o) => o.key)) : undefined;
+  const known = objects.filter((o) => o.etag);
+  if (known.length) await storage.deleteIfUnchanged(known);
 }
 
 /**
@@ -142,7 +144,8 @@ async function unverifiedFiles(deps, files) {
   const checked = await mapLimit(files, async (f) => {
     const o = await deps.storage.head(f.key);
     const sum = o?.sha256 === f.sha256 || (o?.sha256 == null && deps.allowUnverified === true);
-    return o && o.size === f.size && o.contentType === f.contentType && sum ? null : { file: f, etag: o?.etag ?? null };
+    if (!o) return { file: f, found: false }; // gone since the listing: nothing of it to delete
+    return o.size === f.size && o.contentType === f.contentType && sum ? null : { file: f, found: true, etag: o.etag ?? null };
   });
   return checked.filter(Boolean);
 }
@@ -204,7 +207,8 @@ async function completeRun(deps, key, id) {
     const checked = await unverifiedFiles(deps, present);
     const wrong = checked.map((c) => c.file);
     // Deleted (if unchanged since it was read), so the next push lists them as missing and uploads them again.
-    if (checked.length) await removeIfUnchanged(storage, checked.map((c) => ({ key: c.file.key, etag: c.etag }))).catch((error) => deps.log?.(error));
+    const found = checked.filter((c) => c.found).map((c) => ({ key: c.file.key, etag: c.etag }));
+    if (found.length) await removeIfUnchanged(storage, found).catch((error) => deps.log?.(error));
     const bad = [...missing, ...wrong];
     if (bad.length) {
       const names = bad.slice(0, 5).map((f) => f.path).join(", ");
