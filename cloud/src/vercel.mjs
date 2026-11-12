@@ -1,6 +1,6 @@
 // Imitor Cloud as Vercel functions on the site's own Vercel project (root api/cloud.mjs and api/cron-retention.mjs
-// are one-line shims for these). The cloud answers only on its own host, PUBLIC_URL's (imitor-app.vercel.app, a
-// separate site from imitor.vercel.app because vercel.app is on the Public Suffix List), only in production: a
+// are one-line shims for these). The cloud answers only on its own host, PUBLIC_URL's (app.imitor.dev, a
+// separate site from imitor.dev's public pages: a different host, with its own cookies and storage), only in production: a
 // preview deployment or the site's host gets 404. The root vercel.json rewrites the app host's paths to /api/cloud
 // with the original path in ?__imitor_path=, because a rewrite may change the URL the function sees.
 import { failure, handle, retention } from "./api.mjs";

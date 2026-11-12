@@ -12,7 +12,7 @@ check has to find.
 
 Status: early (v0). Tried on two Expo SDK 54 apps so far.
 
-Site: [imitor.vercel.app](https://imitor.vercel.app) · Live demo: [imitor.vercel.app/demo](https://imitor.vercel.app/demo/)
+Site: [imitor.dev](https://imitor.dev) · Live demo: [imitor.dev/demo](https://imitor.dev/demo/)
 
 ## What you get
 
@@ -148,7 +148,7 @@ The Appearance and Reduce motion controls rely on an override that `imitor build
 
 The iPhone status bar and the Android camera are drawn above the app, not over it: the web build has no safe-area insets, so drawing them on top would hide what the shots show.
 
-A public demo of the interface, with invented data for an invented plant-care app ("fernwood"), runs at [imitor.vercel.app/demo](https://imitor.vercel.app/demo/). It is built from `demo/` with `npm run demo` (it writes `demo/site/`). The root `vercel.json` deploys the public site in `site/` (`npm run site`): its How to use and For agents pages are generated from this README, and the demo is exported into its `/demo/` folder.
+A public demo of the interface, with invented data for an invented plant-care app ("fernwood"), runs at [imitor.dev/demo](https://imitor.dev/demo/). It is built from `demo/` with `npm run demo` (it writes `demo/site/`). The root `vercel.json` deploys the public site in `site/` (`npm run site`): its How to use and For agents pages are generated from this README, and the demo is exported into its `/demo/` folder.
 
 ## Publish a run
 

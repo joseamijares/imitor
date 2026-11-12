@@ -174,7 +174,7 @@ test("vercel.json deploys the site, with the demo under /demo/ on the same singl
   assert.equal(v.framework, null);
   assert.deepEqual(v.rewrites.filter((r) => !r.has), [spaRewrite("/demo")]);
   // The same project serves Imitor Cloud, but only on its own host (cloud/src/vercel.mjs checks the host again).
-  for (const r of [...v.rewrites, ...v.redirects].filter((x) => x.has)) assert.deepEqual(r.has, [{ type: "host", value: "imitor-app.vercel.app" }]);
+  for (const r of [...v.rewrites, ...v.redirects].filter((x) => x.has)) assert.deepEqual(r.has, [{ type: "host", value: "app.imitor.dev" }]);
   assert.ok(v.rewrites.filter((r) => r.has).every((r) => r.destination.startsWith("/api/cloud?")));
   assert.ok(!fs.existsSync(path.join(REPO, "demo", "vercel.json")), "the demo has no Vercel project of its own");
   const re = new RegExp("^" + spaRewrite("/demo").source + "$");
