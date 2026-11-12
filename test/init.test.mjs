@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { detectPackageManager, diff, ignores, init, inspectPackage, wrapMetroConfig } from "../src/init.mjs";
+import { detectPackageManager, diff, formatInit as formatInitOf, ignores, init, inspectPackage, wrapMetroConfig } from "../src/init.mjs";
 import { createServer } from "../src/mcp.mjs";
 
 const BIN = fileURLToPath(new URL("../bin/imitor.mjs", import.meta.url));
@@ -221,7 +221,9 @@ test("proposes stand-ins from the table and flags unknown native packages", () =
   };
   const root = app(nm, { dependencies: { "expo-sqlite": "~16.0.0", "@shopify/react-native-skia": "2.2.12", "expo-haptics": "~15.0.0", "leaf-sensor": "1.0.0", "leaf-web": "1.0.0", "leaf-split": "1.0.0", "leaf-pure": "1.0.0", "leaf-missing": "1.0.0" } });
   const r = init(root, { dryRun: true });
+  // Skia is in package.json but not installed here, so canvaskit-wasm cannot be found: the empty box, saying why.
   assert.deepEqual(r.config.shims, { "@shopify/react-native-skia": "skia", "expo-sqlite": "sqljs" });
+  assert.match(r.standIns.proposed.find((p) => p.package === "@shopify/react-native-skia").why, /Not "canvaskit".*canvaskit-wasm/);
   assert.deepEqual(r.standIns.mayNeed.map((m) => m.package), ["leaf-sensor", "soil-probe"]);
   assert.match(r.standIns.mayNeed[0].why, /requireNativeModule in index\.js/);
   assert.ok(r.standIns.noneNeeded.includes("expo-haptics"));
@@ -230,10 +232,35 @@ test("proposes stand-ins from the table and flags unknown native packages", () =
   assert.equal(inspectPackage(path.join(root, "node_modules/leaf-split")).webSignal, "Thing.js next to Thing.native.js");
 });
 
+test("proposes canvaskit for React Native Skia when the app has canvaskit-wasm, as imitor build finds it", () => {
+  const skia = { "node_modules/@shopify/react-native-skia/package.json": JSON.stringify({ name: "@shopify/react-native-skia", version: "2.2.12", dependencies: { "canvaskit-wasm": "0.40.0" } }) };
+  const kit = (dir) => ({
+    [`${dir}/package.json`]: JSON.stringify({ name: "canvaskit-wasm", version: "0.40.0" }),
+    [`${dir}/bin/full/canvaskit.js`]: "var CanvasKitInit = function () {};\n",
+    [`${dir}/bin/full/canvaskit.wasm`]: "wasm",
+  });
+  for (const dir of ["node_modules/canvaskit-wasm", "node_modules/@shopify/react-native-skia/node_modules/canvaskit-wasm"]) {
+    const root = app({ ...skia, ...kit(dir) }, { dependencies: { "@shopify/react-native-skia": "2.2.12" } });
+    const r = init(root, { dryRun: true });
+    assert.deepEqual(r.config.shims, { "@shopify/react-native-skia": "canvaskit" }, dir);
+    assert.match(r.standIns.proposed[0].why, /canvaskit-wasm.*draws for real/);
+    const out = cli(root, "--dry-run");
+    assert.equal(out.status, 0, out.stderr);
+    assert.match(out.stdout, /@shopify\/react-native-skia: canvaskit\. .*draws for real/);
+  }
+  // Skia installed but its canvaskit-wasm missing (a pruned install): the empty box, and the version to install.
+  const root = app(skia, { dependencies: { "@shopify/react-native-skia": "2.2.12" } });
+  const r = init(root, { dryRun: true });
+  assert.deepEqual(r.config.shims, { "@shopify/react-native-skia": "skia" });
+  assert.match(r.standIns.proposed[0].why, /canvaskit-wasm@0\.40\.0/);
+  assert.match(formatInitOf(r), /@shopify\/react-native-skia: skia\. .*change it to "canvaskit"/);
+});
+
 test("every stand-in in the table is one Imitor has", () => {
   const table = JSON.parse(fs.readFileSync(new URL("../src/standins.json", import.meta.url), "utf8")).packages;
   for (const [name, entry] of Object.entries(table)) {
-    assert.ok(["sqljs", "skia", "inert", "none"].includes(entry.kind), name);
+    assert.ok(["sqljs", "canvaskit", "skia", "inert", "none"].includes(entry.kind), name);
+    if (entry.fallback) assert.ok(["skia", "inert"].includes(entry.fallback) && entry.fallbackWhy, name);
     assert.ok(entry.why && entry.checked, name);
   }
 });

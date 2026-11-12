@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { bootSources } from "./build.mjs";
 
 const TABLE = JSON.parse(fs.readFileSync(new URL("./standins.json", import.meta.url), "utf8")).packages;
 export const DEFAULT_OUT = "preview";
@@ -248,6 +249,22 @@ function localModules(root, pkg) {
 // The packages every Expo web build has; nothing to propose or check.
 const CORE = new Set(["expo", "react", "react-dom", "react-native", "react-native-web", "@expo/metro-runtime"]);
 
+/**
+ * The kind to propose for a table entry. An entry with `fallback` (React Native Skia) names a kind that needs a library
+ * from the app (canvaskit needs canvaskit-wasm): it is proposed when the build would find that library, the same way
+ * `imitor build` looks for it (bootSources), and the fallback otherwise, saying why.
+ */
+function chooseKind(root, known) {
+  if (!known.fallback) return { kind: known.kind, why: known.why };
+  try {
+    const sources = bootSources(root, [known.kind]);
+    const found = Object.values(sources)[0];
+    return { kind: known.kind, why: `${known.why} Found ${path.relative(root, path.dirname(found)) || "."}, so it draws for real.` };
+  } catch (error) {
+    return { kind: known.fallback, why: `${known.fallbackWhy} Not "${known.kind}", which draws for real, because ${String(error.message).replace(/\.?$/, ".")} Once it is installed, change it to "${known.kind}".` };
+  }
+}
+
 export function proposeStandIns(root, pkg) {
   const shims = {};
   const proposed = [];
@@ -260,8 +277,9 @@ export function proposeStandIns(root, pkg) {
     if (known) {
       if (known.kind === "none") noneNeeded.push(name);
       else {
-        shims[name] = known.kind;
-        proposed.push({ package: name, standIn: known.kind, why: known.why });
+        const pick = chooseKind(root, known);
+        shims[name] = pick.kind;
+        proposed.push({ package: name, standIn: pick.kind, why: pick.why });
       }
       continue;
     }
