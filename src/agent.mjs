@@ -1,7 +1,7 @@
 // The operations agents (and the CLI) can ask for: one screenshot, one flow run, one video, the problems of the last run.
 import fs from "node:fs";
 import path from "node:path";
-import { DEVICES, loadConfig } from "./config.mjs";
+import { DEVICES, fidelityOf, loadConfig } from "./config.mjs";
 import { serve } from "./serve.mjs";
 import { doStep, loadPlaywright, settle, visibleStandIns, watchDialogs } from "./shoot.mjs";
 import { flowChain, prepareContext, readSeedProblems, stateInfo } from "./state.mjs";
@@ -220,5 +220,5 @@ export function readProblems(root) {
 /** Flows, devices and schemes an agent can ask for. */
 export function describe(root) {
   const config = loadConfig(root);
-  return { flows: config.flows.map((f) => ({ name: f.name, start: f.start || (f.after ? null : "/"), steps: (f.steps || []).length, shots: (f.steps || []).filter((s) => s.shot).map((s) => s.shot), ...stateInfo(f) })), devices: [...new Set([...config.devices.map((d) => d.name), ...Object.keys(DEVICES)])], schemes: ["light", "dark"], standIns: config.shims, built: fs.existsSync(path.resolve(root, config.out, "app", "index.html")) };
+  return { flows: config.flows.map((f) => ({ name: f.name, start: f.start || (f.after ? null : "/"), steps: (f.steps || []).length, shots: (f.steps || []).filter((s) => s.shot).map((s) => s.shot), ...stateInfo(f) })), devices: [...new Set([...config.devices.map((d) => d.name), ...Object.keys(DEVICES)])], schemes: ["light", "dark"], standIns: config.shims, fidelity: Object.fromEntries(Object.entries(config.shims).map(([module, kind]) => [module, fidelityOf(kind)])), built: fs.existsSync(path.resolve(root, config.out, "app", "index.html")) };
 }

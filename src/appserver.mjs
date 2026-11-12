@@ -8,7 +8,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe } from "./agent.mjs";
 import { MEDIA_MARKER } from "./build.mjs";
-import { DEVICES, loadConfig, NOT_COVERED } from "./config.mjs";
+import { DEVICES, fidelityOf, loadConfig, NOT_COVERED } from "./config.mjs";
 import { TOOLS } from "./mcp.mjs";
 import { serve } from "./serve.mjs";
 import { flowChain, flowSetup, preludeSource, stateInfo } from "./state.mjs";
@@ -132,7 +132,7 @@ export function projectData(root, { previewUrl = null, git = null } = {}) {
       // after, state, seeded, clock: what the flow starts from. chain: where it really starts and the steps of the flows it runs after.
       return { name: f.name, start: f.start || (f.after ? null : "/"), ...stateInfo(f), chain: { start: chain.start, before: chain.before.map((b) => entry(b.step, b.index, b.flow)) }, steps: (f.steps || []).map((step, i) => entry(step, i + 1)) };
     }),
-    standIns: Object.entries(config.shims).map(([module, kind]) => ({ module, kind, fidelity: kind === "sqljs" ? "genuine" : "stand-in" })),
+    standIns: Object.entries(config.shims).map(([module, kind]) => ({ module, kind, fidelity: fidelityOf(kind) })),
     notCovered: NOT_COVERED,
   };
 }
