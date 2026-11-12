@@ -31,7 +31,7 @@ Usage (run in the app's folder):
   imitor gate               build, run every flow, and exit non-zero if the run should block a native build:
                             [--fail-on flows|errors|stand-ins] [--no-build] [--json]
   imitor comment            print the pull-request comment for the last run (verdict, failed flows, shots):
-                            [--image-base url] [--max-shots n] [--device d] [--scheme s] [--fail-on f] [--report-url url] [--json]
+                            [--image-base url] [--max-shots n] [--device d] [--scheme s] [--fail-on f] [--report-url url] [--sha commit] [--json]
   imitor publish-shots      push the last run's screenshots to a branch of this repository (GitHub Actions only),
                             print the --image-base for imitor comment: [--branch imitor-shots] [--keep 3] [--pr n] [--force] [--json]
   imitor app [--port n]     open the review interface on this machine (runs, captures, problems, agents)

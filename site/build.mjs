@@ -18,8 +18,8 @@ const SHOTS = ["welcome", "your-space", "add-plant", "plant-details", "schedule"
 
 // The README sections each documentation page is made of, in order.
 export const PAGES = {
-  "how-to-use": { title: "How to use", description: "Set up Imitor in a React Native / Expo app: install, wrap Metro, describe flows, choose stand-ins, review and publish a run.",
-    sections: ["What you get", "Set up", "Flow steps", "Stand-ins", "The app", "Publish a run", "What it does not show"] },
+  "how-to-use": { title: "How to use", description: "Set up Imitor in a React Native / Expo app: install, wrap Metro, describe flows, start them from a state or a test account, choose stand-ins, review and publish a run, and gate native builds.",
+    sections: ["What you get", "Set up", "Flow steps", "Start a flow from a state", "Sign in with a test account", "Stand-ins", "The app", "Publish a run", "Gate your native builds", "Use Imitor Cloud (in development, not hosted yet)", "What it does not show"] },
   agents: { title: "For agents", description: "Connect Imitor to Claude Code, Cursor, Codex or any MCP client: the command, the eight tools, and the same operations as JSON commands for CI.",
     sections: ["For agents"] },
 };
@@ -29,13 +29,16 @@ export const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/
 
 /** Inline markdown: code spans, bold, links. Everything else is escaped. */
 function inline(text) {
-  const parts = text.split(/(`[^`]+`)/g);
-  return parts.map((p) => {
-    if (p.startsWith("`") && p.endsWith("`") && p.length > 1) return `<code>${esc(p.slice(1, -1))}</code>`;
-    return esc(p)
-      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-      .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, t, href) => `<a href="${href}">${t}</a>`);
-  }).join("");
+  // A link's text may itself hold code spans ([`cloud/`](cloud/)); a code span outside a link is never searched for links.
+  const token = /\[((?:`[^`]*`|[^\]`])+)\]\(([^)\s]+)\)|`[^`]+`/g;
+  const plain = (s) => esc(s).replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  let out = "", last = 0;
+  for (const m of text.matchAll(token)) {
+    out += plain(text.slice(last, m.index));
+    out += m[2] ? `<a href="${esc(m[2])}">${inline(m[1])}</a>` : `<code>${esc(m[0].slice(1, -1))}</code>`;
+    last = m.index + m[0].length;
+  }
+  return out + plain(text.slice(last));
 }
 
 const cells = (row) => row.trim().replace(/^\||\|$/g, "").split(/(?<!\\)\|/).map((c) => c.trim().replace(/\\\|/g, "|"));
@@ -135,6 +138,36 @@ function connectBlock() {
   return `<h2 id="connect">Connect your agent</h2>\n<div class="connect">${rows.join("")}</div>`;
 }
 
+export const REPO = "https://github.com/joseamijares/imitor";
+
+/** The heading ids each documentation page ends up with, so a README link to a section on the other page can follow it. */
+function pageIds(sections) {
+  const ids = {};
+  for (const [key, page] of Object.entries(PAGES)) {
+    ids[key] = new Set(key === "agents" ? ["connect", "tools"] : []);
+    for (const name of page.sections) {
+      if (key !== "agents") ids[key].add(slug(name));
+      for (const [, h] of (sections[name] || "").matchAll(/^#{1,4}\s+(.*)$/gm)) ids[key].add(slug(h));
+    }
+  }
+  return ids;
+}
+
+/** README links written for GitHub, made to work on the site: `#section` on the page that has it, repository paths on GitHub. */
+function fixLinks(html, key, ids) {
+  return html.replace(/href="([^"]+)"/g, (all, href) => {
+    if (href.startsWith("#")) {
+      if (ids[key].has(href.slice(1))) return all;
+      const other = Object.keys(ids).find((k) => ids[k].has(href.slice(1)));
+      if (!other) throw new Error(`README link ${href} on ${key} has no section on the site`);
+      return `href="/${other}/${href}"`;
+    }
+    if (/^(\/|https?:|mailto:)/.test(href)) return all;
+    const p = href.replace(/^\.\//, "");
+    return `href="${REPO}/${/\.[a-z0-9]+(#.*)?$/i.test(p) ? "blob" : "tree"}/main/${p}"`;
+  });
+}
+
 function docPage(key, sections, template) {
   const page = PAGES[key];
   const parts = page.sections.map((name) => {
@@ -142,7 +175,7 @@ function docPage(key, sections, template) {
     const body = markdown(sections[name], { headingOffset: 1 });
     return key === "agents" ? body : `<h2 id="${slug(name)}">${esc(name)}</h2>\n${body}`;
   });
-  let body = parts.join("\n");
+  let body = fixLinks(parts.join("\n"), key, pageIds(sections));
   if (key === "agents") body = connectBlock() + "\n<h2 id=\"tools\">The tools</h2>\n" + body;
   const toc = [...body.matchAll(/<h2 id="([^"]+)">(.*?)<\/h2>/g)].map(([, id, t]) => `<a href="#${id}">${t.replace(/<[^>]+>/g, "")}</a>`).join("");
   return template

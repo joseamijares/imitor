@@ -95,7 +95,7 @@ These are the steps `imitor init` takes. Do them by hand if you prefer, or when 
 
    `imitor build` runs `expo export --platform web` with your environment, so `EXPO_PUBLIC_*` values are inlined into the build as usual. If the app needs them to start (a backend URL, a public key), pass harmless placeholders for that command rather than real ones, for example `EXPO_PUBLIC_API_URL=http://127.0.0.1:9 npx imitor build`; the app then sees an unreachable backend.
 
-Other commands: `imitor init`, `imitor build`, `imitor shoot` (reuse the last build), `imitor serve` (click around by hand), `imitor app` (the review interface), `imitor export` (the interface as a static site), `imitor push` (uploads a run to an Imitor Cloud instance; in development).
+Other commands: `imitor init`, `imitor build`, `imitor shoot` (reuse the last build), `imitor serve` (click around by hand), `imitor app` (the review interface), `imitor export` (the interface as a static site), `imitor gate`, `imitor comment` and `imitor publish-shots` ([Gate your native builds](#gate-your-native-builds)), `imitor push` (uploads a run to an Imitor Cloud instance; in development). `npx imitor --help` lists every command and option.
 
 ## For agents
 
@@ -172,7 +172,7 @@ Imitor Cloud is a place for finished runs that a team signs in to: agents and CI
 IMITOR_CLOUD_URL=https://cloud.example.com IMITOR_TOKEN=imk_... npx imitor push
 ```
 
-The key can only upload runs to its project. Typed values (passwords, emails) are blanked before anything leaves the machine. Interest in a hosted version is collected on [issue #11](https://github.com/joseamijares/imitor/issues/11).
+`imitor push` uploads the newest run in the output folder; `--run <id>` picks another. The key can only upload runs to its project. Typed values (passwords, emails) are blanked before anything leaves the machine. Interest in a hosted version is collected on [issue #11](https://github.com/joseamijares/imitor/issues/11).
 
 ## Stand-ins
 
@@ -414,7 +414,7 @@ Keep the `concurrency` block above: two pushes in quick succession start two run
 
 Turn it off with `comment: "false"`. To delete what was stored, delete the `imitor-shots` branch.
 
-The same comment is available locally. `imitor comment` prints it for the last run, with file paths in a table; `--image-base <url>` makes it use images at that address instead (the shot's path is added to the end, or before a `?query`). `--max-shots`, `--device`, `--scheme` and `--fail-on` change what it shows, `--sha` names the commit it reports (the action passes the pull request's head, since the checkout of a pull request is GitHub's merge commit), and `--json` prints the data instead. `imitor publish-shots` is the push the action does; it refuses to run outside GitHub Actions unless given `--force`.
+The same comment is available locally. `imitor comment` prints it for the last run, with file paths in a table; `--image-base <url>` makes it use images at that address instead (the shot's path is added to the end, or before a `?query`). `--max-shots`, `--device`, `--scheme` and `--fail-on` change what it shows, `--report-url <url>` adds a link to the full report (the action passes the workflow run, whose artifact holds it), `--sha` names the commit it reports (the action passes the pull request's head, since the checkout of a pull request is GitHub's merge commit), and `--json` prints the data instead. `imitor publish-shots` is the push the action does; it refuses to run outside GitHub Actions unless given `--force`.
 
 Nobody has seen this comment on a real pull request yet: the Markdown is tested, and publishing is tested against local Git repositories, but the action's publish and comment steps have not run on GitHub.
 

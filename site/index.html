@@ -202,7 +202,7 @@
     <div class="agents">
       <div>
         <h2 id="agents-h">Your agent drives it. You review it.</h2>
-        <p>Seven MCP tools let a coding agent build the preview, run flows, take screenshots and record videos, then read which parts were stood in. Run these in the app’s folder.</p>
+        <p>Eight MCP tools let a coding agent set Imitor up, build the preview, run flows, take screenshots and record videos, then read which parts were stood in. Run these in the app’s folder.</p>
         <div class="connect-list">
           <span class="who"><span class="agent-tile" data-agent="claude"><img src="/assets/agents/claude.svg" alt=""></span>Claude Code</span>
           <div class="cmd"><span class="p">$</span><code>claude mcp add imitor -- npx imitor mcp</code><button class="copy" type="button" aria-label="Copy command"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.8"/><path d="M10.5 5.5V4A1.5 1.5 0 0 0 9 2.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5"/></svg></button></div>
@@ -255,6 +255,7 @@
         <div class="oss-title"><span class="pill ok">Available</span><h3>MIT licence</h3></div>
         <ul>
           <li>The CLI and the MCP server</li>
+          <li>The pre-build gate, and the GitHub Action that posts the shots on the pull request</li>
           <li>The review interface, <code>imitor app</code></li>
           <li><code>imitor export</code>, to publish a run as a static site</li>
           <li>The run format: plain JSON and PNG files</li>
@@ -262,8 +263,8 @@
         <a class="text-link" href="https://github.com/joseamijares/imitor">Read the code on GitHub <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></a>
       </div>
       <div class="oss-next">
-        <div class="oss-title"><span class="pill muted">Planned, not built</span><h3>Imitor Cloud</h3></div>
-        <p>A place where your agents and CI upload runs, and you sign in to review them from any device. It would only store and show runs, never run your code. The plan is to open-source it so you can host your own, and to offer a hosted version as a paid service. No date and no price yet.</p>
+        <div class="oss-title"><span class="pill muted">In development, not hosted</span><h3>Imitor Cloud</h3></div>
+        <p>A place where your agents and CI upload runs with <code>imitor push</code>, and you sign in to review them from any device. It only stores and shows runs, never runs your code. Its code is in the repository under AGPL-3.0, so you can host your own; a hosted version as a paid service is planned. No date and no price yet.</p>
         <a class="text-link" href="https://github.com/joseamijares/imitor/issues/11">Want it? Follow the plan on GitHub <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></a>
       </div>
     </div>

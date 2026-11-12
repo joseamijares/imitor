@@ -56,6 +56,19 @@ test("the documentation pages carry their README sections", () => {
   }
 });
 
+test("every link in the documentation pages goes somewhere: sections on the site, repository paths on GitHub", () => {
+  const ids = {};
+  for (const key of Object.keys(PAGES)) ids[key] = new Set([...fs.readFileSync(path.join(out, key, "index.html"), "utf8").matchAll(/id="([^"]+)"/g)].map(([, id]) => id));
+  for (const key of Object.keys(PAGES)) {
+    const html = fs.readFileSync(path.join(out, key, "index.html"), "utf8");
+    for (const [, href] of html.matchAll(/href="([^"]+)"/g)) {
+      const local = href.match(/^(?:\/([a-z-]+)\/)?#(.+)$/);
+      if (local) assert.ok(ids[local[1] || key]?.has(local[2]), `${key}: ${href} has no section`);
+      else assert.match(href, /^(\/|https?:|mailto:)/, `${key}: relative link ${href}`);
+    }
+  }
+});
+
 test("the markdown renderer handles the README's lists with nested code", () => {
   const html = markdown("1. Install:\n\n   ```bash\n   npm i x\n   ```\n\n2. Run `it`.\n");
   assert.match(html, /<ol><li><p>Install:<\/p>\n<div class="code"><pre><code data-lang="bash">npm i x<\/code><\/pre>/);
