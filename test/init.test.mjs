@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { detectPackageManager, diff, formatInit as formatInitOf, ignores, init, inspectPackage, wrapMetroConfig } from "../src/init.mjs";
+import { detectPackageManager, diff, formatInit as formatInitOf, ignores, init, inspectPackage, usesWithImitor, wrapMetroConfig } from "../src/init.mjs";
 import { createServer } from "../src/mcp.mjs";
 
 const BIN = fileURLToPath(new URL("../bin/imitor.mjs", import.meta.url));
@@ -56,6 +56,23 @@ test("wraps the common Metro shapes with a minimal edit", () => {
     assert.equal(text.slice(0, text.indexOf("module.exports = require")), src.slice(0, src.lastIndexOf("module.exports =")));
     assert.equal(wrapMetroConfig(text).already, true);
   }
+});
+
+test("a comment that mentions withImitor does not count as wrapped; code that calls it does", () => {
+  const mention = `${SDK}// TODO: wrap with require("imitor/metro").withImitor(config) once Imitor is installed\n/* withImitor( */\nconst config = getDefaultConfig(__dirname);\nmodule.exports = config;\n`;
+  const wrapped = wrapMetroConfig(mention);
+  assert.equal(wrapped.already, undefined);
+  assert.ok(wrapped.text.endsWith(`module.exports = require("imitor/metro").withImitor(config);\n`), wrapped.text);
+  assert.equal(usesWithImitor(mention), false);
+  // Wrapped in code, in the export or earlier, counts.
+  assert.equal(usesWithImitor(`const { withImitor } = require("imitor/metro");\nconst config = withImitor(getDefaultConfig(__dirname));\nmodule.exports = config;\n`), true);
+  assert.equal(usesWithImitor(`module.exports = require('imitor/metro').withImitor(config); // done\n`), true);
+  // init edits the file, and the next run sees it wrapped.
+  const root = app({ "metro.config.js": mention });
+  const r = init(root);
+  assert.ok(r.changes.some((c) => c.file === "metro.config.js"), JSON.stringify(r.unchanged));
+  assert.match(fs.readFileSync(path.join(root, "metro.config.js"), "utf8"), /^module\.exports = require\("imitor\/metro"\)\.withImitor\(config\);$/m);
+  assert.ok(init(root).unchanged.some((u) => /metro\.config\.js already uses withImitor/.test(u)));
 });
 
 test("refuses Metro shapes it does not recognise", () => {
@@ -271,6 +288,35 @@ test("an app.config.js that cannot be evaluated falls back to app.json", () => {
   assert.ok(r.notes.some((n) => /could not evaluate app\.config\.js/.test(n)));
   assert.equal(r.app.name, "Fernwood");
   assert.equal(r.config.out, "dist/imitor", "the fingerprint policy is still found in the file's text");
+});
+
+test("an app config it cannot evaluate may use the fingerprint, so .gitignore and .easignore are left alone and the plan says why", () => {
+  // No fingerprint in its text (it could come from anywhere the config reads), and expo is not installed to evaluate it.
+  const root = app({ "app.config.js": 'const base = require("./app.json");\nmodule.exports = () => ({ ...base.expo, ...require("./runtime-settings") });\n', ".easignore": "node_modules/\n" });
+  const gitignore = fs.readFileSync(path.join(root, ".gitignore"), "utf8");
+  const r = init(root);
+  assert.equal(fs.readFileSync(path.join(root, ".gitignore"), "utf8"), gitignore);
+  assert.equal(fs.readFileSync(path.join(root, ".easignore"), "utf8"), "node_modules/\n");
+  assert.ok(!r.changes.some((c) => c.file === ".gitignore" || c.file === ".easignore"));
+  assert.equal(r.config.out, "dist/imitor");
+  const printed = formatInitOf(r);
+  assert.match(printed, /init could not evaluate app\.config\.js, so it cannot tell whether the app's runtime version comes from Expo's fingerprint, which hashes \.gitignore: editing it would change the runtime version/);
+  assert.match(printed, /If the app does not use the fingerprint policy, you can add preview\/ to \.gitignore yourself/);
+  assert.match(printed, /\.easignore does not ignore dist\/imitor\/.*the runtime version may come from the fingerprint/);
+  // With an app.json only there is nothing to evaluate: .gitignore is edited as before.
+  const plain = init(app());
+  assert.ok(plain.changes.some((c) => c.file === ".gitignore"));
+});
+
+test("while Imitor is not on npm, the GitHub install comes before any imitor command, in init's output and the README", () => {
+  const printed = formatInitOf(init(app(), { dryRun: true }));
+  const next = printed.slice(printed.indexOf("\nNext:\n"));
+  assert.match(next, /^\nNext:\n {2}1\. npm i -D imitor playwright\n {5}\(imitor is not on npm yet: until it is, install it with github:joseamijares\/imitor in place of imitor\.\)\n {2}2\. npx playwright install chromium\n/);
+  assert.equal(printed.split("not on npm yet").length, 2, "said once");
+  const readme = fs.readFileSync(new URL("../README.md", import.meta.url), "utf8");
+  const github = readme.indexOf("npm i -D github:joseamijares/imitor playwright");
+  assert.ok(github > 0 && github < readme.indexOf("npx imitor init"), "the GitHub install comes first");
+  assert.equal(readme.split("github:joseamijares/imitor").length, 2, "the README gives the GitHub install once");
 });
 
 test("diff shows a new file and an edit", () => {

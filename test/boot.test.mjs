@@ -4,10 +4,13 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { describe } from "../src/agent.mjs";
+import { describe, runFlow, screenshot } from "../src/agent.mjs";
 import { projectData } from "../src/appserver.mjs";
 import { bootKinds, bootSources, patchBuild, patchHtml } from "../src/build.mjs";
+import { loadConfig } from "../src/config.mjs";
+import { evaluate } from "../src/gate.mjs";
 import { serve } from "../src/serve.mjs";
+import { shoot } from "../src/shoot.mjs";
 
 const require = createRequire(import.meta.url);
 let hasPlaywright = true;
@@ -104,6 +107,24 @@ test("metro: the canvaskit kind leaves @shopify/react-native-skia to the real re
   }
 });
 
+test("metro: a boot kind given only in withImitor's options is refused, since imitor build would not load its library", () => {
+  const root = tmp();
+  write(path.join(root, "imitor.config.json"), JSON.stringify({ shims: { "expo-sqlite": "sqljs" } }));
+  const before = process.env.IMITOR;
+  process.env.IMITOR = "1";
+  try {
+    const { withImitor } = require("../src/metro.cjs");
+    const config = { projectRoot: root, resolver: {} };
+    assert.throws(() => withImitor(config, { shims: { "@shopify/react-native-skia": "canvaskit" } }), /withImitor: set "@shopify\/react-native-skia": "canvaskit" in imitor\.config\.json "shims"/);
+    assert.throws(() => withImitor({ projectRoot: tmp(), resolver: {} }, { shims: { "expo-sqlite": "sqljs" } }), /"expo-sqlite": "sqljs" in imitor\.config\.json/);
+    // Kinds that need nothing loaded first, and boot kinds the config already lists, are fine.
+    assert.ok(withImitor(config, { shims: { "expo-sqlite": "sqljs", "react-native-maps": "inert", "some-sdk": "./stand-ins/sdk.js" } }).resolver.resolveRequest);
+  } finally {
+    if (before === undefined) delete process.env.IMITOR;
+    else process.env.IMITOR = before;
+  }
+});
+
 test("describe and the review interface list canvaskit as genuine and skia as a stand-in", () => {
   const root = fakeApp();
   fs.writeFileSync(path.join(root, "imitor.config.json"), JSON.stringify({ shims: { "@shopify/react-native-skia": "canvaskit", "expo-sqlite": "sqljs", "react-native-maps": "inert" } }));
@@ -116,8 +137,9 @@ test("describe and the review interface list canvaskit as genuine and skia as a 
 async function openBuild(appDir) {
   const { chromium } = require("playwright");
   const server = await serve(appDir);
-  const b = await chromium.launch();
+  let b = null;
   try {
+    b = await chromium.launch(); // inside the try, so a failed launch still closes the server
     const page = await b.newPage();
     const errors = [];
     const requests = [];
@@ -128,9 +150,9 @@ async function openBuild(appDir) {
     await page.goto(server.url + "/");
     await Promise.race([bootFailed, page.waitForFunction(() => (window.events || []).some((e) => e.startsWith("b:")), null, { timeout: 5000 }).catch(() => {})]);
     await page.waitForTimeout(100); // nothing else runs after a failed boot
-    return { events: await page.evaluate(() => window.events || []), errors, requests };
+    return { events: await page.evaluate(() => window.events || []), errors, requests, bootError: await page.evaluate(() => window.__imitorBootError ?? null) };
   } finally {
-    await b.close();
+    await b?.close();
     await server.close();
   }
 }
@@ -162,7 +184,32 @@ test("boot loader in a browser: when CanvasKit cannot load, the app does not sta
   const appDir = fakeBuild(root);
   patchBuild(appDir, ["canvaskit"], bootSources(root, ["canvaskit"]));
   fs.rmSync(path.join(appDir, "_imitor", "canvaskit.js"));
-  const { events, errors } = await openBuild(appDir);
+  const { events, errors, bootError } = await openBuild(appDir);
   assert.deepEqual(events, []);
   assert.ok(errors.some((e) => e.includes("[imitor] boot failed")), errors.join("\n"));
+  assert.equal(bootError, "failed to load /_imitor/canvaskit.js"); // where the runner reads it
+});
+
+test("a run whose boot failed takes no shot of the blank page: the flow fails and the gate blocks", browser, async () => {
+  const root = fakeApp();
+  const appDir = fakeBuild(root);
+  write(path.join(root, "imitor.config.json"), JSON.stringify({ shims: { "@shopify/react-native-skia": "canvaskit" }, schemes: ["light"], flows: [{ name: "garden", start: "/", steps: [{ shot: "home" }] }] }));
+  patchBuild(appDir, ["canvaskit"], bootSources(root, ["canvaskit"]));
+  fs.rmSync(path.join(appDir, "_imitor", "canvaskit.js"));
+  const server = await serve(appDir);
+  try {
+    const result = await shoot(root, loadConfig(root), server.url);
+    assert.deepEqual(result.shots, []);
+    const failed = result.problems.filter((p) => p.kind === "flow-failed");
+    assert.equal(failed.length, 1, JSON.stringify(result.problems));
+    assert.match(failed[0].message, /^the app did not start: /);
+    assert.equal(failed[0].step, 0); // while opening the start route
+    const verdict = evaluate({ shots: result.shots, problems: result.problems });
+    assert.equal(verdict.passed, false);
+  } finally {
+    await server.close();
+  }
+  // The agents' operations say so too, instead of returning a blank screen.
+  await assert.rejects(runFlow(root, { flow: "garden" }), /the app did not start: failed to load \/_imitor\/canvaskit\.js/);
+  await assert.rejects(screenshot(root, { route: "/" }), /the app did not start/);
 });

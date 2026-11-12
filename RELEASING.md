@@ -18,15 +18,22 @@ How to publish `imitor` to npm. Only the owner publishes.
 5. The tarball works when installed:
 
    ```bash
-   npm pack --pack-destination /tmp/imitor-pack
-   mkdir /tmp/imitor-try && cd /tmp/imitor-try && npm init -y && npm i /tmp/imitor-pack/imitor-<version>.tgz
-   npx imitor --help
-   node -e 'require("imitor/metro").withImitor'
+   mkdir -p /tmp/imitor-pack && npm pack --pack-destination /tmp/imitor-pack
+   rm -rf /tmp/imitor-try && mkdir -p /tmp/imitor-try
+   (
+     cd /tmp/imitor-try && npm init -y && npm i /tmp/imitor-pack/imitor-<version>.tgz &&
+     npx imitor --help &&
+     node -e 'require("imitor/metro").withImitor'
+   )
    ```
+
+   The parentheses run the try-out in a subshell, so your shell stays in the repository for the publish and tag below.
 
    Then run `npx imitor init --dry-run` in a copy of an Expo app.
 
 ## Publish
+
+From the repository's root (`git rev-parse --show-toplevel`), on clean `main`:
 
 ```bash
 npm login

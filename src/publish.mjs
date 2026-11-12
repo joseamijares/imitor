@@ -135,9 +135,18 @@ export function publishShots(root, opts = {}, env = process.env) {
 
       let index = {};
       if (base) {
+        // Every push rewrites the branch as one new commit. A branch without Imitor's index is someone's work, not ours:
+        // replacing it would destroy its history, so stop before anything is pushed.
+        let text = null;
         try {
-          index = JSON.parse(run(["show", `${base}:${INDEX}`]));
+          text = run(["show", `${base}:${INDEX}`]);
         } catch {}
+        try {
+          index = JSON.parse(text);
+        } catch {}
+        if (text === null || !index || typeof index !== "object" || Array.isArray(index)) {
+          throw new Error(`refusing to publish to "${branch}": the branch already exists and has no readable ${INDEX}, so it was not made by Imitor, and publishing would replace its history with a single commit. Use a dedicated branch that does not exist yet (--branch, or the action's shots-branch input), such as ${branch === SHOTS_BRANCH ? `${SHOTS_BRANCH}-preview` : SHOTS_BRANCH}.`);
+        }
       }
       const key = `pr-${pr}`;
       const entries = (index[key] || []).filter((e) => e && e.sha !== short);

@@ -4,7 +4,7 @@ import path from "node:path";
 import { DEVICES, fidelityOf, loadConfig } from "./config.mjs";
 import { serve } from "./serve.mjs";
 import { publicStep, refuseSecretRefs, scrub, typedValues } from "./secrets.mjs";
-import { doStep, firstLine, loadPlaywright, settle, shotOptions, visibleStandIns, watchDialogs } from "./shoot.mjs";
+import { assertBooted, doStep, firstLine, loadPlaywright, settle, shotOptions, visibleStandIns, watchDialogs } from "./shoot.mjs";
 import { flowChain, flowSecrets, prepareContext, readSeedProblems, stateInfo } from "./state.mjs";
 
 const slug = (s) => String(s).replace(/^\/+|\/+$/g, "").replace(/[^a-zA-Z0-9]+/g, "-") || "root";
@@ -84,6 +84,7 @@ async function startFlow(page, config, flow, baseUrl) {
   const chain = flowChain(config, flow);
   await page.goto(baseUrl + chain.start);
   await settle(page, config.settleMs);
+  await assertBooted(page); // a blank page is no screen to report on
   const done = [];
   for (const b of chain.before) {
     try {
@@ -125,6 +126,7 @@ async function runSteps(page, steps, baseUrl, config, onShot) {
         if (!step.wait) await settle(page, 150);
       } else {
         await settle(page, config.settleMs);
+        await assertBooted(page);
         if (onShot) await onShot(step);
       }
       done.push({ index: index + 1, step, ok: true });
@@ -155,6 +157,7 @@ export async function screenshot(root, opts = {}) {
       await page.goto(baseUrl + opts.route);
     }
     await settle(page, config.settleMs);
+    await assertBooted(page);
     const route = new URL(page.url()).pathname;
     const name = opts.name || `${slug(flow ? flow.name : route)}-${device.name}-${scheme}-${uniqueSuffix()}`;
     const file = path.join(dir, `${slug(name)}.png`);
