@@ -21,6 +21,7 @@ import { cookieNames, currentUser, endSession, sameOrigin, startSession, clearSe
 import { cookie, cookies, fail, json, page, randomToken, readFields, redirect, safeEqual } from "./http.mjs";
 import { HOME, inviteOnlyPage, loginPage, noticePage, PAGE_CSS, projectsPage, tokenPage } from "./pages.mjs";
 import { problemRun, readRoute } from "./read.mjs";
+import { clientAddress, throttle } from "./throttle.mjs";
 
 export { HOME };
 export const FILE_URL_SECONDS = 5 * 60;
@@ -171,16 +172,35 @@ async function googleCallback(request, deps, url) {
   return out(redirect(safeNext(flow.next), 303, { "set-cookie": await startSession(deps, user.id) }));
 }
 
+// Wrong admin tokens per client address: TOKEN_FAILURES per TOKEN_WINDOW_MS, counted in this process (per instance
+// on a serverless platform), then 429 until the window ends.
+export const TOKEN_FAILURES = 5;
+export const TOKEN_WINDOW_MS = 10 * 60 * 1000;
+const throttles = new WeakMap();
+const tokenThrottle = (deps) => {
+  if (!throttles.has(deps)) throttles.set(deps, throttle({ limit: TOKEN_FAILURES, windowMs: TOKEN_WINDOW_MS, now: () => nowOf(deps) }));
+  return throttles.get(deps);
+};
+
 async function tokenLogin(request, deps, url) {
   if (!deps.adminToken) return noticePage(404, "Not found", "The admin token is not set on this server.");
   if (request.method === "GET" || request.method === "HEAD") return tokenPage({ next: safeNext(url.searchParams.get("next")) });
   if (request.method !== "POST") return fail(405, "method not allowed");
   const { fields = {} } = await readFields(request);
   const next = safeNext(fields.next);
+  const guard = tokenThrottle(deps);
+  const from = clientAddress(request);
+  const wait = guard.blocked(from);
+  if (wait) {
+    const minutes = Math.ceil(wait / 60000);
+    return tokenPage({ next, error: `Too many wrong tokens from this address. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.` }, 429, { "retry-after": String(Math.ceil(wait / 1000)) });
+  }
   if (!safeEqual(String(fields.token ?? ""), deps.adminToken)) {
-    await deps.db.addAudit({ action: "user.signin-refused", detail: { via: "admin-token" } });
+    // Not one audit row per guess: one when an address reaches the limit, for the failures of its window.
+    if (guard.fail(from) === guard.limit) await deps.db.addAudit({ action: "user.signin-throttled", detail: { via: "admin-token", address: from, failures: guard.limit, minutes: guard.windowMs / 60000 } });
     return tokenPage({ next, error: "That is not the admin token." }, 401);
   }
+  guard.clear(from);
   const email = deps.adminEmail || "admin";
   let user = await deps.db.findUserByEmail(email);
   if (!user) {

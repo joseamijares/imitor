@@ -101,7 +101,7 @@ export function loginPage({ google, adminToken, next = HOME, error = null }, sta
 }
 
 /** The admin token form (only when IMITOR_ADMIN_TOKEN is set). */
-export function tokenPage({ next = HOME, error = null }, status = 200) {
+export function tokenPage({ next = HOME, error = null }, status = 200, headers = {}) {
   return html(status, "Admin token", `<main class="center"><div class="card">
   ${brand()}
   <h1>Sign in with the admin token</h1>
@@ -114,7 +114,7 @@ export function tokenPage({ next = HOME, error = null }, status = 200) {
     <button class="btn btn-primary" type="submit">Sign in</button>
   </form>
   <a class="foot" href="/login">Other ways to sign in</a>
-</div></main>`);
+</div></main>`, headers);
 }
 
 /** A short notice with a way on. */

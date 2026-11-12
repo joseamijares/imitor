@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import test from "node:test";
 import { SESSION_DAYS } from "../src/auth/session.mjs";
+import { clientAddress, throttle } from "../src/throttle.mjs";
+import { TOKEN_FAILURES, TOKEN_WINDOW_MS } from "../src/web.mjs";
 import { browser, CLIENT_ID, cloud, fakeProvider, googleSignIn, HTML, PUBLIC_URL } from "./helpers.mjs";
 
 const DAY = 24 * 3600 * 1000;
@@ -219,7 +221,7 @@ test("the admin token signs in the first admin on a private instance; it is off 
   assert.equal((await b.call("GET", "/projects", { headers: HTML })).status, 200);
   const admin = await s.db.findUserByEmail("admin");
   assert.equal(admin.allowed, true);
-  assert.deepEqual((await s.db.listAudit()).map((a) => a.action), ["user.signin-refused", "user.create", "user.signin"]);
+  assert.deepEqual((await s.db.listAudit()).map((a) => a.action), ["user.create", "user.signin"], "a single wrong token is not audited");
 
   const evil = await browser(s.deps).call("POST", "/login/token", { form: { token, next: "//evil.example/x" } });
   assert.equal(evil.location, "/projects", "next stays on this server");
@@ -233,4 +235,46 @@ test("on http://localhost the cookies drop __Host- and Secure; anywhere else the
   const b = browser(s.deps);
   const start = await b.call("GET", "/auth/google");
   assert.match(start.cookies[0], /^imitor_signin=[^;]+; Path=\/; HttpOnly; SameSite=Lax; Max-Age=600$/);
+});
+
+test("the admin token form: 5 wrong tokens per address in 10 minutes, then 429; one audit row for them, not one each", async () => {
+  const token = crypto.randomBytes(32).toString("base64url");
+  const s = cloud({ adminToken: token });
+  const from = (address) => ({ "x-forwarded-for": `${address}, 10.0.0.1` });
+  const attempt = (address, value) => browser(s.deps).call("POST", "/login/token", { form: { token: value }, headers: from(address) });
+  for (let i = 1; i <= TOKEN_FAILURES; i++) assert.equal((await attempt("203.0.113.7", `wrong-${i}`)).status, 401, `guess ${i}`);
+  const blocked = await attempt("203.0.113.7", "wrong-6");
+  assert.equal(blocked.status, 429);
+  assert.match(blocked.text, /Too many wrong tokens from this address\. Try again in 10 minutes\./);
+  assert.equal(blocked.headers.get("retry-after"), String(TOKEN_WINDOW_MS / 1000));
+  assert.equal((await attempt("203.0.113.7", token)).status, 429, "even the right token waits, so guessing learns nothing");
+  assert.equal((await attempt("198.51.100.2", token)).status, 303, "another address is not affected");
+  assert.deepEqual((await s.db.listAudit()).filter((a) => a.action.startsWith("user.signin")).map((a) => [a.action, a.detail]), [
+    ["user.signin-throttled", { via: "admin-token", address: "203.0.113.7", failures: TOKEN_FAILURES, minutes: 10 }],
+    ["user.signin", { email: "admin", via: "admin-token" }],
+  ]);
+  s.now.advance(TOKEN_WINDOW_MS);
+  assert.equal((await attempt("203.0.113.7", token)).status, 303, "after the window the address may try again");
+  // A right token clears the address's count.
+  for (let i = 0; i < TOKEN_FAILURES - 1; i++) await attempt("192.0.2.9", "wrong");
+  assert.equal((await attempt("192.0.2.9", token)).status, 303);
+  assert.equal((await attempt("192.0.2.9", "wrong")).status, 401);
+});
+
+test("throttle: counts per key within a window, and forgets the oldest past maxKeys", () => {
+  let t = 0;
+  const th = throttle({ limit: 2, windowMs: 1000, now: () => new Date(t), maxKeys: 2 });
+  assert.equal(th.fail("a"), 1);
+  assert.equal(th.blocked("a"), 0);
+  assert.equal(th.fail("a"), 2);
+  assert.equal(th.blocked("a"), 1000);
+  t = 400;
+  assert.equal(th.blocked("a"), 600);
+  th.fail("b");
+  th.fail("c"); // a third key: "a", the oldest, is dropped
+  assert.equal(th.blocked("a"), 0);
+  t = 2000;
+  assert.equal(th.fail("b"), 1, "a new window");
+  assert.equal(clientAddress(new Request("https://x/", { headers: { "x-forwarded-for": " 203.0.113.7 , 10.0.0.1" } })), "203.0.113.7");
+  assert.equal(clientAddress(new Request("https://x/")), "unknown");
 });

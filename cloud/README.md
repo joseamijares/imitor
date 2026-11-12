@@ -194,7 +194,12 @@ and that sign-in completes against Google. After the first night, open the proje
 - The interface's pages allow scripts from the cloud's own origin and the one inline theme script by its hash; images
   and video from the cloud and the bucket; nothing may frame them. Uploaded files are never served from the cloud's
   origin (the in-memory store for local runs is the exception, and sends them sandboxed).
-- The admin token is compared in constant time and has no rate limit: use a long random value, and only on a
+- The admin token is compared in constant time. After 5 wrong tokens from one address within 10 minutes, that address
+  gets `429` until the window ends, even with the right token. The address is `X-Forwarded-For`'s first entry (Vercel
+  sets it; behind your own proxy, have the proxy set it; the Node server fills it from the socket when it is absent),
+  and the count is kept in memory per process, so on a serverless platform each instance counts on its own: it slows
+  guessing down, the token's length is what stops it. A single wrong token is not audited; an address reaching the
+  limit is, once per window (`user.signin-throttled` with the address). Use a long random value, and only on a
   private instance.
 - Not a member of a project reads exactly as no such project (404), so project names cannot be probed.
 

@@ -46,6 +46,8 @@ export function toRequest(req, origin) {
   for (const [name, value] of Object.entries(req.headers)) {
     for (const v of [].concat(value)) headers.append(name, v);
   }
+  // Without a proxy in front, the client's address is the socket's (the admin token form counts failures by address).
+  if (!headers.has("x-forwarded-for") && req.socket?.remoteAddress) headers.set("x-forwarded-for", req.socket.remoteAddress);
   const body = req.method === "GET" || req.method === "HEAD" ? undefined : bodyStream(req);
   return new Request(new URL(req.url, origin), { method: req.method, headers, body, duplex: "half" });
 }
