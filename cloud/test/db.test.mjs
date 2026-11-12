@@ -29,7 +29,7 @@ function postgres() {
       await admin.query(`create schema ${schema}`);
       const { migrate } = await import("../src/db/migrate.mjs");
       const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 2, options: `-c search_path=${schema}` });
-      assert.deepEqual(await migrate(pool), ["001_init.sql", "002_project_slugs.sql"]);
+      assert.deepEqual(await migrate(pool), ["001_init.sql", "002_project_slugs.sql", "003_valid_project_slugs.sql"]);
       assert.deepEqual(await migrate(pool), [], "a second run applies nothing");
       await pool.end();
     }

@@ -157,7 +157,10 @@ The cloud runs in the same Vercel project as the public site, on a host of its o
   2 s later, for a pooler that drops it). A database that cannot be reached, or a statement cancelled that way, is
   answered with `503` and a plain message (`Retry-After: 30`), not a hung request.
 - **Before the first deploy**, apply the migrations from your machine:
-  `DATABASE_URL=... npm run migrate --prefix cloud`. Do the same before deploying a change that adds one.
+  `DATABASE_URL=... npm run migrate --prefix cloud`. Do the same before deploying a change that adds one. Each
+  migration runs in a transaction of its own that first takes a transaction-level advisory lock
+  (`pg_advisory_xact_lock`) and then checks whether it was applied, so two runners never apply a file twice and the
+  lock ends with the transaction: the pooled URL (a pooler in transaction mode) works as well as a direct one.
 - **Google.** Register `PUBLIC_URL/auth/google/callback` as the client's authorized redirect URI.
 - **Bucket CORS.** `imitor push` uploads with presigned PUTs from Node, which sends no `Origin`, so no CORS rule is
   needed for the CLI. The interface only loads files through redirects into `<img>` and `<video>`, which need none
