@@ -180,7 +180,7 @@ Stand-ins only apply to the web build Imitor makes (`IMITOR=1`). Your iOS and An
 
 ### Real Skia drawing
 
-With `"@shopify/react-native-skia": "canvaskit"`, Imitor bundles the real React Native Skia and draws every `<Canvas>` with CanvasKit, as React Native Skia does on any website. Nothing in the app changes: `imitor build` copies CanvasKit from the app's own `canvaskit-wasm` (the copy `@shopify/react-native-skia` depends on, so the versions match) into the build, and loads it before the app's scripts. If the app already calls `LoadSkiaWeb` itself, that call finds CanvasKit loaded and does nothing. If `canvaskit-wasm` cannot be found, the build stops and says which version to install.
+With `"@shopify/react-native-skia": "canvaskit"`, Imitor bundles the real React Native Skia and draws every `<Canvas>` with CanvasKit, as React Native Skia does on any website. Nothing in the app changes: `imitor build` copies CanvasKit from the app's own `canvaskit-wasm` (the copy `@shopify/react-native-skia` depends on, so the versions match) into the build, and loads it before the app's scripts. If the app already calls `LoadSkiaWeb` itself, that call finds CanvasKit loaded and does nothing. If `canvaskit-wasm` cannot be found, the build stops and says which version to install. If CanvasKit (or sql.js) then fails to load in the page, the app never starts: the flow fails with "the app did not start" instead of taking a shot of a blank page, and the gate blocks.
 
 What can still differ from a phone:
 

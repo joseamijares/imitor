@@ -28,11 +28,17 @@ const BOOT = {
 };
 export const BOOT_KINDS = Object.keys(BOOT);
 
+/**
+ * Set on window by the boot loader when a library or an app script fails to load, so the app never started. The runner
+ * (shoot.mjs) reads it and fails the flow instead of taking a shot of a blank page.
+ */
+export const BOOT_ERROR = "__imitorBootError";
+
 /** Load the boot libraries side by side, then the app's own scripts one after another in their original order. */
 function bootLoader(scripts, kinds) {
   const libs = kinds.map((k) => `l("/_imitor/${BOOT[k].script}").then(function(){return ${BOOT[k].ready}})`);
   return `<script>(function(){var q=${JSON.stringify(scripts)};function f(n){return "/_imitor/"+n}function l(u){return new Promise(function(ok,no){var s=document.createElement("script");s.src=u;s.onload=ok;s.onerror=function(){no(new Error("failed to load "+u))};document.head.appendChild(s)})}
-Promise.all([${libs.join(",")}]).then(function(){return q.reduce(function(p,u){return p.then(function(){return l(u)})},Promise.resolve())}).catch(function(e){console.error("[imitor] boot failed",e)})})()</script>`;
+Promise.all([${libs.join(",")}]).then(function(){return q.reduce(function(p,u){return p.then(function(){return l(u)})},Promise.resolve())}).catch(function(e){window.${BOOT_ERROR}=String(e&&e.message||e);console.error("[imitor] boot failed",e)})})()</script>`;
 }
 
 /** The boot libraries the configured stand-ins need, in a fixed order. */
