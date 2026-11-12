@@ -42,10 +42,16 @@ const define = (o, k, v) => Object.defineProperty(o, k, { value: v, enumerable: 
 export function redact(value, { secrets = [] } = {}) {
   const exact = new Set([...fillValues(value), ...secrets].map(String).filter((s) => s && s !== BLANK));
   // Also as JSON writes them inside a string, since errors quote steps with JSON.stringify ({"value":"say \"hi\""}).
-  // And URL-encoded, as an address carries them (a route "/u/a%20b", a query "?q=a%40b"), in both cases of hex digits.
-  const encoded = (s) => [encodeURI(s), encodeURIComponent(s)].flatMap((e) => [e, e.replace(/%[0-9A-F]{2}/g, (h) => h.toLowerCase())]);
-  const words = [...new Set([...exact].filter((s) => s.length >= MIN_SECRET).flatMap((s) => [s, JSON.stringify(s).slice(1, -1), ...encoded(s)]))].sort((a, b) => b.length - a.length);
-  const pattern = words.length ? new RegExp(words.map(escape).join("|"), "g") : null;
+  // And URL-encoded, as an address carries them (a route "/u/a%20b", a query "?q=a%40b"). The hex digits of each
+  // escape may be in either case, even mixed ("%c3%A9"); the rest of the value stays case-sensitive.
+  const hexAnyCase = (src) => src.replace(/%([0-9A-F])([0-9A-F])/g, (_, a, b) => `%${anyCase(a)}${anyCase(b)}`);
+  const anyCase = (c) => (/[A-F]/.test(c) ? `[${c}${c.toLowerCase()}]` : c);
+  const forms = (s) => [
+    ...[s, JSON.stringify(s).slice(1, -1)].map((f) => ({ length: f.length, source: escape(f) })),
+    ...[encodeURI(s), encodeURIComponent(s)].map((f) => ({ length: f.length, source: hexAnyCase(escape(f)) })),
+  ];
+  const sources = [...new Map([...exact].filter((s) => s.length >= MIN_SECRET).flatMap(forms).map((f) => [f.source, f])).values()].sort((a, b) => b.length - a.length);
+  const pattern = sources.length ? new RegExp(sources.map((f) => f.source).join("|"), "g") : null;
   const scrub = (s, key) => (KEEP.has(key) ? s : exact.has(s) ? BLANK : pattern ? s.replace(pattern, BLANK) : s);
 
   // Copies iteratively for the same reason as entries(): each stack item fills one slot of a copy made earlier.

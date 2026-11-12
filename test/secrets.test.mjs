@@ -67,6 +67,8 @@ test("publicStep hides every fill value; scrub removes secret values from any te
   assert.equal(scrub("/u/pass%20word@x", spaced), `/u/${HIDDEN}`, "URL-encoded as in a path");
   assert.equal(scrub("?q=pass%20word%40x&r=pass%20word%40X", spaced), `?q=${HIDDEN}&r=pass%20word%40X`, "URL-encoded as in a query");
   assert.equal(scrub("?q=pass%20word%40x".toLowerCase(), spaced), `?q=${HIDDEN}`, "lower-case hex too");
+  assert.equal(scrub("/u/%c3%A9%C3%a9aa", ["ééaa"]), `/u/${HIDDEN}`, "hex digits in mixed case");
+  assert.equal(scrub("/u/%C3%A9%C3%A9AA", ["ééaa"]), "/u/%C3%A9%C3%A9AA", "only the hex digits ignore case");
   assert.equal(scrub(new URL("https://e.test/u/" + spaced[0]).pathname, spaced), `/u/${HIDDEN}`, "the pathname Imitor records");
   assert.throws(() => refuseSecretRefs([{ tap: "x" }, { fill: { placeholder: "P", value: { env: "PW" } } }]), /step 2: values from the environment can only be used in flows in imitor.config.json/);
   refuseSecretRefs([{ fill: { placeholder: "P", value: "literal" } }]);
