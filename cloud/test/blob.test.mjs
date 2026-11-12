@@ -138,8 +138,12 @@ test("a token that Vercel grants for less time than asked is replaced in time", 
   assert.equal(calls.issued.length, 2);
 });
 
-test("the API version sent with uploads is the one the installed @vercel/blob sends", () => {
-  const dist = new URL("../node_modules/@vercel/blob/dist/", import.meta.url);
+// The SDK is a dependency of cloud/ only; the root job runs without it (the cloud-postgres job installs it).
+const SDK_DIST = new URL("../node_modules/@vercel/blob/dist/", import.meta.url);
+const needsSdk = { skip: !fs.existsSync(SDK_DIST) && "@vercel/blob is not installed (npm ci --prefix cloud)" };
+
+test("the API version sent with uploads is the one the installed @vercel/blob sends", needsSdk, () => {
+  const dist = SDK_DIST;
   const source = fs.readdirSync(dist).filter((f) => f.endsWith(".js")).map((f) => fs.readFileSync(new URL(f, dist), "utf8")).join("\n");
   assert.match(source, new RegExp(`BLOB_API_VERSION = ${BLOB_API_VERSION};`));
 });
