@@ -6,6 +6,7 @@
 import { api, isStatic, isDemo, LIVE_NEEDS_APP } from "../api.js";
 import { html, raw, icon, logo, statusMark, chip, pill, switchEl, loadingLine, errorState, codeBlock, demoPill } from "../components.js";
 import { ago, deviceName, humanize, stepLabel, plural } from "../format.js";
+import { withBase } from "../base.js";
 
 const STRIP = { ios: 47, android: 28 }; // status bar drawn above the app (device px); the app's viewport stays the device's size
 const BEZEL = 10; // screen px
@@ -34,13 +35,13 @@ export async function mount(ctx) {
 }
 
 function topBar({ runId, project, run, problems, shots, builtAt }) {
-  const base = runId ? `/runs/${encodeURIComponent(runId)}` : null;
+  const base = runId ? withBase(`/runs/${encodeURIComponent(runId)}`) : null;
   const title = run ? `${run.pr != null ? `#${run.pr} ` : ""}${run.title || run.id}` : runId ? runId : "Latest build";
   return html`<header class="live-bar">
     <div class="live-crumbs">
-      <a class="live-brand" href="/runs" title="Runs">${logo(24)}<span class="wordmark">Imitor</span></a>
+      <a class="live-brand" href="${withBase(`/runs`)}" title="Runs">${logo(24)}<span class="wordmark">Imitor</span></a>
       <span class="sep" aria-hidden="true">/</span>
-      <a class="crumb-project" href="/runs">${project?.name || "…"}</a>
+      <a class="crumb-project" href="${withBase(`/runs`)}">${project?.name || "…"}</a>
       <span class="sep" aria-hidden="true">/</span>
       ${base ? html`<a class="crumb-run" href="${base}" title="${title}">${title}</a>` : html`<span class="crumb-run t2">${title}</span>`}
       ${run?.commit ? chip(run.commit) : ""}
@@ -75,6 +76,7 @@ function createLive(ctx, project, detail) {
     current: null, // { flow, index } of the shot step on screen
     route: null,
     standIns: [],
+    setup: undefined, // what the frame reports: { flow, state, seedErrors }, or null for a page without flow state
     media: undefined, // what the frame reports: null = this build has no scheme override
     appearance: project.previewAppearance !== false,
     busy: null, // { flow, target, done, total, label }
@@ -85,7 +87,7 @@ function createLive(ctx, project, detail) {
   if (st.current == null && flows[0]) {
     const first = flows[0].steps.find((s) => s.action !== "shot" && s.action !== "wait");
     const firstShot = flows[0].shots[0];
-    if (firstShot && (!first || first.index > firstShot.index)) st.current = { flow: flows[0].name, index: firstShot.index };
+    if (firstShot && !flows[0].chain?.before?.length && (!first || first.index > firstShot.index)) st.current = { flow: flows[0].name, index: firstShot.index };
   }
 
   const shotsCount = detail ? (detail.run?.shots ?? detail.flows.reduce((n, f) => n + f.steps.filter((s) => s.shot).length, 0)) : null;
@@ -127,7 +129,7 @@ function createLive(ctx, project, detail) {
     if (m.imitor === "ready") {
       st.media = m.media ?? null;
       if (m.media === null || m.media === undefined) st.appearance = false;
-      st.route = m.route; st.standIns = m.standIns || [];
+      st.route = m.route; st.standIns = m.standIns || []; st.setup = m.setup ?? null;
       readyWaiters.forEach((w) => w()); readyWaiters = [];
       renderCaption(); renderInspector();
     } else if (m.imitor === "route") { st.route = m.route; renderCaption(); }
@@ -154,21 +156,26 @@ function createLive(ctx, project, detail) {
       readyWaiters.push(() => { clearTimeout(timer); resolve(); });
     });
   }
-  function frameUrl(route) {
+  /** `flow`: the flow whose state, seed and clock the page starts with ("" for none); undefined keeps the tab's. */
+  function frameUrl(route, flow) {
     const u = new URL(route || "/", project.previewUrl);
+    if (flow !== undefined) u.searchParams.set("imitor-flow", flow || "");
     if (st.appearance) {
       u.searchParams.set("imitor-scheme", st.scheme);
       u.searchParams.set("imitor-motion", st.motion ? "reduce" : "no-preference");
     }
     return u.href;
   }
-  /** Load `route` in the frame, after clearing what the app stored when `reset`. Resolves once the driver is up. */
-  async function openApp(route, { reset = false } = {}) {
+  /** Load `route` in the frame, after clearing what the app stored when `reset`, starting `flow`'s state. Resolves once the driver is up. */
+  async function openApp(route, { reset = false, flow } = {}) {
     if (reset && st.media !== undefined) await send({ imitor: "reset" }, 4000).catch(() => {});
     const ready = nextReady();
-    frame.src = frameUrl(route);
+    frame.src = frameUrl(route, flow);
     await ready;
   }
+  // Where a flow really starts (after the flows it runs after, if any), for projects from before "after" too.
+  const startOf = (f) => (f ? f.chain?.start ?? f.start ?? "/" : "/");
+  const madeUp = (f) => Boolean(f && (f.state || f.seeded));
 
   /* ---------- Replay ---------- */
   let token = 0;
@@ -176,13 +183,13 @@ function createLive(ctx, project, detail) {
     const flow = flows.find((f) => f.name === flowName);
     if (!flow) return;
     const mine = ++token;
-    const before = flow.steps.filter((s) => s.index < target);
+    const before = [...(flow.chain?.before || []), ...flow.steps.filter((s) => s.index < target)];
     st.error = null;
     st.current = { flow: flow.name, index: target };
-    st.busy = { flow: flow.name, target, done: 0, total: before.length, label: "Starting from an empty state" };
+    st.busy = { flow: flow.name, target, done: 0, total: before.length, label: madeUp(flow) ? "Starting from the flow’s state" : "Starting from an empty state" };
     renderRail(); renderStatus(); syncUrl();
     try {
-      await openApp(flow.start || "/", { reset: true });
+      await openApp(startOf(flow), { reset: true, flow: flow.name });
       for (const s of before) {
         if (mine !== token || !alive()) return;
         st.busy = { ...st.busy, label: describeStep(s) };
@@ -191,7 +198,7 @@ function createLive(ctx, project, detail) {
         else if (s.action !== "shot") {
           const r = await send({ imitor: "step", step: s.step }, STEP_TIMEOUT).catch((e) => ({ ok: false, error: e.message }));
           if (mine !== token) return;
-          if (!r.ok) { st.error = { flow: flow.name, index: s.index, message: r.error, step: s }; break; }
+          if (!r.ok) { st.error = { flow: flow.name, index: s.index, in: s.flow && s.flow !== flow.name ? s.flow : null, message: r.error, step: s }; break; }
         }
         st.busy = { ...st.busy, done: st.busy.done + 1 };
         renderStatus();
@@ -252,7 +259,7 @@ function createLive(ctx, project, detail) {
     if (st.error) {
       const e = st.error;
       status.innerHTML = String(html`<div class="replay is-error" role="alert">${statusMark("failed", "Could not replay")}
-        <span>${e.index ? html`Couldn’t perform step <span class="mono">${String(e.index).padStart(2, "0")}</span> of ${humanize(e.flow)}${e.step ? html` (${lowerFirst(describeStep(e.step))})` : ""}: ` : "Couldn’t open the preview: "}${e.message}</span>
+        <span>${e.index ? html`Couldn’t perform step <span class="mono">${String(e.index).padStart(2, "0")}</span> of ${humanize(e.in || e.flow)}${e.in ? html`, which ${humanize(e.flow)} runs after` : ""}${e.step ? html` (${lowerFirst(describeStep(e.step))})` : ""}: ` : e.step ? html`Couldn’t open ${e.step.label}${e.in ? html` in ${humanize(e.in)}, which ${humanize(e.flow)} runs after` : ""}: ` : "Couldn’t open the preview: "}${e.message}</span>
         <button type="button" class="btn btn-ghost" data-live="dismiss">Dismiss</button></div>`);
       return;
     }
@@ -291,6 +298,7 @@ function createLive(ctx, project, detail) {
         </ul>
         <p class="on-screen-line">${onScreen}</p>
       </section>
+      ${stateSection()}
       <section class="insp-section controls">
         <div class="control control-device"><div class="control-label"><span>Device</span><span class="mono t3">${d.width} × ${d.height}</span></div>
           <select class="field" data-live="device" aria-label="Device">${devices.map((x) => html`<option value="${x.name}"${x.name === d.name ? raw(" selected") : ""}>${deviceName(x.name)}</option>`)}</select></div>
@@ -298,10 +306,30 @@ function createLive(ctx, project, detail) {
           <div class="seg" role="group" aria-label="Appearance" data-seg="appearance">${["light", "dark"].map((s) => html`<button type="button" data-value="${s}" aria-pressed="${st.scheme === s ? "true" : "false"}"${st.appearance ? "" : raw(" disabled")}>${s === "light" ? "Light" : "Dark"}</button>`)}</div></div>
         <div class="control row"><span class="control-label">Reduce motion</span>${switchEl(st.motion, "Reduce motion", `data-live="motion"${st.appearance ? "" : " disabled"}`)}</div>
         ${appearanceNote}
-        <div class="control row"><span class="control-label">Reload<span class="t3 control-sub">Start again from an empty state</span></span>
+        <div class="control row"><span class="control-label">Reload<span class="t3 control-sub">${madeUp(flows[0]) ? "Start again from the first flow’s state" : "Start again from an empty state"}</span></span>
           <button type="button" class="btn btn-secondary" data-live="reload"${st.busy ? raw(" disabled") : ""}>${icon("retry", 14)}Reload</button></div>
       </section>`);
     renderPhone();
+  }
+
+  /** The state the page started from: the flow it runs after, its state label, seeded data and clock. */
+  function stateSection() {
+    const f = st.setup?.flow ? flows.find((x) => x.name === st.setup.flow) : null;
+    const errors = st.setup?.seedErrors || [];
+    if (!f || !(f.after || f.state || f.seeded || f.clock || errors.length)) return "";
+    const when = f.clock ? new Date(f.clock).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }) + " UTC" : null;
+    return html`<section class="insp-section">
+      <div class="insp-head"><h2>Flow state</h2><span class="t3">${humanize(f.name)}</span></div>
+      <ul class="fidelity">
+        ${f.after ? html`<li>${statusMark("off", "Runs after")}<span class="what">Runs after ${humanize(f.after)}</span><span class="how t3">its steps first</span></li>` : ""}
+        ${f.state ? html`<li>${statusMark("standin", "Invented")}<span class="what">State <span class="mono">${f.state}</span></span><span class="how warn">Invented</span></li>` : ""}
+        ${f.seeded ? html`<li>${statusMark("standin", "Invented")}<span class="what">Seeded data</span><span class="how warn">Invented</span></li>` : ""}
+        ${when ? html`<li>${statusMark("off", "Clock")}<span class="what">Clock from ${when}</span><span class="how t3">Date only</span></li>` : ""}
+      </ul>
+      ${f.state || f.seeded ? html`<p class="control-note">The stand-ins and seed supply this data. It is not the real app’s.</p>` : ""}
+      ${when ? html`<p class="control-note">Here only <span class="mono">Date</span> is moved to the clock; timers and animations run as usual. Runs use Playwright’s clock.</p>` : ""}
+      ${errors.length ? html`<p class="control-note warn">${plural(errors.length, "seed statement")} failed: ${errors.map((e, i) => html`${i ? "; " : ""}<span class="mono">${String(e.statement).slice(0, 80)}</span> (${e.error})`)}</p>` : ""}
+    </section>`;
   }
 
   /** Phone: the step bar (previous, the shot on screen, next), the fidelity row and the device and appearance bar. */
@@ -394,7 +422,7 @@ function createLive(ctx, project, detail) {
   function renderStage() {
     // An exported site has no preview server unless it was exported with --preview-url.
     if (isStatic && !project.previewUrl) {
-      const shots = runId ? `/runs/${encodeURIComponent(runId)}` : "/runs";
+      const shots = withBase(runId ? `/runs/${encodeURIComponent(runId)}` : "/runs");
       fit.innerHTML = String(html`<div class="state stage-state"><h2>No live preview on this site</h2><p>${LIVE_NEEDS_APP} <a href="${shots}" style="text-decoration:underline">${runId ? "See this run’s shots" : "See the runs and their shots"}</a> instead.</p></div>`);
       return false;
     }
@@ -435,7 +463,7 @@ function createLive(ctx, project, detail) {
   /** Reload in place: replay to the current step when there is one, else reopen the route on screen. */
   function refresh() {
     if (st.current && (st.current.flow !== flows[0]?.name || st.current.index !== flows[0]?.shots[0]?.index)) return replay(st.current.flow, st.current.index);
-    return openApp(st.route || flows[0]?.start || "/").catch((e) => { st.error = { message: e.message }; renderStatus(); });
+    return openApp(st.route || startOf(flows[0])).catch((e) => { st.error = { message: e.message }; renderStatus(); });
   }
 
   /* ---------- Events ---------- */
@@ -470,9 +498,9 @@ function createLive(ctx, project, detail) {
     else if (act === "reload") {
       token++; st.error = null; st.busy = null;
       const f = flows[0];
-      st.current = f && f.shots[0] && !f.steps.some((s) => s.index < f.shots[0].index && s.action !== "wait") ? { flow: f.name, index: f.shots[0].index } : null;
+      st.current = f && f.shots[0] && !f.chain?.before?.length && !f.steps.some((s) => s.index < f.shots[0].index && s.action !== "wait") ? { flow: f.name, index: f.shots[0].index } : null;
       syncUrl(); renderRail(); renderStatus();
-      openApp(f?.start || "/", { reset: true }).catch((err) => { st.error = { message: err.message }; renderStatus(); });
+      openApp(startOf(f), { reset: true, flow: f?.name || "" }).catch((err) => { st.error = { message: err.message }; renderStatus(); });
     } else if (act === "dismiss") { st.error = null; renderStatus(); renderRail(); }
   });
   main.addEventListener("change", (e) => {
@@ -496,7 +524,7 @@ function createLive(ctx, project, detail) {
       ro.observe(stage);
       const target = want.flow && flows.find((f) => f.name === want.flow)?.shots.find((s) => s.index === want.step);
       if (target) replay(want.flow, want.step);
-      else openApp(flows[0]?.start || "/").catch((e) => { st.error = { message: e.message }; renderStatus(); });
+      else openApp(startOf(flows[0]), { flow: flows[0]?.name || "" }).catch((e) => { st.error = { message: e.message }; renderStatus(); });
       syncUrl();
     },
   };

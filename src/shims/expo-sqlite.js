@@ -2,7 +2,11 @@
 // Imitor's boot loader initialises sql.js before the app bundle runs and puts
 // it on globalThis.__imitor.SQL, so the synchronous API works.
 // Data is in memory, mirrored to sessionStorage so a page reload keeps it.
+// A flow's "seed.sql" (globalThis.__imitor.seed, put there by Imitor's prelude) runs when the app first opens the
+// seed's database (by default the first one it opens, other than ":memory:"), before the open call returns, once per
+// browser-tab session. Failed statements are recorded, not thrown, in sessionStorage "imitor:seed-errors".
 const KEY = "imitor:sqlite:";
+const SEEDED = "imitor:sqlite-seeded";
 
 function engine() {
   const SQL = globalThis.__imitor && globalThis.__imitor.SQL;
@@ -31,6 +35,13 @@ function normalise(params) {
   return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, fix(v)]));
 }
 
+// The text up to and including the first ";" (for naming a statement that did not parse).
+const firstStatement = (sql) => {
+  const t = String(sql).trim();
+  const i = t.indexOf(";");
+  return i < 0 ? t : t.slice(0, i + 1);
+};
+
 const WRITE = /^\s*(insert|update|delete|replace|create|drop|alter|pragma|begin|commit|rollback|end|vacuum)/i;
 
 class SQLiteDatabase {
@@ -47,6 +58,53 @@ class SQLiteDatabase {
       saved = name !== ":memory:" && sessionStorage.getItem(KEY + name);
     } catch {}
     this._db = saved ? new SQL.Database(fromB64(saved)) : new SQL.Database();
+    this._seed();
+  }
+
+  _seed() {
+    const seed = globalThis.__imitor && globalThis.__imitor.seed;
+    if (!seed || !seed.sql || this._name === ":memory:") return;
+    if (seed.database ? seed.database !== this._name : false) return;
+    let store = null;
+    try {
+      store = sessionStorage;
+      if (store.getItem(SEEDED) !== null) return; // already seeded in this session (a reload, or another database)
+      store.setItem(SEEDED, this._name);
+    } catch {}
+    // Each entry (an array item, or the .sql file) runs statement by statement. The first statement that fails stops the
+    // rest of its entry (SQLite reports a missing table while preparing, before the statements after it can be found).
+    const errors = [];
+    for (const text of seed.sql) {
+      let it = null;
+      let current = null;
+      try {
+        it = this._db.iterateStatements(text);
+        for (const stmt of it) {
+          current = stmt.getSQL();
+          try {
+            stmt.run();
+          } finally {
+            stmt.free();
+          }
+          current = null;
+        }
+      } catch (error) {
+        const failed = (current || firstStatement(it ? it.getRemainingSQL() : text)).trim();
+        let rest = it ? it.getRemainingSQL().trim() : "";
+        if (!current && rest.startsWith(failed)) rest = rest.slice(failed.length).trim();
+        errors.push({ statement: failed, error: String((error && error.message) || error), skippedRest: rest.length > 0 });
+      }
+    }
+    if (errors.length) {
+      console.warn("[imitor] seed.sql: " + errors.length + " statement(s) failed", errors);
+      try {
+        const before = JSON.parse(store.getItem("imitor:seed-errors") || "[]");
+        store.setItem("imitor:seed-errors", JSON.stringify(before.concat(errors)));
+      } catch {}
+    }
+    try {
+      store.setItem(KEY + this._name, toB64(this._db.export()));
+    } catch {}
   }
 
   _touched(sql) {

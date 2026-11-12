@@ -8,9 +8,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe } from "./agent.mjs";
 import { MEDIA_MARKER } from "./build.mjs";
-import { DEVICES, loadConfig, NOT_COVERED } from "./config.mjs";
+import { DEVICES, fidelityOf, loadConfig, NOT_COVERED } from "./config.mjs";
 import { TOOLS } from "./mcp.mjs";
 import { serve } from "./serve.mjs";
+import { flowChain, flowSetup, preludeSource, stateInfo } from "./state.mjs";
 import { agentsData, gitInfo, listCaptures, listProblems, listRuns, readRun, setSeen } from "./store.mjs";
 
 export const APP_DIR = fileURLToPath(new URL("./app", import.meta.url));
@@ -67,10 +68,22 @@ function sendFile(req, res, file, extraHeaders = {}) {
 const DRIVER = fs.readFileSync(fileURLToPath(new URL("./live-driver.js", import.meta.url)), "utf8");
 export const DRIVER_PATH = "/__imitor_live/driver.js";
 
-/** Every preview page gets the live preview's driver, which obeys only the interface's own origins. */
-function withDriver(parents) {
+/**
+ * Every preview page gets the live preview's driver, which obeys only the interface's own origins, and, first thing in
+ * <head>, the flows' state prelude (src/state.mjs): the interface opens the frame with ?imitor-flow=<name> and the page
+ * starts with that flow's state, seed and clock. The config is read per page, so edits to it apply on the next load.
+ */
+export function withDriver(parents, root = null) {
   const tag = `<script>window.__imitorLive=${JSON.stringify({ parents }).replace(/</g, "\\u003c")}</script><script src="${DRIVER_PATH}" defer></script>`;
-  return (html) => (/<\/head>/i.test(html) ? html.replace(/<\/head>/i, (m) => tag + m) : html + tag);
+  return (html) => {
+    let out = /<\/head>/i.test(html) ? html.replace(/<\/head>/i, (m) => tag + m) : html + tag;
+    let prelude = "";
+    try {
+      if (root) prelude = `<script>${preludeSource(Object.fromEntries(loadConfig(root).flows.map((f) => [f.name, flowSetup(f)])))}</script>`;
+    } catch {} // a config that does not load: the page still opens, without flow state
+    if (prelude) out = /<head[^>]*>/i.test(out) ? out.replace(/<head[^>]*>/i, (m) => m + prelude) : prelude + out;
+    return out;
+  };
 }
 
 /** When the preview was built, and whether its pages carry the scheme and motion override (builds before it do not). */
@@ -113,8 +126,13 @@ export function projectData(root, { previewUrl = null, git = null } = {}) {
     ...previewInfo(path.resolve(root, config.out)),
     devices: [...config.devices, ...builtIn].map((d) => ({ name: d.name, width: d.width, height: d.height, platform: d.platform || null })),
     schemes: config.schemes,
-    flows: config.flows.map((f) => ({ name: f.name, start: f.start || "/", steps: (f.steps || []).map((step, i) => ({ index: i + 1, action: Object.keys(step)[0], label: stepLabel(step), step })) })),
-    standIns: Object.entries(config.shims).map(([module, kind]) => ({ module, kind, fidelity: kind === "sqljs" ? "genuine" : "stand-in" })),
+    flows: config.flows.map((f) => {
+      const chain = flowChain(config, f);
+      const entry = (step, index, flow) => ({ ...(flow ? { flow } : {}), index, action: Object.keys(step)[0], label: stepLabel(step), step });
+      // after, state, seeded, clock: what the flow starts from. chain: where it really starts and the steps of the flows it runs after.
+      return { name: f.name, start: f.start || (f.after ? null : "/"), ...stateInfo(f), chain: { start: chain.start, before: chain.before.map((b) => entry(b.step, b.index, b.flow)) }, steps: (f.steps || []).map((step, i) => entry(step, i + 1)) };
+    }),
+    standIns: Object.entries(config.shims).map(([module, kind]) => ({ module, kind, fidelity: fidelityOf(kind) })),
     notCovered: NOT_COVERED,
   };
 }
@@ -220,7 +238,7 @@ export async function startAppServer(root, { port = 4173, appDir = APP_DIR } = {
   let preview;
   try {
     const parents = [`http://127.0.0.1:${actual}`, `http://localhost:${actual}`];
-    preview = await serve(path.resolve(root, loadConfig(root).out, "app"), { html: withDriver(parents), files: { [DRIVER_PATH]: { type: "text/javascript", body: DRIVER } } });
+    preview = await serve(path.resolve(root, loadConfig(root).out, "app"), { html: withDriver(parents, root), files: { [DRIVER_PATH]: { type: "text/javascript", body: DRIVER } } });
   } catch (error) {
     await closeApp();
     throw error;

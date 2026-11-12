@@ -22,21 +22,27 @@ function flags(args) {
 const HELP = `imitor: see a React Native / Expo app without a simulator
 
 Usage (run in the app's folder):
+  imitor init               set Imitor up in this Expo app: Metro wrap, imitor.config.json with stand-ins, ignores.
+                            Prints every change as a diff; installs nothing. [--dry-run] [--force] [--yes]
   imitor                    build the web preview, run every flow, write the report
   imitor build              only build the web preview into <out>/app
   imitor shoot              only run the flows from an existing build
   imitor serve              serve an existing build for manual clicking
   imitor gate               build, run every flow, and exit non-zero if the run should block a native build:
                             [--fail-on flows|errors|stand-ins] [--no-build] [--json]
+  imitor comment            print the pull-request comment for the last run (verdict, failed flows, shots):
+                            [--image-base url] [--max-shots n] [--device d] [--scheme s] [--fail-on f] [--report-url url] [--json]
+  imitor publish-shots      push the last run's screenshots to a branch of this repository (GitHub Actions only),
+                            print the --image-base for imitor comment: [--branch imitor-shots] [--keep 3] [--pr n] [--force] [--json]
   imitor app [--port n]     open the review interface on this machine (runs, captures, problems, agents)
   imitor export             write the interface and its data as a read-only static site:
-                            [--out dir] (default <out>/site) [--preview-url url] [--demo]
+                            [--out dir] (default <out>/site) [--preview-url url] [--base /path] [--demo]
   imitor push [--run id]    upload a run (default the newest) to an Imitor Cloud instance (in development);
                             needs IMITOR_CLOUD_URL and IMITOR_TOKEN
 
 For agents and scripts (each prints JSON):
   imitor describe           flows, devices and stand-ins configured for this app
-  imitor screenshot         one screenshot: --route /x | --flow name  [--device d] [--scheme light|dark] [--full-page] [--name n]
+  imitor screenshot         one screenshot: --route /x | --flow name  [--device d] [--scheme light|dark] [--full-page] [--name n] [--state s]
   imitor flow               run one flow and report each step: --flow name [--device d] [--scheme s]
   imitor record             record a .webm video of a flow: --flow name [--device d] [--scheme s]
   imitor problems           problems and stand-ins from the last full run
@@ -51,6 +57,14 @@ export async function main(args) {
   if (command === "mcp") return (await import("./mcp.mjs")).runStdio(root);
   const print = (value) => console.log(JSON.stringify(value, null, 2));
   const opts = flags(args.slice(1));
+  if (command === "init") {
+    // --yes is accepted and is the default: init never asks questions, so agents can run it.
+    const { init, formatInit } = await import("./init.mjs");
+    const result = init(root, { dryRun: opts.dryRun === true, force: opts.force === true });
+    console.log(formatInit(result));
+    if (result.stop) process.exitCode = 1;
+    return;
+  }
   if (command === "app") {
     const port = opts.port === undefined ? 4173 : Number(opts.port);
     if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error(`--port needs a number, got "${opts.port}"`);
@@ -61,13 +75,13 @@ export async function main(args) {
     return console.log(`Imitor app at ${server.url} (this machine only; Ctrl+C to stop)`);
   }
   if (command === "export") {
-    for (const k of ["out", "previewUrl"]) if (opts[k] === true) throw new Error(`--${k === "out" ? "out" : "preview-url"} needs a value`);
+    for (const k of ["out", "previewUrl", "base"]) if (opts[k] === true) throw new Error(`--${k === "previewUrl" ? "preview-url" : k} needs a value`);
     const { exportSite } = await import("./export.mjs");
-    const site = exportSite(root, { out: opts.out || null, previewUrl: opts.previewUrl || null, demo: opts.demo === true });
+    const site = exportSite(root, { out: opts.out || null, previewUrl: opts.previewUrl || null, demo: opts.demo === true, base: opts.base || "" });
     const mb = (site.bytes / 1024 / 1024).toFixed(1);
     console.log(`Exported ${site.runs} run${site.runs === 1 ? "" : "s"} and ${site.files} file${site.files === 1 ? "" : "s"} (${mb} MB) to ${path.relative(root, site.dir).startsWith("..") ? site.dir : path.relative(root, site.dir)}`);
     if (site.missing.length) console.log(`${site.missing.length} referenced file${site.missing.length === 1 ? " is" : "s are"} no longer on disk and will not load, e.g. ${site.missing[0]}`);
-    console.log("It is read-only and holds this project's screenshots: publish it only where they may be seen. Serve it at the root of a domain.");
+    console.log(`It is read-only and holds this project's screenshots: publish it only where they may be seen. ${site.base ? `Serve it at ${site.base}/ on its domain.` : "Serve it at the root of a domain."}`);
     return;
   }
   if (command === "push") {
@@ -78,6 +92,20 @@ export async function main(args) {
     console.log(`Pushed run ${result.clientRunId} (${sent}): ${result.url}`);
     if (result.skipped.length) console.log(`Left out ${result.skipped.length} file${result.skipped.length === 1 ? "" : "s"} of a type the cloud does not take, e.g. ${result.skipped[0]}`);
     return;
+  }
+  if (command === "comment") {
+    for (const k of ["imageBase", "maxShots", "device", "scheme", "failOn", "reportUrl"]) if (opts[k] === true) throw new Error(`--${k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)} needs a value`);
+    const { commentFor, formatComment } = await import("./comment.mjs");
+    const data = commentFor(root, opts);
+    return opts.json === true ? print(data) : process.stdout.write(formatComment(data));
+  }
+  if (command === "publish-shots") {
+    for (const k of ["branch", "keep", "pr", "sha", "repo", "remote"]) if (opts[k] === true) throw new Error(`--${k} needs a value`);
+    const { publishShots } = await import("./publish.mjs");
+    const result = publishShots(root, { ...opts, force: opts.force === true });
+    if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `image-base=${result.baseUrl}\n`);
+    console.error(`Published ${result.files.length} files to ${result.branch}:${result.folder}${result.removed.length ? `; removed ${result.removed.join(", ")}` : ""}`);
+    return opts.json === true ? print(result) : console.log(result.baseUrl);
   }
   if (command === "describe") return print(describe(root));
   if (command === "problems") return print(readProblems(root));
@@ -129,7 +157,7 @@ export async function main(args) {
       return;
     }
     console.log(`imitor: ${result.shots.length} shots, ${result.problems.length} problems -> ${report}`);
-    if (result.problems.some((p) => p.kind === "flow-failed")) process.exitCode = 1;
+    if (result.problems.some((p) => p.kind === "flow-failed" || p.kind === "seed-failed")) process.exitCode = 1;
   } finally {
     server.close();
   }

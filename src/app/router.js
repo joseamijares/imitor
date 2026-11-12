@@ -1,5 +1,7 @@
 // A small History-API router. Routes are patterns like "/runs/:id/:tab".
 
+import { stripBase, withBase } from "./base.js";
+
 export function createRouter(routes, onRoute) {
   const compiled = routes.map((r) => {
     const keys = [];
@@ -17,11 +19,11 @@ export function createRouter(routes, onRoute) {
 
   function resolve() {
     const url = new URL(location.href);
-    onRoute(match(url.pathname), url);
+    onRoute(match(stripBase(url.pathname)), url);
   }
 
   function navigate(to, { replace = false } = {}) {
-    const url = new URL(to, location.href);
+    const url = new URL(withBase(to), location.href);
     if (url.href === location.href && !replace) return;
     history[replace ? "replaceState" : "pushState"](null, "", url);
     resolve();
@@ -33,7 +35,8 @@ export function createRouter(routes, onRoute) {
     const a = e.target.closest("a[href]");
     if (!a || a.target || a.hasAttribute("download")) return;
     const url = new URL(a.href, location.href);
-    if (url.origin !== location.origin || url.pathname.startsWith("/files/") || url.pathname.startsWith("/preview/") || url.pathname.startsWith("/api/")) return;
+    const p = stripBase(url.pathname);
+    if (url.origin !== location.origin || p.startsWith("/files/") || p.startsWith("/preview/") || p.startsWith("/api/")) return;
     e.preventDefault();
     navigate(url.pathname + url.search + url.hash);
   });

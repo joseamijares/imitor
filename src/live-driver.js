@@ -177,7 +177,15 @@
     return Object.keys(counts).sort().map(function (k) { return { kind: k, count: counts[k] }; });
   }
   var route = function () { return location.pathname + location.search; };
-  var state = function () { return { route: route(), media: window.__imitorMedia || null, standIns: standIns(), title: document.title }; };
+  // The flow state the page started with (src/state.mjs puts it on globalThis.__imitor), and seed statements that failed.
+  function setup() {
+    var g = window.__imitor;
+    if (!g || !("flow" in g)) return null;
+    var errors = [];
+    try { errors = JSON.parse(sessionStorage.getItem("imitor:seed-errors") || "[]"); } catch (e) { /* none */ }
+    return { flow: g.flow || null, state: g.state == null ? null : g.state, seedErrors: errors };
+  }
+  var state = function () { return { route: route(), media: window.__imitorMedia || null, standIns: standIns(), title: document.title, setup: setup() }; };
 
   window.addEventListener("message", async function (e) {
     if (e.source !== window.parent || parents.indexOf(e.origin) < 0) return;

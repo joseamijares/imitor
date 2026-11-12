@@ -1,8 +1,9 @@
 // A run: tabs Shots, Live, Problems, Captures. Shots groups the run's shots by flow, filtered by device and scheme.
 import { api, isStatic, LIVE_NEEDS_APP } from "../api.js";
-import { html, raw, icon, statusMark, chip, seg, pill, button, thumb, loadingLine, errorState } from "../components.js";
+import { html, raw, icon, statusMark, chip, seg, pill, button, thumb, loadingLine, errorState, madeMark } from "../components.js";
 import { ago, deviceName, schemeName, humanize, stepLabel, plural } from "../format.js";
 import { pageHeader } from "./common.js";
+import { withBase } from "../base.js";
 
 const TABS = ["shots", "live", "problems", "captures"];
 
@@ -10,9 +11,9 @@ export async function mount(ctx) {
   const { main, params } = ctx;
   const id = params.id;
   const tab = TABS.includes(params.tab) ? params.tab : "shots";
-  const base = `/runs/${encodeURIComponent(id)}`;
+  const base = withBase(`/runs/${encodeURIComponent(id)}`);
   document.title = "Run · Imitor";
-  main.innerHTML = String(html`${pageHeader(html`<a class="crumb" href="/runs">Runs</a><span class="sep">/</span><h1 class="t3">${id}</h1>`)}<div class="content">${loadingLine("Loading run…")}</div>`);
+  main.innerHTML = String(html`${pageHeader(html`<a class="crumb" href="${withBase(`/runs`)}">Runs</a><span class="sep">/</span><h1 class="t3">${id}</h1>`)}<div class="content">${loadingLine("Loading run…")}</div>`);
 
   let data;
   try { data = await api.run(id); } catch (e) {
@@ -35,7 +36,7 @@ export async function mount(ctx) {
   document.title = `${title} · Imitor`;
 
   const header = pageHeader(
-    html`<a class="crumb" href="/runs">Runs</a><span class="sep">/</span><h1 title="${title}">${title}</h1>${run.commit ? chip(run.commit) : ""}`,
+    html`<a class="crumb" href="${withBase(`/runs`)}">Runs</a><span class="sep">/</span><h1 title="${title}">${title}</h1>${run.commit ? chip(run.commit) : ""}`,
     html`${button("Copy link", "secondary", { icon: "copy", attrs: `data-copy="${escAttr(location.origin + base)}" data-copy-toast="Link copied"` })}
          ${button("Open live preview", "primary", { href: `${base}/live`, title: liveNote })}`);
   main.innerHTML = String(html`${header}<div class="toolbar run-tabs"></div><div class="content"></div>`);
@@ -80,7 +81,7 @@ export async function mount(ctx) {
     if (tab === "shots") renderShots();
     else if (tab === "problems") content.innerHTML = String(problemsTab(problems));
     else if (tab === "live") content.innerHTML = String(html`<p class="placeholder-page">The live preview is coming next.</p>`);
-    else content.innerHTML = String(html`<p class="placeholder-page">This run’s captures are coming next. Until then, see <a href="/captures" style="text-decoration:underline">Captures</a>.</p>`);
+    else content.innerHTML = String(html`<p class="placeholder-page">This run’s captures are coming next. Until then, see <a href="${withBase(`/captures`)}" style="text-decoration:underline">Captures</a>.</p>`);
   }
 
   bar.addEventListener("click", (e) => {
@@ -132,14 +133,14 @@ function tile(f, s) {
   return html`<div class="tile${missing ? " is-missing" : ""}">
     ${thumb(s.shot, s.status, { alt })}
     <div class="tile-label"><span class="mono">${num}</span><span class="name" title="${label}">${label}</span></div>
-    ${s.status === "stand-in" ? html`<span class="tile-pill" title="${s.standIns?.length ? `Stand-in: ${s.standIns.join(", ")}` : "Contains a stand-in"}">${pill("Stand-in", "warn")}</span>` : ""}
+    ${s.status === "stand-in" || s.state || s.seeded ? html`<span class="tile-marks">${s.status === "stand-in" ? html`<span class="tile-pill" title="${s.standIns?.length ? `Stand-in: ${s.standIns.join(", ")}` : "Contains a stand-in"}">${pill("Stand-in", "warn")}</span>` : ""}${madeMark(s)}</span>` : ""}
     ${s.status === "failed" ? html`<span class="tile-note">${icon("warn", 12)}Failed at this step</span>` : ""}
   </div>`;
 }
 
 function problemsTab(problems) {
   if (!problems.length) return html`<p class="placeholder-page">No problems in this run.</p>`;
-  return html`<div class="run-problem-list">${problems.map((p) => html`<a class="problem-row" href="/problems/${encodeURIComponent(p.id)}">
+  return html`<div class="run-problem-list">${problems.map((p) => html`<a class="problem-row" href="${withBase(`/problems/${encodeURIComponent(p.id)}`)}">
       ${statusMark(p.kind === "flow-failed" ? "failed" : p.kind === "stand-in" ? "standin" : "off")}
       <div style="min-width:0"><div class="title">${p.title}</div><div class="sub">${[deviceName(p.device), schemeName(p.scheme)].filter(Boolean).join(" · ") || (p.detail?.shots?.length ? plural(p.detail.shots.length, "shot") : "")}</div></div>
       <div class="side-col"><span class="mono">${ago(p.at)}</span>${p.seen ? "" : html`<span class="unseen-dot" title="Not seen yet"></span>`}</div>

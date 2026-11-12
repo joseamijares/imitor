@@ -12,7 +12,7 @@ check has to find.
 
 Status: early (v0). Tried on two Expo SDK 54 apps so far.
 
-Site: [imitor.vercel.app](https://imitor.vercel.app) · Live demo: [imitor-demo.vercel.app](https://imitor-demo.vercel.app)
+Site: [imitor.vercel.app](https://imitor.vercel.app) · Live demo: [imitor.vercel.app/demo](https://imitor.vercel.app/demo/)
 
 ## What you get
 
@@ -27,23 +27,40 @@ preview/
 
 ## Set up
 
-1. Install (not on npm yet):
+In the app's folder:
 
-   ```bash
-   npm i -D github:joseamijares/imitor playwright
-   npx playwright install chromium
-   ```
+```bash
+npx imitor init --dry-run   # show every change it would make, as diffs
+npx imitor init             # make them
+```
 
-2. Wrap your Metro config: keep building `config` as you do now (`getDefaultConfig`, Sentry's `getSentryExpoConfig`, your transformers) and wrap what you export. It does nothing unless Imitor is running the build.
+`imitor init` works on Expo apps (with or without their own `ios/` and `android/` folders). It stops and explains on a bare React Native app without Expo. It never installs anything: it ends with the exact install command for what is missing, for the package manager your lockfile shows (npm, yarn, pnpm or bun), and the next commands to run. It is safe to run twice; the second run changes nothing. An agent can do the same through the `imitor_init` MCP tool.
+
+Install (once Imitor is on npm):
+
+```bash
+npm i -D imitor playwright
+npx playwright install chromium
+```
+
+**Not on npm yet:** until the first release is published, install from GitHub instead: `npm i -D github:joseamijares/imitor playwright`.
+
+### What init does
+
+These are the steps `imitor init` takes. Do them by hand if you prefer, or when it asks you to.
+
+1. Wrap your Metro config: keep building `config` as you do now (`getDefaultConfig`, Sentry's `getSentryExpoConfig`, your transformers) and wrap what you export. It does nothing unless Imitor is running the build.
 
    ```js
    // metro.config.js
    module.exports = require("imitor/metro").withImitor(config);
    ```
 
-   Add the output folder (`preview/` by default) to `.gitignore`.
+   init makes this one-line edit when `metro.config.js` (or `.cjs`) exports a variable or a call, creates the standard Expo config already wrapped when there is none, and otherwise leaves the file alone and prints these instructions (an ES module `metro.config.mjs` or `.ts`, or a shape it does not recognise).
 
-3. Add `imitor.config.json` next to `package.json`:
+2. Keep the output folder (`preview/` by default) out of git: init adds it to `.gitignore`, and to `.easignore` when there is one. If the app's runtime version comes from Expo's fingerprint (`"runtimeVersion": { "policy": "fingerprint" }`, or a `fingerprint.config.js`), editing `.gitignore` would change the runtime version and force new store builds, so init leaves it alone and sets `"out"` to a folder it already ignores, such as `dist/imitor`. It also tells you when an ESLint flat config would lint the output folder; it does not edit lint config.
+
+3. Add `imitor.config.json` next to `package.json`. init writes stand-ins for the app's dependencies (see [Stand-ins](#stand-ins)), one device, the colour schemes the app has (`userInterfaceStyle`) and a first flow that opens `/` and takes one shot. It lists packages it does not know that have native code and no web build as "may need a stand-in", without adding them; most Expo packages need none. If the file exists, init shows what would change and writes nothing unless you pass `--force`. A fuller config:
 
    ```json
    {
@@ -78,7 +95,7 @@ preview/
 
    `imitor build` runs `expo export --platform web` with your environment, so `EXPO_PUBLIC_*` values are inlined into the build as usual. If the app needs them to start (a backend URL, a public key), pass harmless placeholders for that command rather than real ones, for example `EXPO_PUBLIC_API_URL=http://127.0.0.1:9 npx imitor build`; the app then sees an unreachable backend.
 
-Other commands: `imitor build`, `imitor shoot` (reuse the last build), `imitor serve` (click around by hand), `imitor app` (the review interface), `imitor export` (the interface as a static site), `imitor push` (uploads a run to an Imitor Cloud instance; in development).
+Other commands: `imitor init`, `imitor build`, `imitor shoot` (reuse the last build), `imitor serve` (click around by hand), `imitor app` (the review interface), `imitor export` (the interface as a static site), `imitor push` (uploads a run to an Imitor Cloud instance; in development).
 
 ## For agents
 
@@ -92,9 +109,10 @@ Any MCP client works the same way: the command is `npx imitor mcp`, over stdio.
 
 | Tool | What it does |
 | --- | --- |
+| `imitor_init` | Sets Imitor up in the app (Metro wrap, `imitor.config.json`, ignores). Only shows the changes unless `dryRun` is `false` |
 | `imitor_describe` | Lists the flows, devices and stand-ins configured, and whether a build exists |
 | `imitor_build` | Builds the web preview of the app as it is on disk |
-| `imitor_screenshot` | Takes one screenshot and returns the image. Reach the screen by `route`, by `flow`, or with inline `steps` |
+| `imitor_screenshot` | Takes one screenshot and returns the image. Reach the screen by `route`, by `flow`, or with inline `steps`; `state` overrides the state label for that call |
 | `imitor_run_flow` | Runs one flow and reports every step, its shots, and where it failed |
 | `imitor_record_video` | Records a `.webm` video of a flow with animations on |
 | `imitor_read_problems` | Failed steps, page errors, stand-ins seen and coverage limits from the last full run |
@@ -112,7 +130,7 @@ npx imitor record --flow first-run
 npx imitor problems
 ```
 
-Screenshots and videos from these land in `preview/captures/`. Each call starts from a fresh, empty app state, so use a flow (or inline steps) to get past setup screens.
+Screenshots and videos from these land in `preview/captures/`. Each call starts from a fresh app state: empty, or the state the flow (or the config) sets up (see [Start a flow from a state](#start-a-flow-from-a-state)). A screenshot without `--flow` takes the top-level settings, and `--state <label>` (or `state` in the MCP tool) overrides the state label for that one call. Results say which `state` and `seeded` data a capture started from, and list `seedErrors`.
 
 ## The app
 
@@ -124,13 +142,13 @@ npx imitor app            # http://127.0.0.1:4173 (or --port n)
 
 It reads plain files from the output folder: `runs/` (the last 50 full runs), `captures/index.jsonl`, `activity.jsonl` (one line per MCP tool call) and `state.json`, which the CLI and the MCP server write as they work. It binds to 127.0.0.1 only, so it is reachable from this machine and nowhere else.
 
-The live preview (`/live`, or Live on a run) shows the built app itself, running in a device frame. `imitor app` serves the build on a second port of its own, so the app's router and reloads work as at a site root, and adds a small driver script to its pages so the interface can replay a flow inside the frame up to the shot you pick: taps, fills and waits, as the runs do in headless Chromium. Reload starts the app again from an empty state (stored data cleared).
+The live preview (`/live`, or Live on a run) shows the built app itself, running in a device frame. `imitor app` serves the build on a second port of its own, so the app's router and reloads work as at a site root, and adds a small driver script to its pages so the interface can replay a flow inside the frame up to the shot you pick: taps, fills and waits, as the runs do in headless Chromium, after the steps of any flow it runs `after`. Each replay clears what the app stored, then opens the app with `?imitor-flow=<name>`, so the page starts with that flow's `state` and `seed` (the Flow state panel lists them). Reload starts again from the first flow's state.
 
 The Appearance and Reduce motion controls rely on an override that `imitor build` adds to every page of the build: with `?imitor-scheme=dark|light` or `?imitor-motion=reduce|no-preference` in the address, the app's `matchMedia` answers `prefers-color-scheme` and `prefers-reduced-motion` accordingly (it is kept for the browser tab's session; `auto` clears it). Builds made before this have no override: the live preview says so and the app follows the computer's settings until you run `imitor build` again. An app that ignores the system scheme (for example `userInterfaceStyle: "light"` and no `useColorScheme`) looks the same in both.
 
 The iPhone status bar and the Android camera are drawn above the app, not over it: the web build has no safe-area insets, so drawing them on top would hide what the shots show.
 
-A public demo of the interface, with invented data for an invented plant-care app ("fernwood"), runs at [imitor-demo.vercel.app](https://imitor-demo.vercel.app). It is built from `demo/` with `npm run demo` (it writes `demo/site/`), and `demo/vercel.json` deploys it: import this repository into Vercel with `demo` as the root directory. The root `vercel.json` deploys the public site in `site/` (`npm run site`), whose How to use and For agents pages are generated from this README.
+A public demo of the interface, with invented data for an invented plant-care app ("fernwood"), runs at [imitor.vercel.app/demo](https://imitor.vercel.app/demo/). It is built from `demo/` with `npm run demo` (it writes `demo/site/`). The root `vercel.json` deploys the public site in `site/` (`npm run site`): its How to use and For agents pages are generated from this README, and the demo is exported into its `/demo/` folder.
 
 ## Publish a run
 
@@ -138,9 +156,10 @@ A public demo of the interface, with invented data for an invented plant-care ap
 npx imitor export                                  # writes preview/site/
 npx imitor export --out review-site                # or anywhere else
 npx imitor export --preview-url https://my-preview.example.com
+npx imitor export --base /review                   # to serve it under /review/ instead of a domain root
 ```
 
-`imitor export` writes the interface and its data as plain static files, for any static host (Vercel, Netlify, GitHub Pages, an S3 bucket): the interface, every API response as a `.json` file, and the shots, failure screenshots and captures those responses point to (nothing else from the output folder). It is read-only: marking a problem seen is kept in each visitor's browser, and nothing can start a run. The live preview needs a running build, so it is left out and the Live page says so, unless `--preview-url` names a deployed web build of the app. Serve the folder at the root of a domain; it includes a `404.html`, a `vercel.json` and a `_redirects` file so deep links like `/runs/<id>` load the interface.
+`imitor export` writes the interface and its data as plain static files, for any static host (Vercel, Netlify, GitHub Pages, an S3 bucket): the interface, every API response as a `.json` file, and the shots, failure screenshots and captures those responses point to (nothing else from the output folder). It is read-only: marking a problem seen is kept in each visitor's browser, and nothing can start a run. The live preview needs a running build, so it is left out and the Live page says so, unless `--preview-url` names a deployed web build of the app. Serve the folder at the root of a domain, or under the path given with `--base`; it includes a `404.html`, a `vercel.json` and a `_redirects` file so deep links like `/runs/<id>` load the interface.
 
 The site holds the app's screenshots and videos. Publish it only where those may be seen, for example a team-only or password-protected deployment, not a public URL for an unreleased app.
 
@@ -148,14 +167,29 @@ The site holds the app's screenshots and videos. Publish it only where those may
 
 | Value | Replaces | Behaviour |
 | --- | --- | --- |
-| `sqljs` | `expo-sqlite` | Real SQLite (sql.js, wasm) in memory, including the synchronous API. Mirrored to `sessionStorage` so a reload keeps data. |
+| `sqljs` | `expo-sqlite` | Real SQLite (sql.js, wasm) in memory, including the synchronous API. Mirrored to `sessionStorage` so a reload keeps data. A flow's `seed.sql` runs in it. |
 | `skia` | `@shopify/react-native-skia` | `<Canvas>` keeps its box but draws nothing. Shots containing one are labelled in the report. |
+| `canvaskit` | `@shopify/react-native-skia` | Real Skia drawing: the package's own web build, drawing with CanvasKit (Skia compiled to WebAssembly). Not a stand-in, so shots are not labelled. See [Real Skia drawing](#real-skia-drawing). |
 | `inert` | any module | Every export exists and does nothing. Components render nothing. |
 | `./path/to/file.js` | any module | Your own stand-in. Inside it, `require` of the module it replaces gets the real one, so a stand-in can re-export most of a package and replace one function (for example a backend client's `createClient`, to show signed-in screens with invented data). |
 
 A key matches the module name as the app imports it (`"some-sdk"` also covers `"some-sdk/sub/path"`), before path aliases are resolved.
 
 Stand-ins only apply to the web build Imitor makes (`IMITOR=1`). Your iOS and Android builds are untouched.
+
+`imitor init` proposes stand-ins from [`src/standins.json`](https://github.com/joseamijares/imitor/blob/main/src/standins.json): packages checked by hand against a real install (does it ship a web build, does it load its native module at import), each with the version checked and why. So far it covers the packages of two Expo SDK 54 apps; only `expo-sqlite` and `@shopify/react-native-skia` needed a built-in kind, and everything else there works on the web as it is (its own web build, or a fallback that does nothing). For `@shopify/react-native-skia` it proposes `canvaskit` (real drawing) when `canvaskit-wasm` can be found from the app, the same way `imitor build` looks for it, and `skia` (an empty box) otherwise, and says which and why. A package with native code that is not in the table and has no web build is listed as "may need a stand-in": try the build, and add `"inert"` or your own file if it fails.
+
+### Real Skia drawing
+
+With `"@shopify/react-native-skia": "canvaskit"`, Imitor bundles the real React Native Skia and draws every `<Canvas>` with CanvasKit, as React Native Skia does on any website. Nothing in the app changes: `imitor build` copies CanvasKit from the app's own `canvaskit-wasm` (the copy `@shopify/react-native-skia` depends on, so the versions match) into the build, and loads it before the app's scripts. If the app already calls `LoadSkiaWeb` itself, that call finds CanvasKit loaded and does nothing. If `canvaskit-wasm` cannot be found, the build stops and says which version to install.
+
+What can still differ from a phone:
+
+- The first load is heavier: CanvasKit's `.wasm` is about 8 MB (8,001,100 bytes for canvaskit-wasm 0.40.0, 3.2 MB gzipped), loaded before the app starts. Use `skia` when you only need the layout.
+- Fonts: on the web, Skia has no system fonts (`Skia.FontMgr.System()` is an empty font provider), so text drawn inside a `<Canvas>` with a font found by system name (`matchFont`) finds no typeface and draws nothing. Fonts the app loads from files with `useFont` or `useFonts` are drawn. Text drawn by React Native around the canvas is not affected.
+- Pixel ratio: the canvas is drawn at the device's `scale` in Imitor (2 for every built-in device), not at the phone's own (3 on recent iPhones), so fine lines and edges are a little softer than on the phone.
+- Animation: shots catch whatever frame is on screen. With `reducedMotion` on (the default) an app that stops its animations for reduced motion gives the same shot every run; with it off, a looping animation (waves, bubbles) is in a different place each run. A `clock` ([Start a flow from a state](#start-a-flow-from-a-state)) fixes the starting instant but does not freeze time, so it does not stop such an animation.
+- GPU: headless Chromium draws WebGL in software (SwiftShader). Antialiasing and gradients may differ slightly from the phone's GPU; Chromium also logs performance warnings ("GPU stall due to ReadPixels"), which are not counted as page errors.
 
 ## Flow steps
 
@@ -177,9 +211,63 @@ errors on web) never appear in a screenshot. Imitor dismisses them and records
 their text as a `dialog` problem with the step that raised it; `imitor flow`,
 `screenshot` and `record` list them under `dialogs`.
 
-Other config keys: `locale` (default `en-US`), `timezone` (`UTC`), `settleMs` (`600`),
+Other config keys: `after`, `state`, `seed` and `clock` ([Start a flow from a state](#start-a-flow-from-a-state)), `locale` (default `en-US`), `timezone` (`UTC`), `settleMs` (`600`),
 `reducedMotion` (`true`), `out` (`preview`). Devices: `iphone-16`, `iphone-se`,
 `pixel-9`, `small-android`, or `{ "name", "width", "height", "scale" }`.
+
+## Start a flow from a state
+
+Most of an app sits behind onboarding or sign-in, and screens that show today's date change every day. Four optional keys set what a flow starts from. Each works on a flow, or at the top level of `imitor.config.json` as the default for every flow; a flow's own value wins, and `null` on a flow opts out of the default.
+
+```json
+{
+  "shims": { "expo-sqlite": "sqljs", "@supabase/supabase-js": "./imitor-stand-ins/supabase.js" },
+  "state": "signed-in",
+  "clock": "2026-03-14T09:30:00Z",
+  "flows": [
+    { "name": "welcome", "state": "signed-out", "steps": [{ "shot": "first" }, { "tap": "Continue" }] },
+    { "name": "name", "after": "welcome", "state": "signed-out", "steps": [{ "fill": { "placeholder": "Your name", "value": "Ada" } }, { "shot": "named" }] },
+    {
+      "name": "today",
+      "start": "/today",
+      "seed": {
+        "storage": { "onboarding-done": "true", "settings": "{\"units\":\"metric\"}" },
+        "sql": "imitor-seed/garden.sql",
+        "database": "garden.db"
+      },
+      "steps": [{ "shot": "today" }]
+    }
+  ]
+}
+```
+
+| Key | What it does |
+| --- | --- |
+| `"after": "<flow>"` | Runs that flow's steps first (its shots are skipped), then this flow's. Chains may nest. The chain starts at the first flow's `start`; a later flow's own `start`, if it has one, is opened after the flows before it (a full reload, so in-memory state is lost). Unknown names and cycles are errors when the config loads. A top-level `after` does not apply to the flow it names, nor to the flows that one runs after. |
+| `"state": "<label>"` | A free-form label handed to the app's stand-ins before any app code runs, as `globalThis.__imitor.state` (a string, or `null`). |
+| `"seed"` | Data put in place before the app's first script runs: `storage` and `sql`, below. |
+| `"clock": "<ISO date-time>"` | Starts the page's clock at that instant, so screens that show today's date look the same whichever day the run happens. |
+
+A run of a flow uses that flow's `state`, `seed` and `clock` (its own, else the top level's) for the whole chain; the flows named in `after` contribute only their start and steps.
+
+**State.** Use it in place of ad-hoc switches in the address: an app-local stand-in branches on the label. For example, a backend client's stand-in returns a signed-in session unless the flow says otherwise:
+
+```js
+// imitor-stand-ins/backend.js
+const signedOut = (globalThis.__imitor && globalThis.__imitor.state) === "signed-out";
+```
+
+**`seed.storage`** is an object of key to string written to `localStorage` before the app runs. `@react-native-async-storage/async-storage` on web (checked with 2.2.0) reads and writes `window.localStorage` directly with the key unchanged, no prefix, so `"onboarding-done": "true"` is what `AsyncStorage.getItem("onboarding-done")` returns. Values must be strings: write objects as JSON, as AsyncStorage callers do.
+
+**`seed.sql`** needs the `sqljs` stand-in. It is an array of SQL texts, or the path of a `.sql` file relative to the app folder. The app's code has not created its schema before it runs, so the seed cannot wait for it: the statements run when the app first opens the seed's `database` (a file name as the app passes it to `openDatabaseSync` / `openDatabaseAsync`; by default the first database it opens, other than `":memory:"`), immediately after it is opened and before the open call returns. The app's own `CREATE TABLE IF NOT EXISTS` and migrations then run on top, so the seed creates the tables it fills, and an app that tracks migrations with `PRAGMA user_version` needs the seed to set it too. Each entry (an array item, or the file) runs statement by statement; the first statement that fails stops the rest of that entry, and every failure is a `seed-failed` problem naming the statement. A seed whose database the app never opens is a problem too. Both fail the flow (and block the gate).
+
+The seed is applied once per browser session: a reload or a `goto` step keeps what the app has done since (the stand-in mirrors the database to `sessionStorage`, and a marker there stops the seed running again). Each flow runs in a fresh browser, so each starts from its seed.
+
+**Clock.** Runs, `flow`, `screenshot` and `record` use Playwright's clock (`clock.install`): `Date`, `performance`, timers and `requestAnimationFrame` start at the instant and then run at normal speed, so animations and timers behave as usual and the time on screen moves on by the seconds the flow takes. A run on 12 November and one with the machine's date set to 20 January gave byte-identical shots. Imitor does not freeze the time outright: a frozen `Date` stops React Native's `Animated` timing animations, which measure progress with `Date.now()`; on a real app a card that fades in stayed invisible. In the live preview there is no Playwright: only `Date` is moved to the clock (and runs on from it); timers and animations run as usual.
+
+The run's `manifest.json` lists each flow's `after`, `state`, `seeded` and `clock` under `flows`, and each shot carries `state` and `seeded`, so a reviewer can tell a shot came from invented data. The review interface marks those shots next to the stand-in marker, and `imitor describe` and `GET /api/project` show each flow's settings. Invented data is not the real app's data: treat seeded screens like stand-ins.
+
+`imitor build` from this version is needed for `seed.sql` (the stand-in in the bundle applies it); `state`, `seed.storage` and `clock` also work on older builds.
 
 ## Gate your native builds
 
@@ -193,7 +281,7 @@ It builds the preview, runs every flow, prints a verdict and exits non-zero when
 
 | `--fail-on` | Blocks when |
 | --- | --- |
-| `flows` (default) | A flow could not be completed |
+| `flows` (default) | A flow could not be completed, or its seed failed |
 | `errors` | Also when the page threw an uncaught error |
 | `stand-ins` | Also when any shot contains a stand-in |
 
@@ -204,9 +292,14 @@ The gate checks the web imitation only. It does not test the native build; it st
 ### GitHub Actions
 
 ```yaml
+on: pull_request
+
 jobs:
   imitor:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write       # push the screenshots to the imitor-shots branch
+      pull-requests: write  # post and update the comment
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -225,6 +318,28 @@ jobs:
 ```
 
 The action installs Chromium, runs the gate, and uploads the report as an artifact whether it passes or fails. Its outputs are `passed`, `shots`, `failed-flows`, `page-errors` and `stand-ins`. Your app needs `imitor` and `playwright` in its dev dependencies, as in Set up.
+
+#### The pull-request comment
+
+On `pull_request` events the action also posts the run on the pull request as one comment, so a reviewer sees the shots without downloading anything, on a phone too. The comment has the verdict, a line of counts, each failed flow with the step it stopped at, the error and the screenshot of where it stopped, and then the shots of each flow in step order as small images (tap one for full size), each with its step name and a note when it contains a stand-in or started from invented data (a flow's `state` or `seed`). The counts line says how many shots used invented data, and lists the kinds that run the real library on the web (`sqljs`, `canvaskit`) so they are not mistaken for stand-ins. A flow that failed inside a flow it runs `after` is reported at that flow's step (`step 2 of "welcome"`), here and in the gate's output. It shows one device and scheme (the first configured) and at most `max-shots` shots per flow (default 12), and says how many more are in the full report. On every push the same comment is updated in place (it is found by a hidden `<!-- imitor-comment -->` line); the action never posts a second one.
+
+| Input | Default | |
+| --- | --- | --- |
+| `comment` | `"true"` | `"false"` turns the comment off. Ignored on events other than `pull_request`. |
+| `shots-branch` | `imitor-shots` | The branch that holds the images |
+| `max-shots` | `12` | Most shots per flow in the comment |
+
+Where the images live: GitHub only shows images in a comment on a private repository when they come from somewhere the viewer can already read, so the action commits the run's screenshots (and its `manifest.json`) to a separate branch of the same repository, `imitor-shots`, under `pr-<number>/<short commit>/`, using the job's own `GITHUB_TOKEN`. No other service and no secret is involved. The screenshots of your app are therefore stored in your repository and stay exactly as private as the repository is: anyone who can read the repository can open them. On a private repository viewers must be signed in to GitHub with read access to see the images (GitHub's rule for images in comments; the links have the form `https://github.com/<owner>/<repo>/blob/imitor-shots/<path>?raw=true`). Whether the GitHub mobile app shows them has not been checked yet.
+
+The branch has no shared history with your code and never touches your working branch. On every push it keeps only the newest 3 commits' folders per pull request and is rewritten as a single commit, so it does not grow with history (Git hosts can still keep unreferenced old images for a while before cleaning them up). Folders of closed pull requests stay until removed; deleting the branch at any time is safe, the next run creates it again.
+
+The workflow needs the `permissions:` block above: `contents: write` to push the branch and `pull-requests: write` for the comment. Without them (and always for a pull request from a fork, whose token is read-only) the action prints a notice naming the missing permission and carries on: the comment falls back to file paths, or is skipped, and the job's result is still the gate's.
+
+Turn it off with `comment: "false"`. To delete what was stored, delete the `imitor-shots` branch.
+
+The same comment is available locally. `imitor comment` prints it for the last run, with file paths in a table; `--image-base <url>` makes it use images at that address instead (the shot's path is added to the end, or before a `?query`). `--max-shots`, `--device`, `--scheme` and `--fail-on` change what it shows, and `--json` prints the data instead. `imitor publish-shots` is the push the action does; it refuses to run outside GitHub Actions unless given `--force`.
+
+Nobody has seen this comment on a real pull request yet: the Markdown is tested, and publishing is tested against local Git repositories, but the action's publish and comment steps have not run on GitHub.
 
 ### EAS Workflows
 
@@ -262,9 +377,6 @@ This follows the EAS Workflows syntax but has not been run on EAS. Check how you
 
 - Text size and language controls in the live preview (device, scheme and motion are there)
 - "Pretend iOS / Android" mode so platform-specific styles render
-- Real Skia drawing on web (CanvasKit) instead of an empty box
-- Seeded data states, so flows don't have to click through setup
-- The review interface (runs, captures, problems, agents), designed in `design/`
 - Android widget and notification renders on a plain JVM
 - Bare React Native (no Expo) adapter
 - Apple surfaces on a macOS runner
