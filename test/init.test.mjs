@@ -290,6 +290,24 @@ test("an app.config.js that cannot be evaluated falls back to app.json", () => {
   assert.equal(r.config.out, "dist/imitor", "the fingerprint policy is still found in the file's text");
 });
 
+test("an app config it cannot evaluate may use the fingerprint, so .gitignore and .easignore are left alone and the plan says why", () => {
+  // No fingerprint in its text (it could come from anywhere the config reads), and expo is not installed to evaluate it.
+  const root = app({ "app.config.js": 'const base = require("./app.json");\nmodule.exports = () => ({ ...base.expo, ...require("./runtime-settings") });\n', ".easignore": "node_modules/\n" });
+  const gitignore = fs.readFileSync(path.join(root, ".gitignore"), "utf8");
+  const r = init(root);
+  assert.equal(fs.readFileSync(path.join(root, ".gitignore"), "utf8"), gitignore);
+  assert.equal(fs.readFileSync(path.join(root, ".easignore"), "utf8"), "node_modules/\n");
+  assert.ok(!r.changes.some((c) => c.file === ".gitignore" || c.file === ".easignore"));
+  assert.equal(r.config.out, "dist/imitor");
+  const printed = formatInitOf(r);
+  assert.match(printed, /init could not evaluate app\.config\.js, so it cannot tell whether the app's runtime version comes from Expo's fingerprint, which hashes \.gitignore: editing it would change the runtime version/);
+  assert.match(printed, /If the app does not use the fingerprint policy, you can add preview\/ to \.gitignore yourself/);
+  assert.match(printed, /\.easignore does not ignore dist\/imitor\/.*the runtime version may come from the fingerprint/);
+  // With an app.json only there is nothing to evaluate: .gitignore is edited as before.
+  const plain = init(app());
+  assert.ok(plain.changes.some((c) => c.file === ".gitignore"));
+});
+
 test("diff shows a new file and an edit", () => {
   assert.equal(diff("a.txt", null, "x\n"), "--- /dev/null\n+++ b/a.txt\n@@ -0,0 +1,1 @@\n+x");
   assert.equal(diff("a.txt", "1\n2\n3\n", "1\n2\n3\n"), "");

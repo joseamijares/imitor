@@ -349,21 +349,29 @@ export function ignores(text, dir) {
   return ignored;
 }
 
-function planIgnores(root, fingerprint, plan) {
+/**
+ * Keep the output folder out of git and EAS uploads. `fingerprint` lists why the app's runtime version comes from Expo's
+ * fingerprint; `unsure` names an app config init could not evaluate when nothing else showed it, since that config may
+ * set the fingerprint policy. Either way .gitignore and .easignore are left alone: the fingerprint hashes .gitignore.
+ */
+function planIgnores(root, fingerprint, plan, unsure = null) {
   const gitignore = read(path.join(root, ".gitignore"));
   const easignore = read(path.join(root, ".easignore"));
   let out = DEFAULT_OUT;
-  if (fingerprint.length) {
+  if (fingerprint.length || unsure) {
+    const why = fingerprint.length
+      ? `This app uses Expo's fingerprint for its runtime version (${fingerprint.join(", ")}), which hashes .gitignore`
+      : `init could not evaluate ${unsure}, so it cannot tell whether the app's runtime version comes from Expo's fingerprint, which hashes .gitignore`;
     if (!ignores(gitignore, DEFAULT_OUT)) {
       const parent = IGNORED_CANDIDATES.find((d) => ignores(gitignore, `${d}/imitor`));
       if (parent) {
         out = `${parent}/imitor`;
-        plan.notes.push(`This app uses Expo's fingerprint for its runtime version (${fingerprint.join(", ")}), which hashes .gitignore: editing it would change the runtime version and force new store builds. So init leaves .gitignore alone and writes Imitor's output to ${out}/, which .gitignore already ignores through ${parent}/.${parent === "dist" ? " `expo export` writes to dist/ by default and replaces it, which also removes Imitor's output and run history; Imitor rebuilds its part on the next run." : ""}`);
+        plan.notes.push(`${why}: editing it would change the runtime version and force new store builds. So init leaves .gitignore alone and writes Imitor's output to ${out}/, which .gitignore already ignores through ${parent}/.${parent === "dist" ? " `expo export` writes to dist/ by default and replaces it, which also removes Imitor's output and run history; Imitor rebuilds its part on the next run." : ""}${fingerprint.length ? "" : ` If the app does not use the fingerprint policy, you can add ${DEFAULT_OUT}/ to .gitignore yourself and remove "out" from imitor.config.json.`}`);
       } else {
-        plan.notes.push(`This app uses Expo's fingerprint for its runtime version (${fingerprint.join(", ")}), which hashes .gitignore, so init did not edit it. No folder it already ignores fits, so the output stays in ${DEFAULT_OUT}/: add ${DEFAULT_OUT}/ to .gitignore together with your next native change, or set "out" in imitor.config.json to a folder that is ignored.`);
+        plan.notes.push(`${why}, so init did not edit it. No folder it already ignores fits, so the output stays in ${DEFAULT_OUT}/: add ${DEFAULT_OUT}/ to .gitignore together with your next native change, or set "out" in imitor.config.json to a folder that is ignored.`);
       }
-    }
-    if (easignore !== null && !ignores(easignore, out)) plan.notes.push(`.easignore does not ignore ${out}/, so EAS would upload it with your project. init did not edit .easignore (fingerprint project); add ${out}/ to it when you next change native code.`);
+    } else if (!fingerprint.length) plan.unchanged.push(`.gitignore already ignores ${DEFAULT_OUT}/`);
+    if (easignore !== null && !ignores(easignore, out)) plan.notes.push(`.easignore does not ignore ${out}/, so EAS would upload it with your project. init did not edit .easignore (${fingerprint.length ? "fingerprint project" : `the runtime version may come from the fingerprint`}); add ${out}/ to it when you next change native code.`);
   } else {
     const append = (file, text) => {
       const lines = `${text && !text.endsWith("\n") ? "\n" : ""}${text ? "\n" : ""}# Imitor output\n${DEFAULT_OUT}/\n`;
@@ -412,7 +420,8 @@ export function planInit(root, { force = false } = {}) {
 
   planMetro(root, pkg, plan);
   plan.standIns = proposeStandIns(root, pkg);
-  const out = planIgnores(root, usesFingerprint(root, app, expo.dynamic), plan);
+  // A dynamic app config that could not be evaluated may set the fingerprint policy in a way its text does not show.
+  const out = planIgnores(root, usesFingerprint(root, app, expo.dynamic), plan, expo.note ? expo.dynamic : null);
 
   const style = app.userInterfaceStyle || app.ios?.userInterfaceStyle || app.android?.userInterfaceStyle;
   const schemes = style === "dark" ? ["dark"] : style === "automatic" ? ["light", "dark"] : ["light"];
