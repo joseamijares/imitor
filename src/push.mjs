@@ -8,11 +8,12 @@ import path from "node:path";
 import { loadConfig } from "./config.mjs";
 import { fillValues, redact } from "./redact.mjs";
 import { listRuns, schemaVersionOf } from "./store.mjs";
-import { checkUpload, extension, UPLOAD_TYPES } from "./upload.mjs";
+import { checkUpload, extension, fileRefs, UPLOAD_TYPES } from "./upload.mjs";
 
 export const VERSION = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 export const USER_AGENT = `imitor/${VERSION}`;
 const RUN_FILES = new Set(["run.json", "manifest.json"]); // sent in the body, not as files
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
 const readJson = (file) => {
   try {
@@ -51,7 +52,14 @@ export function buildUpload(root, runId = null) {
     const bytes = fs.readFileSync(path.join(dir, rel));
     return { path: rel, size: bytes.length, sha256: crypto.createHash("sha256").update(bytes).digest("hex"), contentType: UPLOAD_TYPES[extension(rel)] };
   });
-  const body = redact({ clientRunId: String(id), schemaVersion: schemaVersionOf(run), run, manifest, files }, { secrets: [...fillValues(config)] });
+  const raw = { clientRunId: String(id), schemaVersion: schemaVersionOf(run), run, manifest, files };
+  // A failure screenshot the browser could not take is named in the manifest but is not on disk: leave it out.
+  const listed = new Set(files.map((f) => f.path));
+  for (const ref of fileRefs(raw)) if (ref.optional && !listed.has(ref.path)) ref.holder[ref.key] = null;
+  // Checked before redaction, so a run too deep or too odd to copy is refused with a sentence, not a stack overflow.
+  const problem = checkUpload(raw);
+  if (problem) throw new Error(`run ${id} cannot be pushed: ${problem}`);
+  const body = redact(raw, { secrets: [...fillValues(config)] });
   return { body, dir, skipped };
 }
 
@@ -63,12 +71,17 @@ export async function push(root, { run = null, cloudUrl, token, fetch = globalTh
   if (!cloudUrl) throw new Error("IMITOR_CLOUD_URL is not set. Set it to the address of your Imitor Cloud, e.g. IMITOR_CLOUD_URL=https://cloud.example.com");
   if (!token) throw new Error("IMITOR_TOKEN is not set. Set it to the project's upload key (it starts with imk_).");
   if (!token.startsWith("imk_")) throw new Error("IMITOR_TOKEN is not a project upload key: those start with imk_.");
-  let base;
+  let url;
   try {
-    base = new URL(cloudUrl).href.replace(/\/+$/, "");
+    url = new URL(cloudUrl);
   } catch {
     throw new Error(`IMITOR_CLOUD_URL needs a full URL like https://cloud.example.com, got "${cloudUrl}"`);
   }
+  // The key and the run travel in this request: plain http only to this machine, where nothing is on the wire.
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && LOCAL_HOSTS.has(url.hostname))) {
+    throw new Error(`IMITOR_CLOUD_URL must start with https:// (plain http:// only for localhost, 127.0.0.1 or [::1]), got "${cloudUrl}"`);
+  }
+  const base = url.href.replace(/\/+$/, "");
   const { body, dir, skipped } = buildUpload(root, run);
   const problem = checkUpload(body);
   if (problem) throw new Error(`run ${body.clientRunId} cannot be pushed: ${problem}`);

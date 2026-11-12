@@ -140,6 +140,41 @@ test("imitor push fails with a plain message and a non-zero exit", async (t) => 
   assert.equal((await c.deps.db.listRuns(c.project.id)).length, 0);
 });
 
+test("imitor push refuses plain http except to this machine, before sending anything", async () => {
+  const a = app();
+  const sent = [];
+  const fetch = async (url) => {
+    sent.push(url);
+    throw new Error("stub: not sent");
+  };
+  const token = "imk_test";
+  for (const cloudUrl of ["http://cloud.example.com", "http://10.0.0.5:8787", "http://localhost.example.com", "ftp://cloud.example.com", "ws://127.0.0.1:8787"]) {
+    await assert.rejects(push(a.root, { cloudUrl, token, fetch }), new RegExp(`IMITOR_CLOUD_URL must start with https:// \\(plain http:// only for localhost, 127\\.0\\.0\\.1 or \\[::1\\]\\), got "${cloudUrl.replace(/[./]/g, "\\$&")}"`), cloudUrl);
+  }
+  assert.deepEqual(sent, []);
+  for (const cloudUrl of ["https://cloud.example.com", "http://localhost:8787", "http://127.0.0.1:8787", "http://[::1]:8787"]) {
+    await assert.rejects(push(a.root, { cloudUrl, token, fetch }), /could not reach .*: stub: not sent/, cloudUrl);
+  }
+  assert.equal(sent.length, 4);
+  const cli = await promisify(execFile)(process.execPath, [BIN, "push"], { cwd: a.root, env: { ...process.env, IMITOR_CLOUD_URL: "http://cloud.example.com", IMITOR_TOKEN: token } }).catch((e) => e);
+  assert.equal(cli.code, 1);
+  assert.match(cli.stderr, /^imitor: IMITOR_CLOUD_URL must start with https:\/\//);
+});
+
+test("a failure screenshot the browser could not take is left out of the push instead of refusing the run", async (t) => {
+  const a = app();
+  const c = await cloud();
+  t.after(() => c.close());
+  fs.rmSync(path.join(a.dir, "screens", "sign-in-FAILED-iphone-16-dark.png"));
+  const pushed = await push(a.root, { cloudUrl: c.url, token: c.key.secret });
+  assert.equal(pushed.files, 3);
+  const run = await c.deps.db.getRun(pushed.id);
+  assert.equal(run.status, "ready");
+  assert.equal(run.manifest.problems[0].file, null);
+  assert.equal(run.manifest.problems[0].lastGoodShot, "screens/sign-in-01-form-iphone-16-dark.png");
+  assert.ok(run.run.flows.flatMap((f) => f.steps).every((s) => s.shot === null || run.files.some((x) => x.path === s.shot)));
+});
+
 test("a server that needs a newer imitor says which version", async (t) => {
   const a = app();
   const c = await cloud({ minCliVersion: "99.0.0" });

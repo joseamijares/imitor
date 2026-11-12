@@ -31,7 +31,10 @@ export function memoryStorage({ baseUrl = null, now = () => Date.now() } = {}) {
     },
     async head(key) {
       const o = objects.get(key);
-      return o ? { size: o.body.length, contentType: o.contentType } : null;
+      return o ? { size: o.body.length, contentType: o.contentType, sha256: crypto.createHash("sha256").update(o.body).digest("hex") } : null;
+    },
+    async list(prefix) {
+      return [...objects].filter(([key]) => key.startsWith(prefix)).map(([key, o]) => ({ key, size: o.body.length }));
     },
     async delete(keys) {
       for (const key of keys) objects.delete(key);

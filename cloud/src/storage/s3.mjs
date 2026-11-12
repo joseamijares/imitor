@@ -1,8 +1,9 @@
 // Object storage on anything that speaks the S3 API (AWS S3, Cloudflare R2, MinIO, ...), with a hand-written AWS
 // Signature Version 4 query-string presigner on node:crypto, so there is no SDK to install. Every call is a presigned
-// URL: PUT for the client to upload to, GET for the interface to show, HEAD and DELETE for the server itself.
-// See interface.mjs for the Storage contract.
+// URL: PUT for the client to upload to, GET for the interface to show, HEAD, DELETE and ListObjectsV2 for the server
+// itself. See interface.mjs for the Storage contract.
 import crypto from "node:crypto";
+import { mapLimit } from "../limit.mjs";
 
 const hmac = (key, data) => crypto.createHmac("sha256", key).update(data, "utf8").digest();
 const sha256Hex = (data) => crypto.createHash("sha256").update(data, "utf8").digest("hex");
@@ -23,10 +24,11 @@ export function signingKey(secretAccessKey, day, region, service = "s3") {
 
 /**
  * A SigV4 presigned URL for `method` on `url` (a full object URL with its path already encoded, no query).
- * `headers` are signed in addition to host, so the request must carry them with exactly these values.
+ * `headers` are signed in addition to host, so the request must carry them with exactly these values. `query` adds
+ * parameters of the request itself (list-type=2, prefix=...), signed with the rest.
  * Returns { url, canonicalRequest, stringToSign, signature } (the last three for tests and debugging).
  */
-export function presign({ method, url, headers = {}, region, accessKeyId, secretAccessKey, sessionToken = null, expiresIn = 900, date = new Date(), service = "s3" }) {
+export function presign({ method, url, headers = {}, query: params = {}, region, accessKeyId, secretAccessKey, sessionToken = null, expiresIn = 900, date = new Date(), service = "s3" }) {
   const u = new URL(url);
   const time = amzDate(date);
   const scope = `${time.slice(0, 8)}/${region}/${service}/aws4_request`;
@@ -34,6 +36,7 @@ export function presign({ method, url, headers = {}, region, accessKeyId, secret
   for (const [k, v] of Object.entries(headers)) signed[k.toLowerCase()] = String(v).trim().replace(/\s+/g, " ");
   const names = Object.keys(signed).sort();
   const query = {
+    ...params,
     "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
     "X-Amz-Credential": `${accessKeyId}/${scope}`,
     "X-Amz-Date": time,
@@ -50,6 +53,7 @@ export function presign({ method, url, headers = {}, region, accessKeyId, secret
 
 /** sha256 as 64 hex digits to the base64 form S3's x-amz-checksum-sha256 takes. */
 export const hexToBase64 = (hex) => Buffer.from(hex, "hex").toString("base64");
+export const base64ToHex = (b64) => Buffer.from(b64, "base64").toString("hex");
 
 /**
  * opts: { bucket, region, accessKeyId, secretAccessKey, endpoint (default AWS for the region), pathStyle (default
@@ -59,8 +63,10 @@ export const hexToBase64 = (hex) => Buffer.from(hex, "hex").toString("base64");
 export function s3Storage({ bucket, region, accessKeyId, secretAccessKey, sessionToken = null, endpoint = null, pathStyle = endpoint != null, checksums = true, fetch = globalThis.fetch, now = () => new Date() }) {
   for (const [name, value] of Object.entries({ bucket, region, accessKeyId, secretAccessKey })) if (!value) throw new Error(`S3 storage needs ${name}`);
   const base = new URL(endpoint || `https://s3.${region}.amazonaws.com`);
-  const objectUrl = (key) => (pathStyle ? `${base.origin}/${uriEncode(bucket)}/${encodeKey(key)}` : `${base.protocol}//${bucket}.${base.host}/${encodeKey(key)}`);
-  const sign = (method, key, { headers = {}, expiresIn = 900 } = {}) => presign({ method, url: objectUrl(key), headers, region, accessKeyId, secretAccessKey, sessionToken, expiresIn, date: now() }).url;
+  const bucketUrl = pathStyle ? `${base.origin}/${uriEncode(bucket)}` : `${base.protocol}//${bucket}.${base.host}/`;
+  const objectUrl = (key) => (pathStyle ? `${bucketUrl}/${encodeKey(key)}` : `${bucketUrl}${encodeKey(key)}`);
+  const signUrl = (method, url, { headers = {}, query = {}, expiresIn = 900 } = {}) => presign({ method, url, headers, query, region, accessKeyId, secretAccessKey, sessionToken, expiresIn, date: now() }).url;
+  const sign = (method, key, opts) => signUrl(method, objectUrl(key), opts);
 
   return {
     async presignPut(key, { size, sha256, contentType, expiresIn = 900 }) {
@@ -72,19 +78,44 @@ export function s3Storage({ bucket, region, accessKeyId, secretAccessKey, sessio
       return sign("GET", key, { expiresIn });
     },
     async head(key) {
-      const res = await fetch(sign("HEAD", key, { expiresIn: 60 }), { method: "HEAD" });
+      // Without checksum mode S3 leaves the stored SHA-256 out of the answer.
+      const headers = { "x-amz-checksum-mode": "ENABLED" };
+      const res = await fetch(sign("HEAD", key, { headers, expiresIn: 60 }), { method: "HEAD", headers });
       if (res.status === 404) return null;
       if (!res.ok) throw new Error(`storage HEAD ${key} answered ${res.status}`);
-      return { size: Number(res.headers.get("content-length")), contentType: res.headers.get("content-type") };
+      const sum = res.headers.get("x-amz-checksum-sha256");
+      // A multipart object's checksum ("...=-3") is not the SHA-256 of its bytes, so it counts as none.
+      return { size: Number(res.headers.get("content-length")), contentType: res.headers.get("content-type"), sha256: sum && /^[A-Za-z0-9+/]{43}=$/.test(sum) ? base64ToHex(sum) : null };
+    },
+    async list(prefix) {
+      const objects = [];
+      let token = null;
+      do {
+        const query = { "list-type": "2", prefix, ...(token ? { "continuation-token": token } : {}) };
+        const res = await fetch(signUrl("GET", bucketUrl, { query, expiresIn: 60 }), { method: "GET" });
+        if (!res.ok) throw new Error(`storage LIST ${prefix} answered ${res.status}`);
+        const xml = await res.text();
+        for (const [, c] of xml.matchAll(/<Contents>([\s\S]*?)<\/Contents>/g)) objects.push({ key: xmlTag(c, "Key"), size: Number(xmlTag(c, "Size")) });
+        token = xmlTag(xml, "IsTruncated") === "true" ? xmlTag(xml, "NextContinuationToken") : null;
+      } while (token);
+      return objects;
     },
     async delete(keys) {
-      for (const key of keys) {
+      await mapLimit(keys, async (key) => {
         const res = await fetch(sign("DELETE", key, { expiresIn: 60 }), { method: "DELETE" });
         if (!res.ok && res.status !== 404) throw new Error(`storage DELETE ${key} answered ${res.status}`);
-      }
+      });
     },
   };
 }
+
+const ENTITIES = { lt: "<", gt: ">", quot: '"', apos: "'", amp: "&" };
+const xmlText = (s) => s.replace(/&(#x[0-9a-f]+|#\d+|\w+);/gi, (m, e) => (e[0] !== "#" ? ENTITIES[e] ?? m : String.fromCodePoint(e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : Number(e.slice(1)))));
+/** The text of the first <name> element in an S3 XML answer, or null. Enough for ListObjectsV2; not a parser. */
+const xmlTag = (xml, name) => {
+  const m = new RegExp(`<${name}>([\\s\\S]*?)</${name}>`).exec(xml);
+  return m ? xmlText(m[1]) : null;
+};
 
 /** S3 storage from S3_ENDPOINT, S3_BUCKET, S3_REGION, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY; null without S3_BUCKET. */
 export function s3FromEnv(env = process.env) {

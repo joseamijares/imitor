@@ -2,12 +2,36 @@
 // handle, and writes the Response back. Without DATABASE_URL and S3_BUCKET it keeps everything in memory.
 //   node cloud/src/server.mjs        (PORT, HOST, PUBLIC_URL, MIN_CLI_VERSION, S3_*; prints a project key when in memory)
 import http from "node:http";
-import { Readable } from "node:stream";
 import { pathToFileURL } from "node:url";
 import { handle } from "./api.mjs";
 import { memoryDb } from "./db/memory.mjs";
 import { memoryStorage, STORAGE_PATH } from "./storage/memory.mjs";
 import { s3FromEnv } from "./storage/s3.mjs";
+
+/**
+ * A web stream of a request's body, read only as fast as the handler reads it. Cancelling it (api.mjs does, past
+ * 8 MB) stops reading but leaves the socket open, so the 413 can still be sent; Readable.toWeb would destroy it.
+ */
+function bodyStream(req) {
+  return new ReadableStream({
+    start(controller) {
+      req.on("data", (chunk) => {
+        controller.enqueue(new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength));
+        if (controller.desiredSize <= 0) req.pause();
+      });
+      req.once("end", () => controller.close());
+      req.once("error", (error) => controller.error(error));
+      req.pause();
+    },
+    pull() {
+      req.resume();
+    },
+    cancel() {
+      req.pause();
+      req.removeAllListeners("data");
+    },
+  }, { highWaterMark: 4 });
+}
 
 /** A web Request for a node IncomingMessage. */
 export function toRequest(req, origin) {
@@ -15,25 +39,33 @@ export function toRequest(req, origin) {
   for (const [name, value] of Object.entries(req.headers)) {
     for (const v of [].concat(value)) headers.append(name, v);
   }
-  const body = req.method === "GET" || req.method === "HEAD" ? undefined : Readable.toWeb(req);
+  const body = req.method === "GET" || req.method === "HEAD" ? undefined : bodyStream(req);
   return new Request(new URL(req.url, origin), { method: req.method, headers, body, duplex: "half" });
 }
 
 /** Write a web Response to a node ServerResponse. */
-export async function send(res, response) {
+export async function send(res, response, req = null) {
   const body = Buffer.from(await response.arrayBuffer());
-  res.writeHead(response.status, Object.fromEntries(response.headers));
+  const headers = Object.fromEntries(response.headers);
+  // A body the handler did not read to the end (refused, or over the limit) is not drained: the connection closes.
+  if (req && !req.complete) headers.connection = "close";
+  res.writeHead(response.status, headers);
   res.end(body);
 }
 
 /** deps from the environment: memory adapters unless DATABASE_URL / S3_BUCKET say otherwise. */
 export function depsFromEnv(env = process.env) {
   if (env.DATABASE_URL) throw new Error("DATABASE_URL is set, but the Postgres adapter is not written yet (week 2). Unset it to run in memory.");
+  const allowUnverified = env.IMITOR_ALLOW_UNVERIFIED_UPLOADS === "1";
+  if (env.S3_BUCKET && env.S3_CHECKSUMS === "off" && !allowUnverified) {
+    throw new Error("S3_CHECKSUMS=off means storage keeps no SHA-256 of uploads, so complete cannot check a file's bytes against what the run declared. Turn checksums back on, or set IMITOR_ALLOW_UNVERIFIED_UPLOADS=1 to accept unverified files (unsafe).");
+  }
   return {
     db: memoryDb(),
     storage: s3FromEnv(env) || memoryStorage(),
     publicUrl: env.PUBLIC_URL || null,
     minCliVersion: env.MIN_CLI_VERSION || null,
+    allowUnverified,
     log: (error) => console.error(error),
   };
 }
@@ -45,7 +77,7 @@ export async function startServer({ port = 0, host = "127.0.0.1", deps = depsFro
     try {
       const request = toRequest(req, origin);
       const local = deps.storage.handle && new URL(request.url).pathname.startsWith(STORAGE_PATH);
-      await send(res, local ? await deps.storage.handle(request) : await handle(request, deps));
+      await send(res, local ? await deps.storage.handle(request) : await handle(request, deps), req);
     } catch (error) {
       deps.log?.(error);
       if (!res.headersSent) res.writeHead(500, { "content-type": "application/json" }).end(JSON.stringify({ error: "the server failed to handle this request" }));

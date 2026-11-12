@@ -1,10 +1,11 @@
 // The repository the API is written against, kept in memory, for tests and local runs. A Postgres version with the
-// same methods comes in week 2 (cloud/migrations/001_init.sql is its schema). Every method is async so the two can
-// be swapped. Access key secrets are never stored: only their SHA-256.
+// same methods comes in week 2: cloud/migrations/001_init.sql is its schema, and the fields here are its columns in
+// camelCase (secretSha256 is secret_sha256). CONTRACT.md lists every method. Every method is async so the two can be
+// swapped. Access key secrets are never stored: only their SHA-256.
 import { hashSecret, KEY_PREFIX, newId, newSecret } from "../ids.mjs";
 
 /**
- * @typedef {object} RunRecord
+ * @typedef {object} RunRecord             a row of runs
  * @property {string} id                 minted by the server
  * @property {string} projectId
  * @property {string} clientRunId        the run folder name on the machine that pushed it
@@ -13,6 +14,7 @@ import { hashSecret, KEY_PREFIX, newId, newSecret } from "../ids.mjs";
  * @property {object} run                run.json (redacted)
  * @property {object} manifest           manifest.json (redacted)
  * @property {{ path: string, size: number, sha256: string, contentType: string, key: string }[]} files
+ * @property {string | null} keyId       the key that pushed it
  * @property {string} createdAt
  * @property {string | null} completedAt
  */
@@ -20,11 +22,12 @@ import { hashSecret, KEY_PREFIX, newId, newSecret } from "../ids.mjs";
 /** opts: { now: () => Date }. */
 export function memoryDb({ now = () => new Date() } = {}) {
   const projects = new Map();
-  const keys = new Map(); // hash -> key record
+  const keys = new Map(); // secretSha256 -> access_keys row
   const runs = new Map();
   const lines = { captures: [], activity: [] };
   const audit = [];
-  let seq = 0;
+  const pending = new Map(); // object key -> pending_deletions row
+  let serial = 0; // the identity columns of captures, activity and audit_log
   const stamp = () => now().toISOString();
   const copy = (v) => (v == null ? v : structuredClone(v));
 
@@ -39,18 +42,18 @@ export function memoryDb({ now = () => new Date() } = {}) {
     },
 
     /** A new write-only key for a project. The secret is returned once and not kept. */
-    async createAccessKey(projectId, { name = "default" } = {}) {
+    async createAccessKey(projectId, { name = "default", expiresAt = null } = {}) {
       if (!projects.has(projectId)) throw new Error(`no project ${projectId}`);
       const secret = newSecret();
-      const key = { id: newId("key"), projectId, name, prefix: secret.slice(0, 12), hash: hashSecret(secret), createdAt: stamp(), lastUsedAt: null, revokedAt: null };
-      keys.set(key.hash, key);
+      const key = { id: newId("key"), projectId, name, prefix: secret.slice(0, 12), secretSha256: hashSecret(secret), createdAt: stamp(), lastUsedAt: null, revokedAt: null, expiresAt };
+      keys.set(key.secretSha256, key);
       return { ...copy(key), secret };
     },
-    /** The live key for a secret, or null. */
+    /** The live key for a secret (not revoked, not expired), or null. */
     async findAccessKey(secret) {
       if (typeof secret !== "string" || !secret.startsWith(KEY_PREFIX)) return null;
       const key = keys.get(hashSecret(secret));
-      if (!key || key.revokedAt) return null;
+      if (!key || key.revokedAt || (key.expiresAt && key.expiresAt <= stamp())) return null;
       key.lastUsedAt = stamp();
       return copy(key);
     },
@@ -62,7 +65,7 @@ export function memoryDb({ now = () => new Date() } = {}) {
     async createRun(fields) {
       const existing = [...runs.values()].find((r) => r.projectId === fields.projectId && r.clientRunId === fields.clientRunId);
       if (existing) return { run: copy(existing), created: false };
-      const run = { ...copy(fields), id: fields.id || newId("run"), status: "uploading", createdAt: stamp(), completedAt: null, seq: ++seq };
+      const run = { keyId: null, ...copy(fields), id: fields.id || newId("run"), status: "uploading", createdAt: stamp(), completedAt: null };
       runs.set(run.id, run);
       return { run: copy(run), created: true };
     },
@@ -78,14 +81,15 @@ export function memoryDb({ now = () => new Date() } = {}) {
       Object.assign(run, copy(patch));
       return copy(run);
     },
-    /** Runs of a project, newest first (completed time, then created time). opts: { status }. */
+    /** Runs of a project, newest first: by completedAt (createdAt while uploading), then id. opts: { status }. */
     async listRuns(projectId, { status = null } = {}) {
       const order = (r) => r.completedAt || r.createdAt;
       return [...runs.values()]
         .filter((r) => r.projectId === projectId && (!status || r.status === status))
-        .sort((a, b) => order(b).localeCompare(order(a)) || b.seq - a.seq)
+        .sort((a, b) => order(b).localeCompare(order(a)) || b.id.localeCompare(a.id))
         .map(copy);
     },
+    /** Deletes the run and, as the schema's cascades do, its captures and activity lines. */
     async deleteRun(id) {
       runs.delete(id);
       for (const kind of Object.keys(lines)) lines[kind] = lines[kind].filter((l) => l.runId !== id);
@@ -94,14 +98,26 @@ export function memoryDb({ now = () => new Date() } = {}) {
     /** Store captures or activity lines that came with a run. */
     async addLines(kind, projectId, runId, values) {
       if (!lines[kind]) throw new Error(`unknown line kind ${kind}`);
-      for (const value of values) lines[kind].push({ projectId, runId, value: copy(value) });
+      for (const line of values) lines[kind].push({ id: ++serial, projectId, runId, line: copy(line), createdAt: stamp() });
     },
     async listLines(kind, runId) {
-      return lines[kind].filter((l) => l.runId === runId).map((l) => copy(l.value));
+      return lines[kind].filter((l) => l.runId === runId).map((l) => copy(l.line));
     },
 
-    async addAudit(entry) {
-      audit.push({ at: stamp(), ...copy(entry) });
+    /** Object keys of deleted runs, kept until storage confirms they are gone. */
+    async addPendingDeletions(projectId, objectKeys) {
+      for (const key of objectKeys) if (!pending.has(key)) pending.set(key, { key, projectId, createdAt: stamp() });
+    },
+    async listPendingDeletions(projectId) {
+      return [...pending.values()].filter((p) => p.projectId === projectId).map((p) => p.key);
+    },
+    async removePendingDeletions(objectKeys) {
+      for (const key of objectKeys) pending.delete(key);
+    },
+
+    /** entry: { projectId, userId, keyId, action, detail: an object (jsonb) }. */
+    async addAudit({ projectId = null, userId = null, keyId = null, action, detail = {} }) {
+      audit.push({ id: ++serial, at: stamp(), projectId, userId, keyId, action, detail: copy(detail) });
     },
     async listAudit() {
       return audit.map(copy);

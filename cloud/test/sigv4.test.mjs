@@ -50,16 +50,86 @@ test("presignPut signs content-length, content-type and the SHA-256 checksum int
   assert.equal(new URL(plain.url).searchParams.get("X-Amz-SignedHeaders"), "content-length;content-type;host");
 });
 
-test("head and delete send signed HEAD and DELETE requests and read the answers", async () => {
+test("head asks for the stored SHA-256 with a signed x-amz-checksum-mode and reads size, type and checksum", async () => {
+  const sha = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
   const calls = [];
-  const fetch = async (url, { method }) => {
-    calls.push([method, new URL(url).pathname, new URL(url).searchParams.has("X-Amz-Signature")]);
-    if (method === "HEAD") return new Response(null, { status: url.includes("missing") ? 404 : 200, headers: { "content-length": "42", "content-type": "image/png" } });
-    return new Response(null, { status: 204 });
+  const answers = { "x.png": hexToBase64(sha), "multipart.png": `${hexToBase64(sha)}-3`, "plain.png": null };
+  const fetch = async (url, { method, headers }) => {
+    const u = new URL(url);
+    calls.push([method, u.pathname, u.searchParams.get("X-Amz-SignedHeaders"), headers?.["x-amz-checksum-mode"]]);
+    const name = u.pathname.split("/").pop();
+    if (!(name in answers)) return new Response(null, { status: 404 });
+    return new Response(null, { status: 200, headers: { "content-length": "42", "content-type": "image/png", ...(answers[name] ? { "x-amz-checksum-sha256": answers[name] } : {}) } });
   };
   const storage = s3Storage({ ...AWS_EXAMPLE, bucket: "b", endpoint: "http://127.0.0.1:9000", fetch });
-  assert.deepEqual(await storage.head("p/r/x.png"), { size: 42, contentType: "image/png" });
+  assert.deepEqual(await storage.head("p/r/x.png"), { size: 42, contentType: "image/png", sha256: sha });
+  assert.deepEqual(await storage.head("p/r/multipart.png"), { size: 42, contentType: "image/png", sha256: null }, "a composite checksum is not the file's SHA-256");
+  assert.deepEqual(await storage.head("p/r/plain.png"), { size: 42, contentType: "image/png", sha256: null });
   assert.equal(await storage.head("p/r/missing.png"), null);
-  await storage.delete(["p/r/x.png", "p/r/y.png"]);
-  assert.deepEqual(calls, [["HEAD", "/b/p/r/x.png", true], ["HEAD", "/b/p/r/missing.png", true], ["DELETE", "/b/p/r/x.png", true], ["DELETE", "/b/p/r/y.png", true]]);
+  assert.deepEqual(calls[0], ["HEAD", "/b/p/r/x.png", "host;x-amz-checksum-mode", "ENABLED"]);
+});
+
+test("delete sends signed DELETEs at most 16 at a time", async () => {
+  let inFlight = 0;
+  let most = 0;
+  const deleted = [];
+  const fetch = async (url, { method }) => {
+    assert.equal(method, "DELETE");
+    assert.ok(new URL(url).searchParams.has("X-Amz-Signature"));
+    most = Math.max(most, ++inFlight);
+    await new Promise((r) => setTimeout(r, 2));
+    inFlight--;
+    deleted.push(new URL(url).pathname);
+    return new Response(null, { status: url.includes("gone") ? 404 : 204 });
+  };
+  const storage = s3Storage({ ...AWS_EXAMPLE, bucket: "b", endpoint: "http://127.0.0.1:9000", fetch });
+  const keys = Array.from({ length: 40 }, (_, i) => `p/r/${i}.png`).concat("p/r/gone.png");
+  await storage.delete(keys);
+  assert.deepEqual(deleted.sort(), keys.map((k) => `/b/${k}`).sort());
+  assert.equal(most, 16);
+  const failing = s3Storage({ ...AWS_EXAMPLE, bucket: "b", endpoint: "http://127.0.0.1:9000", fetch: async () => new Response(null, { status: 503 }) });
+  await assert.rejects(failing.delete(["p/r/x.png"]), /storage DELETE p\/r\/x\.png answered 503/);
+});
+
+test("list signs a ListObjectsV2 request offline and follows continuation tokens", async () => {
+  const date = new Date("2026-11-12T10:00:00Z");
+  const signed = presign({ ...AWS_EXAMPLE, method: "GET", url: "http://127.0.0.1:9000/b", query: { "list-type": "2", prefix: "prj_1/run_1/" }, expiresIn: 60, date });
+  assert.equal(signed.canonicalRequest, [
+    "GET",
+    "/b",
+    "X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAIOSFODNN7EXAMPLE%2F20261112%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20261112T100000Z&X-Amz-Expires=60&X-Amz-SignedHeaders=host&list-type=2&prefix=prj_1%2Frun_1%2F",
+    "host:127.0.0.1:9000",
+    "",
+    "host",
+    "UNSIGNED-PAYLOAD",
+  ].join("\n"));
+  assert.equal(signed.url, `http://127.0.0.1:9000/b?${signed.canonicalRequest.split("\n")[2]}&X-Amz-Signature=${signed.signature}`);
+
+  const pages = [
+    `<?xml version="1.0" encoding="UTF-8"?><ListBucketResult><Name>b</Name><Prefix>prj_1/run_1/</Prefix><IsTruncated>true</IsTruncated><NextContinuationToken>1/tok+en&amp;=</NextContinuationToken><Contents><Key>prj_1/run_1/screens/a.png</Key><Size>42</Size><ChecksumAlgorithm>SHA256</ChecksumAlgorithm></Contents><Contents><Key>prj_1/run_1/screens/Tom &amp; Jerry.png</Key><Size>7</Size></Contents></ListBucketResult>`,
+    `<?xml version="1.0" encoding="UTF-8"?><ListBucketResult><IsTruncated>false</IsTruncated><Contents><Key>prj_1/run_1/screens/b.webm</Key><Size>1000</Size></Contents></ListBucketResult>`,
+  ];
+  const urls = [];
+  const fetch = async (url, { method }) => {
+    assert.equal(method, "GET");
+    urls.push(url);
+    return new Response(pages[urls.length - 1], { status: 200, headers: { "content-type": "application/xml" } });
+  };
+  const storage = s3Storage({ ...AWS_EXAMPLE, bucket: "b", endpoint: "http://127.0.0.1:9000", fetch, now: () => date });
+  assert.deepEqual(await storage.list("prj_1/run_1/"), [
+    { key: "prj_1/run_1/screens/a.png", size: 42 },
+    { key: "prj_1/run_1/screens/Tom & Jerry.png", size: 7 },
+    { key: "prj_1/run_1/screens/b.webm", size: 1000 },
+  ]);
+  assert.equal(urls[0], signed.url, "the first page is exactly the request signed above");
+  const second = new URL(urls[1]);
+  assert.equal(second.searchParams.get("continuation-token"), "1/tok+en&=");
+  assert.equal(urls[1], presign({ ...AWS_EXAMPLE, method: "GET", url: "http://127.0.0.1:9000/b", query: { "list-type": "2", prefix: "prj_1/run_1/", "continuation-token": "1/tok+en&=" }, expiresIn: 60, date }).url);
+  assert.match(urls[1], /&continuation-token=1%2Ftok%2Ben%26%3D&list-type=2&prefix=/, "parameters in canonical order, RFC 3986 encoded");
+
+  const virtual = s3Storage({ ...AWS_EXAMPLE, bucket: "examplebucket", endpoint: "https://s3.amazonaws.com", pathStyle: false, fetch: async (url) => (urls.push(url), new Response("<ListBucketResult><IsTruncated>false</IsTruncated></ListBucketResult>")), now: () => date });
+  assert.deepEqual(await virtual.list("p/"), []);
+  assert.match(urls.at(-1), /^https:\/\/examplebucket\.s3\.amazonaws\.com\/\?X-Amz-Algorithm=/);
+  const refused = s3Storage({ ...AWS_EXAMPLE, bucket: "b", endpoint: "http://127.0.0.1:9000", fetch: async () => new Response("AccessDenied", { status: 403 }) });
+  await assert.rejects(refused.list("p/"), /storage LIST p\/ answered 403/);
 });
