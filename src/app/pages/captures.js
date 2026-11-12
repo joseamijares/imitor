@@ -1,7 +1,7 @@
 // Captures: screenshots and videos taken by agents, CI and people, grouped Today / Yesterday / Earlier.
 // Filters (All / Screenshots / Videos, Device, Captured by, Scheme) work on the loaded list.
 import { api } from "../api.js";
-import { html, raw, icon, seg, pill, avatar, codeBlock, safeUrl, skeletonRows, errorState, madeMark } from "../components.js";
+import { html, raw, icon, seg, pill, avatar, codeBlock, safeUrl, skeletonRows, errorState, madeMark, secretsMark } from "../components.js";
 import { dayGroup, deviceName, schemeName, humanize } from "../format.js";
 import { pageHeader } from "./common.js";
 import { withBase } from "../base.js";
@@ -133,7 +133,7 @@ function tile(c, group) {
         </button>`
       : html`<button type="button" class="thumb cap-thumb" data-open-shot="${url}" data-copy-link data-alt="${alt}" aria-label="Open ${alt} full size"><img src="${url}" alt="" loading="lazy"></button>`;
   return html`<figure class="cap-tile">
-    <div class="cap-media">${media}${standIns.length || c.state || c.seeded ? html`<span class="cap-standin">${standIns.length ? html`<span title="${`Stand-in: ${standIns.join(", ")}. This part is not drawn like the real app.`}">${pill("Stand-in", "warn")}</span>` : ""}${madeMark(c)}</span>` : ""}</div>
+    <div class="cap-media">${media}${standIns.length || c.state || c.seeded || c.secrets?.length ? html`<span class="cap-standin">${standIns.length ? html`<span title="${`Stand-in: ${standIns.join(", ")}. This part is not drawn like the real app.`}">${pill("Stand-in", "warn")}</span>` : ""}${madeMark(c)}${secretsMark(c)}</span>` : ""}</div>
     <figcaption>
       <span class="cap-title${video || !c.route ? "" : " mono"}" title="${alt}">${title}</span>
       <span class="cap-meta">${avatar(by)}<span class="cap-who" title="${`${by.name}${by.kind === "person" ? "" : ` (${by.kind})`}`}">${by.name}</span><span aria-hidden="true">·</span><time datetime="${c.at}">${clock(c.at, group)}</time></span>

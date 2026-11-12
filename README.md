@@ -331,7 +331,7 @@ What Imitor does with them:
 - Only flows in `imitor.config.json` can use them. Steps passed to `imitor screenshot --steps` or the `imitor_screenshot` tool cannot, so an agent cannot type an arbitrary variable into a field and screenshot it.
 - `imitor record` and `imitor_record_video` refuse a flow that uses them (or runs `after` one that does): a video shows every frame, and the masks do not reach it.
 - The live preview in `imitor app` stops before such a step and says so. The interface never receives the values.
-- Shots, flows, `describe` and the project data list the variables a flow uses under `secrets`, so a reviewer can tell those shots show a real backend.
+- Shots, flows, captures, `describe` and the project data list the variables a flow uses under `secrets`. The review interface marks those shots and captures "Uses secrets" (the variable names are in its tooltip), the live preview's Flow state panel lists them, and the pull-request comment notes them under each shot and counts them ("signed in with secrets in 3 shots"), so a reviewer can tell those shots may show a real account and real data.
 
 What it cannot do: **whatever the signed-in app shows is in the screenshots.** The account's name, email and data are on screen, and so in the report, the runs, the artifact, the `imitor-shots` branch and the comment, and an exported site. Masks cover the fields Imitor typed into, not the screens that follow. Nor can it stop an agent that can run shell commands in the same session from reading the variables directly (`env`). Treat these as limits of the feature, not settings.
 

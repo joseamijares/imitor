@@ -258,3 +258,89 @@ test("live driver: the interface drives the preview in its frame (tap, fill, res
   await page.evaluate(() => window.ask({ imitor: "reset", id: 4 }, "reset-done"));
   assert.deepEqual(await frame.evaluate(() => Object.keys(sessionStorage)), ["imitor-scheme"], "reset keeps only the imitor-* settings");
 });
+
+// ---------- values from the environment in the live preview ----------
+
+/** An app whose only flow signs in with { env } values, with one run whose shot carries `secrets`. */
+function signInFixture() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "imitor-app-"));
+  fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ name: "signin" }));
+  fs.writeFileSync(path.join(root, "imitor.config.json"), JSON.stringify({
+    secrets: ["TEST_EMAIL"],
+    devices: ["iphone-16"],
+    schemes: ["light"],
+    flows: [{ name: "sign-in", start: "/", steps: [{ tap: "Begin" }, { fill: { placeholder: "Email", value: { env: "TEST_EMAIL" } } }, { shot: "filled" }] }],
+  }));
+  const out = path.join(root, "preview");
+  fs.mkdirSync(path.join(out, "screens"), { recursive: true });
+  fs.mkdirSync(path.join(out, "app"), { recursive: true });
+  fs.writeFileSync(path.join(out, "app", "index.html"), patchHtml(`<!doctype html><html><head><title>signin</title></head><body>
+    <div role="button" id="begin" onclick="this.dataset.done='yes'"><span>Begin</span></div><input placeholder="Email"></body></html>`, { boot: false }));
+  const file = "screens/sign-in-filled-iphone-16-light.png";
+  fs.writeFileSync(path.join(out, file), "png");
+  const manifest = { commit: "c0ffee1", shots: [{ file, flow: "sign-in", shot: "filled", step: 3, device: "iphone-16", scheme: "light", route: "/", stubs: [], secrets: ["TEST_EMAIL"] }], problems: [] };
+  fs.writeFileSync(path.join(out, "manifest.json"), JSON.stringify(manifest));
+  const run = recordRun(out, { root, config: loadConfig(root), manifest, startedAt: "2026-11-12T09:00:00.000Z", by: { name: "GitHub Actions", kind: "ci" }, env: {} });
+  appendCapture(out, { kind: "screenshot", file, flow: "sign-in", device: "iphone-16", scheme: "light", by: { name: "Claude Code", kind: "agent" }, secrets: ["TEST_EMAIL"] });
+  return { root, run };
+}
+
+test("live driver: a step that fills from the environment is refused, and nothing is typed", async (t) => {
+  const { root } = signInFixture();
+  const appDir = path.join(root, "fake-app");
+  fs.mkdirSync(appDir);
+  fs.writeFileSync(path.join(appDir, "index.html"), `<!doctype html><iframe id="f"></iframe><script>
+    window.messages = [];
+    addEventListener("message", (e) => window.messages.push(e.data));
+    window.next = (kind, from) => new Promise((ok) => { const i = setInterval(() => { const m = window.messages.slice(from).find((x) => x.imitor === kind); if (m) { clearInterval(i); ok(m); } }, 20); });
+    window.ask = (msg, kind) => { const n = window.messages.length; document.getElementById("f").contentWindow.postMessage(msg, "*"); return window.next(kind, n); };
+  </script>`);
+  const server = await startAppServer(root, { port: 0, appDir });
+  t.after(() => server.close());
+  const { chromium } = (await import("node:module")).createRequire(import.meta.url)("playwright");
+  const browser = await chromium.launch();
+  t.after(() => browser.close());
+  const page = await browser.newPage();
+  await page.goto(server.url + "/live");
+  await page.evaluate((url) => { document.getElementById("f").src = url + "/"; return window.next("ready", 0); }, server.previewUrl);
+  const frame = page.frames().find((x) => x !== page.mainFrame());
+  const r = await page.evaluate(() => window.ask({ imitor: "step", id: 1, step: { fill: { placeholder: "Email", value: { env: "TEST_EMAIL" } } } }, "step-done"));
+  assert.equal(r.ok, false);
+  assert.match(r.error, /fills a value from the environment, which the live preview does not replay/);
+  assert.equal(await frame.evaluate(() => document.querySelector("input").value), "", "not even \"[object Object]\" is typed");
+});
+
+test("live preview: a replay stops before a step that fills from the environment and says why; tiles are marked", async (t) => {
+  const { root, run } = signInFixture();
+  const server = await startAppServer(root, { port: 0 });
+  t.after(() => server.close());
+  const project = await (await fetch(server.url + "/api/project")).json();
+  assert.deepEqual(project.flows[0].secrets, ["TEST_EMAIL"]);
+  assert.deepEqual(project.flows[0].steps[1].step, { fill: { placeholder: "Email", value: { env: "TEST_EMAIL" } } }, "the interface gets the reference only");
+  const { chromium } = (await import("node:module")).createRequire(import.meta.url)("playwright");
+  const browser = await chromium.launch();
+  t.after(() => browser.close());
+  const page = await browser.newPage();
+
+  await page.goto(server.url + "/live?flow=sign-in&step=3");
+  const alert = page.locator("[role=alert]");
+  await alert.waitFor({ timeout: 15000 });
+  const text = await alert.innerText();
+  assert.match(text, /step 02/i);
+  assert.match(text, /fills TEST_EMAIL from the environment, which the live preview does not replay/);
+  const frame = page.frames().find((x) => x.url().startsWith(server.previewUrl));
+  assert.ok(frame, "the preview is open in the device frame");
+  assert.equal(await frame.evaluate(() => document.getElementById("begin").dataset.done), "yes", "the steps before it ran");
+  assert.equal(await frame.evaluate(() => document.querySelector("input").value), "", "the field was not filled");
+  await page.getByText("Fills from").waitFor({ timeout: 5000 });
+  assert.match(await page.locator(".insp-section", { hasText: "Flow state" }).innerText(), /Fills from TEST_EMAIL[\s\S]*Not replayed here/);
+
+  await page.goto(server.url + `/runs/${run.id}/shots`);
+  const runMark = page.locator(".secrets-mark").first();
+  await runMark.waitFor({ timeout: 10000 });
+  assert.equal(await runMark.innerText(), "Uses secrets");
+  assert.match(await runMark.getAttribute("title"), /values from TEST_EMAIL\. This shot may show a real account/);
+
+  await page.goto(server.url + "/captures");
+  await page.locator(".secrets-mark").first().waitFor({ timeout: 10000 });
+});
