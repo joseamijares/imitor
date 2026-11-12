@@ -107,6 +107,24 @@ test("metro: the canvaskit kind leaves @shopify/react-native-skia to the real re
   }
 });
 
+test("metro: a boot kind given only in withImitor's options is refused, since imitor build would not load its library", () => {
+  const root = tmp();
+  write(path.join(root, "imitor.config.json"), JSON.stringify({ shims: { "expo-sqlite": "sqljs" } }));
+  const before = process.env.IMITOR;
+  process.env.IMITOR = "1";
+  try {
+    const { withImitor } = require("../src/metro.cjs");
+    const config = { projectRoot: root, resolver: {} };
+    assert.throws(() => withImitor(config, { shims: { "@shopify/react-native-skia": "canvaskit" } }), /withImitor: set "@shopify\/react-native-skia": "canvaskit" in imitor\.config\.json "shims"/);
+    assert.throws(() => withImitor({ projectRoot: tmp(), resolver: {} }, { shims: { "expo-sqlite": "sqljs" } }), /"expo-sqlite": "sqljs" in imitor\.config\.json/);
+    // Kinds that need nothing loaded first, and boot kinds the config already lists, are fine.
+    assert.ok(withImitor(config, { shims: { "expo-sqlite": "sqljs", "react-native-maps": "inert", "some-sdk": "./stand-ins/sdk.js" } }).resolver.resolveRequest);
+  } finally {
+    if (before === undefined) delete process.env.IMITOR;
+    else process.env.IMITOR = before;
+  }
+});
+
 test("describe and the review interface list canvaskit as genuine and skia as a stand-in", () => {
   const root = fakeApp();
   fs.writeFileSync(path.join(root, "imitor.config.json"), JSON.stringify({ shims: { "@shopify/react-native-skia": "canvaskit", "expo-sqlite": "sqljs", "react-native-maps": "inert" } }));
