@@ -79,3 +79,21 @@ test("the site builds with an empty environment and never reads it (its Vercel p
     for (const f of files) assert.doesNotMatch(fs.readFileSync(path.join(ROOT, dir, f), "utf8"), /process\.env/, `${dir}/${f}`);
   }
 });
+
+test("the privacy and terms pages are built, linked from every page, and match what the code keeps", async () => {
+  const { KEEP_RUNS } = await import("../src/store.mjs");
+  for (const key of ["privacy", "terms"]) {
+    const html = fs.readFileSync(path.join(out, key, "index.html"), "utf8");
+    assert.doesNotMatch(html, /\{\{\w+\}\}/, `${key} has an unfilled placeholder`);
+    assert.match(html, /mailto:/, `${key} gives a contact address`);
+    assert.doesNotMatch(html, /class="source"/, `${key} does not claim to come from the README`);
+  }
+  for (const page of ["index.html", "how-to-use/index.html", "agents/index.html", "404.html", "privacy/index.html"]) {
+    const html = fs.readFileSync(path.join(out, page), "utf8");
+    assert.match(html, /href="\/privacy\/"/, `${page} links to the privacy page`);
+    assert.match(html, /href="\/terms\/"/, `${page} links to the terms`);
+  }
+  const privacy = decode(fs.readFileSync(path.join(out, "privacy", "index.html"), "utf8"));
+  assert.match(privacy, new RegExp(`newest ${KEEP_RUNS} per project`), "the retention stated matches KEEP_RUNS");
+  assert.match(privacy, /openid.*email.*profile/s, "the Google scopes stated match the sign-in");
+});
