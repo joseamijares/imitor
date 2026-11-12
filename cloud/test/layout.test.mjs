@@ -1,0 +1,25 @@
+// The licence boundary: src/ (MIT) never depends on cloud/ (AGPL), and the npm package leaves cloud/ out.
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import test from "node:test";
+import { fileURLToPath } from "node:url";
+
+const ROOT = fileURLToPath(new URL("../../", import.meta.url));
+
+test("nothing in src/ imports from cloud/", () => {
+  const files = fs.readdirSync(path.join(ROOT, "src"), { recursive: true }).filter((f) => /\.(mjs|cjs|js)$/.test(f));
+  assert.ok(files.length > 10);
+  for (const f of files) assert.doesNotMatch(fs.readFileSync(path.join(ROOT, "src", f), "utf8"), /cloud\//, f);
+});
+
+test("the npm package excludes cloud/, and cloud/ is AGPL with no dependencies", () => {
+  const root = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
+  assert.ok(!root.files.some((f) => f.startsWith("cloud")));
+  assert.equal(root.license, "MIT");
+  const cloud = JSON.parse(fs.readFileSync(path.join(ROOT, "cloud", "package.json"), "utf8"));
+  assert.equal(cloud.license, "AGPL-3.0-only");
+  assert.equal(cloud.private, true);
+  assert.equal(cloud.dependencies, undefined);
+  assert.match(fs.readFileSync(path.join(ROOT, "cloud", "LICENSE"), "utf8"), /^\s+GNU AFFERO GENERAL PUBLIC LICENSE\s+Version 3, 19 November 2007/);
+});

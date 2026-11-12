@@ -78,7 +78,7 @@ preview/
 
    `imitor build` runs `expo export --platform web` with your environment, so `EXPO_PUBLIC_*` values are inlined into the build as usual. If the app needs them to start (a backend URL, a public key), pass harmless placeholders for that command rather than real ones, for example `EXPO_PUBLIC_API_URL=http://127.0.0.1:9 npx imitor build`; the app then sees an unreachable backend.
 
-Other commands: `imitor build`, `imitor shoot` (reuse the last build), `imitor serve` (click around by hand), `imitor app` (the review interface), `imitor export` (the interface as a static site).
+Other commands: `imitor build`, `imitor shoot` (reuse the last build), `imitor serve` (click around by hand), `imitor app` (the review interface), `imitor export` (the interface as a static site), `imitor push` (uploads a run to an Imitor Cloud instance; in development).
 
 ## For agents
 

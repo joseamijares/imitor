@@ -31,6 +31,8 @@ Usage (run in the app's folder):
   imitor app [--port n]     open the review interface on this machine (runs, captures, problems, agents)
   imitor export             write the interface and its data as a read-only static site:
                             [--out dir] (default <out>/site) [--preview-url url] [--demo]
+  imitor push [--run id]    upload a run (default the newest) to an Imitor Cloud instance (in development);
+                            needs IMITOR_CLOUD_URL and IMITOR_TOKEN
 
 For agents and scripts (each prints JSON):
   imitor describe           flows, devices and stand-ins configured for this app
@@ -66,6 +68,15 @@ export async function main(args) {
     console.log(`Exported ${site.runs} run${site.runs === 1 ? "" : "s"} and ${site.files} file${site.files === 1 ? "" : "s"} (${mb} MB) to ${path.relative(root, site.dir).startsWith("..") ? site.dir : path.relative(root, site.dir)}`);
     if (site.missing.length) console.log(`${site.missing.length} referenced file${site.missing.length === 1 ? " is" : "s are"} no longer on disk and will not load, e.g. ${site.missing[0]}`);
     console.log("It is read-only and holds this project's screenshots: publish it only where they may be seen. Serve it at the root of a domain.");
+    return;
+  }
+  if (command === "push") {
+    if (opts.run === true) throw new Error("--run needs a run id");
+    const { push } = await import("./push.mjs");
+    const result = await push(root, { run: opts.run || null, cloudUrl: process.env.IMITOR_CLOUD_URL, token: process.env.IMITOR_TOKEN });
+    const sent = result.uploaded === result.files ? `${result.files} file${result.files === 1 ? "" : "s"}` : `${result.uploaded} of ${result.files} files; the rest were already there`;
+    console.log(`Pushed run ${result.clientRunId} (${sent}): ${result.url}`);
+    if (result.skipped.length) console.log(`Left out ${result.skipped.length} file${result.skipped.length === 1 ? "" : "s"} of a type the cloud does not take, e.g. ${result.skipped[0]}`);
     return;
   }
   if (command === "describe") return print(describe(root));
