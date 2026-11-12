@@ -26,6 +26,8 @@ Usage (run in the app's folder):
   imitor build              only build the web preview into <out>/app
   imitor shoot              only run the flows from an existing build
   imitor serve              serve an existing build for manual clicking
+  imitor gate               build, run every flow, and exit non-zero if the run should block a native build:
+                            [--fail-on flows|errors|stand-ins] [--no-build] [--json]
   imitor app [--port n]     open the review interface on this machine (runs, captures, problems, agents)
   imitor export             write the interface and its data as a read-only static site:
                             [--out dir] (default <out>/site) [--preview-url url] [--demo]
@@ -86,13 +88,19 @@ export async function main(args) {
   const appDir = path.join(root, config.out, "app");
   const startedAt = new Date().toISOString();
 
-  if (command === "build" || command === "all") build(root, config);
+  const gate = command === "gate";
+  if (gate) {
+    // Check the policy before the build, not a minute later.
+    const { FAIL_ON } = await import("./gate.mjs");
+    if (opts.failOn !== undefined && !FAIL_ON.includes(opts.failOn)) throw new Error(`--fail-on must be one of ${FAIL_ON.join(", ")}`);
+  }
+  if (command === "build" || command === "all" || (gate && !opts.noBuild)) build(root, config, { quiet: gate && opts.json === true });
   if (command === "build") return;
   if (!fs.existsSync(path.join(appDir, "index.html"))) throw new Error(`no build at ${appDir}. Run: imitor build`);
 
   const server = await serve(appDir);
   if (command === "serve") return console.log(`Serving ${appDir} at ${server.url} (Ctrl+C to stop)`);
-  if (command !== "shoot" && command !== "all") {
+  if (command !== "shoot" && command !== "all" && !gate) {
     server.close();
     throw new Error(`unknown command "${command}"\n\n${HELP}`);
   }
@@ -100,7 +108,16 @@ export async function main(args) {
     const result = await shoot(root, config, server.url);
     const manifest = writeReport(root, config, result);
     recordRun(path.join(root, config.out), { root, config, manifest, startedAt, by: resolveBy({ root }) });
-    console.log(`imitor: ${result.shots.length} shots, ${result.problems.length} problems -> ${path.join(config.out, "index.html")}`);
+    const report = path.join(config.out, "index.html");
+    if (gate) {
+      const { evaluate, formatText, reportToGitHub } = await import("./gate.mjs");
+      const verdict = evaluate(manifest, { failOn: opts.failOn || "flows" });
+      console.log(opts.json === true ? JSON.stringify({ ...verdict, report }, null, 2) : formatText(verdict, report));
+      reportToGitHub(verdict, report);
+      if (!verdict.passed) process.exitCode = 1;
+      return;
+    }
+    console.log(`imitor: ${result.shots.length} shots, ${result.problems.length} problems -> ${report}`);
     if (result.problems.some((p) => p.kind === "flow-failed")) process.exitCode = 1;
   } finally {
     server.close();

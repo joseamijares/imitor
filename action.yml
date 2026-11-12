@@ -1,0 +1,65 @@
+name: Imitor gate
+description: Build an Expo app's web imitation, run its flows, and fail the job if the run should block a native build.
+branding:
+  icon: layers
+  color: yellow
+inputs:
+  working-directory:
+    description: The app's folder (where imitor.config.json is).
+    default: "."
+  fail-on:
+    description: "What blocks: flows (a flow failed), errors (also page errors), or stand-ins (also any shot with a stand-in)."
+    default: flows
+  install-browser:
+    description: Install Chromium for Playwright before running. Turn off if your job already has it.
+    default: "true"
+  upload-report:
+    description: Upload the report (page, manifest and screenshots) as an artifact, pass or fail.
+    default: "true"
+  artifact-name:
+    description: Name of the uploaded artifact.
+    default: imitor-report
+  output-directory:
+    description: Imitor's output folder inside the working directory ("out" in imitor.config.json).
+    default: preview
+outputs:
+  passed:
+    description: "true or false"
+    value: ${{ steps.gate.outputs.passed }}
+  shots:
+    description: Number of shots taken
+    value: ${{ steps.gate.outputs.shots }}
+  failed-flows:
+    description: Number of flows that failed
+    value: ${{ steps.gate.outputs.failed-flows }}
+  page-errors:
+    description: Number of page errors seen
+    value: ${{ steps.gate.outputs.page-errors }}
+  stand-ins:
+    description: Comma-separated stand-ins seen in shots
+    value: ${{ steps.gate.outputs.stand-ins }}
+runs:
+  using: composite
+  steps:
+    - name: Install Chromium
+      if: inputs.install-browser == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: npx playwright install --with-deps chromium
+    - name: Run the gate
+      id: gate
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        IMITOR_FAIL_ON: ${{ inputs.fail-on }}
+      run: npx imitor gate --fail-on "$IMITOR_FAIL_ON"
+    - name: Upload the report
+      if: always() && inputs.upload-report == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        if-no-files-found: ignore
+        path: |
+          ${{ inputs.working-directory }}/${{ inputs.output-directory }}/index.html
+          ${{ inputs.working-directory }}/${{ inputs.output-directory }}/manifest.json
+          ${{ inputs.working-directory }}/${{ inputs.output-directory }}/screens
