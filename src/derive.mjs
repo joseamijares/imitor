@@ -41,7 +41,8 @@ export function flowDetail(config, manifest) {
           if (shot) return { index, name: step.shot, status: shot.stubs.length ? "stand-in" : "ok", shot: shot.file, route: shot.route, standIns: shot.stubs, state: shot.state ?? null, seeded: shot.seeded === true, secrets: Array.isArray(shot.secrets) ? shot.secrets : [] };
           if (failure && !failedMarked && (failure.step == null || index >= failure.step)) {
             failedMarked = true;
-            return { index, name: step.shot, status: "failed", shot: failure.file || null, route: null, standIns: [] };
+            // The failure screenshot is taken after the flow's fills, so it may show what the secrets signed in to.
+            return { index, name: step.shot, status: "failed", shot: failure.file || null, route: null, standIns: [], secrets: flowSecrets(config, flow) };
           }
           return { index, name: step.shot, status: "not-reached", shot: null, route: null, standIns: [] };
         });

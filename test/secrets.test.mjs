@@ -19,6 +19,7 @@ import { publishShots } from "../src/publish.mjs";
 import { buildUpload } from "../src/push.mjs";
 import { writeReport } from "../src/report.mjs";
 import { HIDDEN, checkSecrets, publicStep, refuseSecretRefs, resolveValue, scrub, scrubForRoot, secretValues, secretsUsed } from "../src/secrets.mjs";
+import { flowDetail } from "../src/derive.mjs";
 import { serve } from "../src/serve.mjs";
 import { shoot } from "../src/shoot.mjs";
 import { recordCaptures, recordRun } from "../src/store.mjs";
@@ -73,6 +74,14 @@ test("publicStep hides every fill value; scrub removes secret values from any te
   assert.throws(() => refuseSecretRefs([{ tap: "x" }, { fill: { placeholder: "P", value: { env: "PW" } } }]), /step 2: values from the environment can only be used in flows in imitor.config.json/);
   refuseSecretRefs([{ fill: { placeholder: "P", value: "literal" } }]);
   refuseSecretRefs(undefined);
+});
+
+test("run tiles: a failed step of a flow that uses secrets carries their names, like its shots", () => {
+  const config = { devices: [{ name: "iphone-16" }], schemes: ["light"], flows: [{ name: "sign-in", steps: [{ fill: { placeholder: "Email", value: { env: "TEST_EMAIL" } } }, { tap: "Sign in" }, { shot: "today" }] }, { name: "plain", steps: [{ tap: "Go" }, { shot: "home" }] }] };
+  const failed = (flow) => ({ kind: "flow-failed", flow, device: "iphone-16", scheme: "light", step: 2, file: `screens/${flow}-FAILED.png` });
+  const tiles = flowDetail(config, { shots: [], problems: [failed("sign-in"), failed("plain")] });
+  assert.deepEqual(tiles.find((f) => f.name === "sign-in").steps[0], { index: 3, name: "today", status: "failed", shot: "screens/sign-in-FAILED.png", route: null, standIns: [], secrets: ["TEST_EMAIL"] });
+  assert.deepEqual(tiles.find((f) => f.name === "plain").steps[0].secrets, []);
 });
 
 test("scrubForRoot reads the names from imitor.config.json and never throws", () => {
