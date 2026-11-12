@@ -342,13 +342,13 @@ export const CONNECT_COMMANDS = {
 export function agentsData(out, tools, now = new Date()) {
   const lines = readLines(activityFile(out));
   const weekAgo = now.getTime() - 7 * 24 * 3600 * 1000;
-  const today = now.toDateString();
+  const dayAgo = now.getTime() - 24 * 3600 * 1000;
   const connections = new Map();
   for (const line of lines) {
     const t = new Date(line.at).getTime();
     if (!(t >= weekAgo) || !line.by?.name) continue;
-    const c = connections.get(line.by.name) || { name: line.by.name, kind: line.by.kind, callsToday: 0, lastAt: line.at, active: false };
-    if (new Date(line.at).toDateString() === today) c.callsToday++;
+    const c = connections.get(line.by.name) || { name: line.by.name, kind: line.by.kind, calls24h: 0, lastAt: line.at, active: false };
+    if (t >= dayAgo) c.calls24h++; // a rolling day, so the count does not drop to zero at midnight
     if (line.at > c.lastAt) c.lastAt = line.at;
     connections.set(line.by.name, c);
   }

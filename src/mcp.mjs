@@ -62,7 +62,7 @@ export function createServer(root) {
     },
     imitor_read_problems: async () => {
       const result = readProblems(root);
-      return { content: [text(result)], summary: `read ${plural(result.problems.length, "problem")}` };
+      return { content: [text(result)], summary: `read the last run: ${plural(result.problems.length, "problem")}, ${plural(result.standInsSeen.length, "stand-in")}` };
     },
     imitor_open_preview: async (args) => {
       const config = loadConfig(root);

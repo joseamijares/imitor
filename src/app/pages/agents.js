@@ -130,7 +130,7 @@ function connection(c) {
   return html`<li class="conn">
     ${avatar(by, 24)}
     <div class="conn-name"><div class="conn-title"><span>${c.name}</span>${c.active ? pill("Active now", "ok") : ""}</div><div class="t3 conn-sub">${KIND_NOTE[c.kind] || c.kind || ""}</div></div>
-    <span class="conn-calls"><span>${c.callsToday ?? 0}</span><span class="mono t3">${c.callsToday === 1 ? "call today" : "calls today"}</span></span>
+    <span class="conn-calls"><span>${c.calls24h ?? 0}</span><span class="mono t3">${c.calls24h === 1 ? "call in 24 h" : "calls in 24 h"}</span></span>
     <span class="conn-last t3">${c.lastAt ? html`<time datetime="${c.lastAt}" title="${new Date(c.lastAt).toLocaleString()}">${last}</time>` : ""}</span>
   </li>`;
 }

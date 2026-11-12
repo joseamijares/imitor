@@ -40,13 +40,16 @@ export async function mount(ctx) {
   const content = main.querySelector(".content");
 
   const visible = () => flows.filter((f) => f.device === device && f.scheme === scheme);
-  const openProblems = problems.filter((p) => !p.seen).length;
+  // The count matches run.problems everywhere: failed steps and page errors. Stand-ins are listed in the tab but not counted.
+  const failures = problems.filter((p) => p.kind !== "stand-in");
+  const openProblems = failures.filter((p) => !p.seen).length;
 
   function renderBar() {
-    const shots = visible().reduce((n, f) => n + f.steps.length, 0);
+    // The run's total, the same number the Runs list and the live preview show (not just the device and scheme in view).
+    const shots = run.shots ?? visible().reduce((n, f) => n + f.steps.length, 0);
     const t = (key, label, count, bad) => html`<a class="tab" href="${base}${key === "shots" ? "" : "/" + key}${key === "shots" ? query() : ""}"${key === tab ? raw(' aria-current="page"') : ""}>${label}${count != null ? html`<span class="count${bad ? " bad" : ""}">${count}</span>` : ""}</a>`;
     bar.innerHTML = String(html`<nav class="tabs" aria-label="Run">
-        ${t("shots", "Shots", shots)}${t("live", "Live")}${t("problems", "Problems", problems.length || null, openProblems > 0)}${t("captures", "Captures")}
+        ${t("shots", "Shots", shots)}${t("live", "Live")}${t("problems", "Problems", failures.length || null, openProblems > 0)}${t("captures", "Captures")}
       </nav>
       ${tab === "shots" ? html`<div class="toolbar-group">
         ${seg("device", devices.map((d) => ({ value: d, label: deviceName(d) })), device, "Device")}

@@ -209,6 +209,16 @@ test("captures: one line per screenshot, one per flow shot, one per video; newes
   assert.equal(captures[2].route, "/plants");
 });
 
+test("agents: the call count is a rolling 24 hours, so it survives midnight", () => {
+  const f = fixture();
+  const claude = { name: "Claude Code", kind: "agent" };
+  appendActivity(f.out, { at: "2026-11-11T23:50:00.000Z", by: claude, tool: "imitor_screenshot", text: "took a screenshot" });
+  appendActivity(f.out, { at: "2026-11-11T23:55:00.000Z", by: claude, tool: "imitor_screenshot", text: "took a screenshot" });
+  appendActivity(f.out, { at: "2026-11-10T22:00:00.000Z", by: claude, tool: "imitor_build", text: "built the preview" });
+  const justAfterMidnight = agentsData(f.out, [], new Date("2026-11-12T00:10:00.000Z"));
+  assert.equal(justAfterMidnight.connections[0].calls24h, 2);
+});
+
 test("agents: connections from the last 7 days, active within 2 minutes, latest 50 calls", () => {
   const f = fixture();
   const now = new Date("2026-11-11T12:00:00.000Z");
@@ -220,7 +230,7 @@ test("agents: connections from the last 7 days, active within 2 minutes, latest 
   const data = agentsData(f.out, [{ name: "imitor_build", description: "Build it.", inputSchema: {} }], now);
   assert.equal(data.commands["Claude Code"], "claude mcp add imitor -- npx imitor mcp");
   assert.deepEqual(data.tools, [{ name: "imitor_build", description: "Build it." }]);
-  assert.deepEqual(data.connections.map((c) => [c.name, c.callsToday, c.active]), [["Claude Code", 55, true], ["Cursor", 0, false]]);
+  assert.deepEqual(data.connections.map((c) => [c.name, c.calls24h, c.active]), [["Claude Code", 55, true], ["Cursor", 0, false]]);
   assert.equal(data.activity.length, 50);
   assert.equal(data.activity[0].ok, false);
   assert.deepEqual(Object.keys(data.activity[0]), ["at", "by", "tool", "text", "ok"]);

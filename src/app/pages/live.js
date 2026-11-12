@@ -87,8 +87,9 @@ function createLive(ctx, project, detail) {
     if (firstShot && (!first || first.index > firstShot.index)) st.current = { flow: flows[0].name, index: firstShot.index };
   }
 
-  const shotsCount = detail ? detail.flows.reduce((n, f) => n + f.steps.filter((s) => s.shot).length, 0) : null;
-  const problems = detail ? { total: detail.problems.length, open: detail.problems.filter((p) => !p.seen).length } : null;
+  const shotsCount = detail ? (detail.run?.shots ?? detail.flows.reduce((n, f) => n + f.steps.filter((s) => s.shot).length, 0)) : null;
+  const failures = detail ? detail.problems.filter((p) => p.kind !== "stand-in") : [];
+  const problems = detail ? { total: failures.length, open: failures.filter((p) => !p.seen).length } : null;
   document.title = `${run ? `${run.pr != null ? `#${run.pr} ` : ""}${run.title || run.id}` : "Latest build"} · Live · Imitor`;
   main.innerHTML = String(html`${topBar({ runId, project, run, problems, shots: shotsCount, builtAt: project.builtAt })}
     <div class="live-body">
