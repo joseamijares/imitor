@@ -5,13 +5,14 @@
 //   state.json                                        { seenProblems: [...], unseenProblems: [...] }
 // Every function takes `out`, the absolute path of the output folder.
 import { execSync } from "node:child_process";
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { stateInfo } from "./state.mjs";
+import { agentsSummary, captureEntries, flowDetail, listEntry, problemsAcross, PROBLEM_RUNS, runDetail, runProblems, runStatus, SCHEMA_VERSION, withSeen } from "./derive.mjs";
+
+// Imported from here before derive.mjs existed.
+export { CONNECT_COMMANDS, fileUrl, flowDetail, PROBLEM_RUNS, runStatus, SCHEMA_VERSION, schemaVersionOf } from "./derive.mjs";
 
 export const KEEP_RUNS = 50;
-export const PROBLEM_RUNS = 20;
 
 const readJson = (file, fallback) => {
   try {
@@ -34,7 +35,6 @@ const appendLine = (file, value) => {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.appendFileSync(file, JSON.stringify(value) + "\n");
 };
-const fileUrl = (rel) => (rel ? "/files/" + rel.split(path.sep).map(encodeURIComponent).join("/") : null);
 const stamp = (date) => new Date(date).toISOString().replace(/[-:]/g, "").slice(0, 15); // 20261111T185759
 
 function git(root, args) {
@@ -83,46 +83,6 @@ export function resolveBy({ clientName, env = process.env, root = process.cwd() 
 const runsDir = (out) => path.join(out, "runs");
 const SAFE_ID = /^[A-Za-z0-9-]+$/;
 
-/** "first-run / iphone-16 / light" from manifests written before problems carried these fields. */
-function locate(problem) {
-  const [flow, device, scheme] = String(problem.where || "").split(" / ");
-  return { flow: problem.flow ?? flow ?? null, device: problem.device ?? device ?? null, scheme: problem.scheme ?? scheme ?? null };
-}
-
-/** One entry per flow, device and scheme, with a tile per shot step. Paths are relative to the run folder. */
-export function flowDetail(config, manifest) {
-  const flows = [];
-  for (const flow of config.flows) {
-    const shotSteps = (flow.steps || []).map((step, i) => ({ step, index: i + 1 })).filter((s) => s.step.shot);
-    for (const device of config.devices) {
-      for (const scheme of config.schemes) {
-        const here = (x) => x.flow === flow.name && x.device === device.name && x.scheme === scheme;
-        const failure = manifest.problems.find((p) => p.kind === "flow-failed" && here(locate(p)));
-        let failedMarked = false;
-        const steps = shotSteps.map(({ step, index }) => {
-          const shot = manifest.shots.find((s) => here(s) && s.shot === step.shot);
-          // state and seeded: whether the shot shows invented data (a state label for the stand-ins, or a seed).
-          if (shot) return { index, name: step.shot, status: shot.stubs.length ? "stand-in" : "ok", shot: shot.file, route: shot.route, standIns: shot.stubs, state: shot.state ?? null, seeded: shot.seeded === true };
-          if (failure && !failedMarked && (failure.step == null || index >= failure.step)) {
-            failedMarked = true;
-            return { index, name: step.shot, status: "failed", shot: failure.file || null, route: null, standIns: [] };
-          }
-          return { index, name: step.shot, status: "not-reached", shot: null, route: null, standIns: [] };
-        });
-        const status = failure ? "failed" : steps.some((s) => s.status === "stand-in") ? "stand-ins" : "passed";
-        flows.push({ name: flow.name, status, device: device.name, scheme, ...stateInfo(flow), steps });
-      }
-    }
-  }
-  return flows;
-}
-
-export function runStatus(manifest) {
-  if (manifest.problems.some((p) => p.kind === "flow-failed" || p.kind === "seed-failed")) return "failed";
-  if (manifest.shots.some((s) => s.stubs.length)) return "stand-ins";
-  return "passed";
-}
-
 /**
  * Keep a copy of the run that just finished (its manifest and screens, already written at the top of `out`)
  * under runs/<runId>/, then prune to the newest KEEP_RUNS. `git` ({ branch, commit, subject }) replaces reading the
@@ -138,6 +98,7 @@ export function recordRun(out, { root, config, manifest, startedAt, finishedAt =
   if (fs.existsSync(path.join(out, "screens"))) fs.cpSync(path.join(out, "screens"), path.join(dir, "screens"), { recursive: true });
   fs.writeFileSync(path.join(dir, "manifest.json"), JSON.stringify(manifest, null, 2));
   const run = {
+    schemaVersion: SCHEMA_VERSION,
     id,
     status: runStatus(manifest),
     title: info.subject || "No commit",
@@ -171,9 +132,6 @@ function runIds(out) {
   return fs.readdirSync(runsDir(out), { withFileTypes: true }).filter((e) => e.isDirectory() && SAFE_ID.test(e.name)).map((e) => e.name).sort().reverse();
 }
 
-const LIST_FIELDS = ["id", "status", "title", "pr", "branch", "commit", "by", "shots", "problems", "startedAt", "finishedAt"];
-const listEntry = (run) => Object.fromEntries(LIST_FIELDS.map((k) => [k, run[k] ?? null]));
-
 function loadRun(out, id) {
   if (!SAFE_ID.test(String(id))) return null;
   const dir = path.join(runsDir(out), id);
@@ -191,82 +149,15 @@ export function listRuns(out) {
 export function readRun(out, id) {
   const loaded = loadRun(out, id);
   if (!loaded) return null;
-  const { run } = loaded;
-  const url = (rel) => fileUrl(rel && path.join("runs", run.id, rel));
-  return {
-    run: listEntry(run),
-    devices: run.devices,
-    schemes: run.schemes,
-    flows: run.flows.map((f) => ({ ...f, steps: f.steps.map((s) => ({ ...s, shot: url(s.shot) })) })),
-    problems: problemsOfRun(out, run.id),
-  };
+  return runDetail(loaded.run, problemsOfRun(out, loaded.run.id));
 }
 
 // ---------- problems ----------
 
-const problemId = (runId, kind, flow, device, scheme, message) =>
-  "p_" + crypto.createHash("sha1").update(JSON.stringify([runId, kind, flow, device, scheme, message])).digest("hex").slice(0, 12);
-
-/** Problems of one run, before seen state is applied. `previous` is the run before it, for new-stand-in detection. */
-function runProblems(loaded, previous) {
-  const { run, manifest } = loaded;
-  const url = (rel) => fileUrl(rel && path.join("runs", run.id, rel));
-  const ref = { id: run.id, pr: run.pr, commit: run.commit, title: run.title };
-  const out = [];
-  for (const p of manifest.problems) {
-    if (p.kind !== "flow-failed" && p.kind !== "page-error" && p.kind !== "dialog" && p.kind !== "seed-failed") continue;
-    const { flow, device, scheme } = locate(p);
-    const failed = p.kind === "flow-failed";
-    out.push({
-      id: problemId(run.id, p.kind, flow, device, scheme, p.message),
-      kind: p.kind,
-      title: failed ? (p.step ? `${flow} failed at step ${p.step}` : `${flow} failed before its first step`) : p.kind === "dialog" ? `Dialog in ${flow}${p.step ? ` at step ${p.step}` : ""}` : p.kind === "seed-failed" ? `Seed problem in ${flow}` : `Page error in ${flow}`,
-      run: ref,
-      device,
-      scheme,
-      at: run.finishedAt,
-      autoSeen: false,
-      detail: {
-        message: p.message,
-        flow,
-        step: failed ? p.step ?? null : null,
-        stepConfig: failed ? p.stepConfig ?? null : null,
-        lastGoodShot: failed ? url(p.lastGoodShot) : null,
-        failureShot: failed ? url(p.file) : null,
-      },
-    });
-  }
-  const before = new Set(previous ? previous.manifest.shots.flatMap((s) => s.stubs) : []);
-  const kinds = [...new Set(manifest.shots.flatMap((s) => s.stubs))];
-  for (const kind of kinds) {
-    const shots = manifest.shots.filter((s) => s.stubs.includes(kind));
-    out.push({
-      id: problemId(run.id, "stand-in", null, null, null, kind),
-      kind: "stand-in",
-      title: `${kind} stand-in on ${shots.length} shot${shots.length === 1 ? "" : "s"}`,
-      run: ref,
-      device: null,
-      scheme: null,
-      at: run.finishedAt,
-      autoSeen: before.has(kind), // only a stand-in that is new compared with the previous run asks for attention
-      detail: { message: `${kind} stand-in`, flow: null, step: null, stepConfig: null, lastGoodShot: null, failureShot: null, standIn: kind, shots: shots.map((s) => url(s.file)) },
-    });
-  }
-  return out;
-}
-
-function applySeen(out, problems) {
-  const state = readState(out);
-  const seen = new Set(state.seenProblems);
-  const unseen = new Set(state.unseenProblems);
-  return problems.map(({ autoSeen, ...p }) => ({ ...p, seen: seen.has(p.id) || (autoSeen && !unseen.has(p.id)) }));
-}
-
 /** Problems across the PROBLEM_RUNS newest runs, newest first, with seen state. */
 export function listProblems(out) {
   const loaded = runIds(out).slice(0, PROBLEM_RUNS + 1).map((id) => loadRun(out, id)).filter(Boolean);
-  const problems = loaded.slice(0, PROBLEM_RUNS).flatMap((run, i) => runProblems(run, loaded[i + 1]));
-  return applySeen(out, problems).sort((a, b) => b.at.localeCompare(a.at));
+  return problemsAcross(loaded, readState(out));
 }
 
 /** Problems of one run (any run on disk, not only the newest PROBLEM_RUNS). */
@@ -275,7 +166,7 @@ export function problemsOfRun(out, id) {
   const i = ids.indexOf(id);
   if (i < 0) return [];
   const previous = ids.slice(i + 1).map((x) => loadRun(out, x)).find(Boolean);
-  return applySeen(out, runProblems(loadRun(out, id), previous));
+  return withSeen(runProblems(loadRun(out, id), previous), readState(out));
 }
 
 // ---------- state ----------
@@ -321,7 +212,7 @@ export function recordCaptures(out, root, command, result, by) {
 
 /** Captures, newest first, with /files/ URLs. */
 export function listCaptures(out) {
-  return readLines(capturesFile(out)).map((c) => ({ ...c, file: fileUrl(c.file) })).reverse();
+  return captureEntries(readLines(capturesFile(out)));
 }
 
 // ---------- activity and agents ----------
@@ -334,33 +225,7 @@ export function appendActivity(out, { at = new Date().toISOString(), by, tool, t
   return line;
 }
 
-export const CONNECT_COMMANDS = {
-  "Claude Code": "claude mcp add imitor -- npx imitor mcp",
-  Cursor: "npx imitor mcp",
-  Codex: "codex mcp add imitor -- npx imitor mcp",
-  Other: "npx imitor mcp",
-  CI: "npx imitor",
-};
-
 /** Connect commands, tools, connections from the last 7 days of activity, and the latest 50 calls. */
 export function agentsData(out, tools, now = new Date()) {
-  const lines = readLines(activityFile(out));
-  const weekAgo = now.getTime() - 7 * 24 * 3600 * 1000;
-  const dayAgo = now.getTime() - 24 * 3600 * 1000;
-  const connections = new Map();
-  for (const line of lines) {
-    const t = new Date(line.at).getTime();
-    if (!(t >= weekAgo) || !line.by?.name) continue;
-    const c = connections.get(line.by.name) || { name: line.by.name, kind: line.by.kind, calls24h: 0, lastAt: line.at, active: false };
-    if (t >= dayAgo) c.calls24h++; // a rolling day, so the count does not drop to zero at midnight
-    if (line.at > c.lastAt) c.lastAt = line.at;
-    connections.set(line.by.name, c);
-  }
-  for (const c of connections.values()) c.active = now.getTime() - new Date(c.lastAt).getTime() < 2 * 60 * 1000;
-  return {
-    commands: CONNECT_COMMANDS,
-    tools: tools.map((t) => ({ name: t.name, description: t.description })),
-    connections: [...connections.values()].sort((a, b) => b.lastAt.localeCompare(a.lastAt)),
-    activity: lines.slice(-50).reverse(),
-  };
+  return agentsSummary(readLines(activityFile(out)), tools, now);
 }

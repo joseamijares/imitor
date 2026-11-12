@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/joseamijares/imitor/blob/main/src/schema/run-upload.v1.json",
+  "title": "Imitor run upload, version 1",
+  "description": "The body of POST /v1/runs: one finished run (its run.json and manifest.json, with typed values redacted) and the list of files that go with it. The files themselves are uploaded separately to the URLs the server answers with. Limits that a schema cannot express (8 MB of JSON and 64 levels of nesting for the body, 300 MB per run in total, unique paths, run.id equal to clientRunId, each extension matching its content type, every file the run and manifest point at being one of the listed files) are checked by checkUpload in src/upload.mjs.",
+  "type": "object",
+  "required": ["clientRunId", "schemaVersion", "run", "manifest", "files"],
+  "additionalProperties": false,
+  "properties": {
+    "clientRunId": {
+      "description": "The run's folder name in the output folder (runs/<clientRunId>/). Uploads are idempotent on it within a project.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9-]{1,100}$"
+    },
+    "schemaVersion": {
+      "description": "The run.json format. A run.json without schemaVersion is version 1.",
+      "type": "integer",
+      "const": 1
+    },
+    "run": {
+      "description": "run.json as written by recordRun.",
+      "type": "object",
+      "required": ["id", "startedAt", "finishedAt", "flows"],
+      "properties": {
+        "id": { "type": "string" },
+        "startedAt": { "type": "string" },
+        "finishedAt": { "type": "string" },
+        "flows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["steps"],
+            "properties": { "steps": { "type": "array", "items": { "type": "object" } } }
+          }
+        }
+      }
+    },
+    "manifest": {
+      "description": "manifest.json as written by the report.",
+      "type": "object",
+      "required": ["shots", "problems"],
+      "properties": {
+        "shots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["file", "stubs"],
+            "properties": { "file": { "type": "string" }, "stubs": { "type": "array", "items": { "type": "string" } } }
+          }
+        },
+        "problems": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "files": {
+      "description": "Every file of the run folder to upload, with paths relative to it (screens/first-run-01-welcome-iphone-16-light.png).",
+      "type": "array",
+      "maxItems": 5000,
+      "items": {
+        "type": "object",
+        "required": ["path", "size", "sha256", "contentType"],
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 300,
+            "pattern": "^(?!/)(?!.*//)(?!(?:.*/)?\\.\\.?(?:/|$))[\\p{L}\\p{N}._ @+()/-]+\\.(?:png|jpg|jpeg|webm|json)$"
+          },
+          "size": { "type": "integer", "minimum": 0, "maximum": 26214400 },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "contentType": { "enum": ["image/png", "image/jpeg", "video/webm", "application/json"] }
+        }
+      }
+    },
+    "captures": {
+      "description": "Optional lines of captures/index.jsonl that belong with this run.",
+      "type": "array",
+      "maxItems": 1000,
+      "items": { "type": "object" }
+    },
+    "activity": {
+      "description": "Optional lines of activity.jsonl that belong with this run.",
+      "type": "array",
+      "maxItems": 1000,
+      "items": { "type": "object", "required": ["at"], "properties": { "at": { "type": "string" } } }
+    }
+  }
+}
