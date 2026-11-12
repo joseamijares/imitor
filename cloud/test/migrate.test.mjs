@@ -2,11 +2,13 @@
 // DATABASE_URL, two runners race on a real Postgres, and the slug migrations are checked on week-1 style data, each
 // in a schema of its own that is dropped afterwards.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { migrate, migrationFiles, MIGRATIONS_DIR } from "../src/db/migrate.mjs";
 
 const SLUG = /^[a-z0-9-]{1,64}$/; // what web.mjs routes accept under /p/
@@ -151,4 +153,20 @@ test("Postgres: when the repaired slug is taken, 003 adds a hash of the id", nee
   await migrate(p);
   const { rows } = await p.query("select slug, md5('prj_ffff') as h from projects where id = 'prj_ffff'");
   assert.equal(rows[0].slug, `prj-ffff-${rows[0].h.slice(0, 8)}`);
+});
+
+test("the Vercel build migrates only a production build with a database, over the direct URL when there is one", async () => {
+  const { migrationTarget, ROLE_TIMEOUT_SQL } = await import("../scripts/deploy-migrate.mjs");
+  assert.equal(migrationTarget({ VERCEL_ENV: "preview", DATABASE_URL: "postgres://pooled" }).url, null);
+  assert.equal(migrationTarget({ DATABASE_URL: "postgres://pooled" }).url, null);
+  assert.match(migrationTarget({ VERCEL_ENV: "production" }).why, /no database/);
+  assert.equal(migrationTarget({ VERCEL_ENV: "production", DATABASE_URL: "postgres://pooled" }).url, "postgres://pooled");
+  assert.equal(migrationTarget({ VERCEL_ENV: "production", DATABASE_URL: "postgres://pooled", DATABASE_URL_UNPOOLED: "postgres://direct" }).url, "postgres://direct");
+  assert.equal(ROLE_TIMEOUT_SQL, "alter role current_user set statement_timeout = '10s'");
+});
+
+test("the build step does nothing and succeeds outside production", () => {
+  const run = spawnSync(process.execPath, [fileURLToPath(new URL("../scripts/deploy-migrate.mjs", import.meta.url))], { env: { VERCEL_ENV: "preview", DATABASE_URL: "postgres://u:p@127.0.0.1:1/x" }, encoding: "utf8" });
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.stdout, /skipped: not a production build/);
 });

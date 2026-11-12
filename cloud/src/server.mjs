@@ -11,6 +11,7 @@ import { memoryDb } from "./db/memory.mjs";
 import { pgDb } from "./db/pg.mjs";
 import { fail, randomToken, secure } from "./http.mjs";
 import { memoryStorage, STORAGE_PATH } from "./storage/memory.mjs";
+import { blobFromEnv } from "./storage/blob.mjs";
 import { s3FromEnv } from "./storage/s3.mjs";
 
 export const MIN_SECRET_LENGTH = 32;
@@ -92,7 +93,7 @@ export async function send(res, response, req = null) {
 
 const list = (value) => String(value || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
 
-/** deps from the environment: memory adapters unless DATABASE_URL / S3_BUCKET say otherwise. See cloud/README.md.
+/** deps from the environment: memory adapters unless DATABASE_URL / S3_BUCKET / BLOB_READ_WRITE_TOKEN say otherwise. See cloud/README.md.
  * opts: { poolMax: Postgres connections per instance (1 in a serverless function) }. */
 export function depsFromEnv(env = process.env, { poolMax = 5 } = {}) {
   const allowUnverified = env.IMITOR_ALLOW_UNVERIFIED_UPLOADS === "1";
@@ -114,7 +115,7 @@ export function depsFromEnv(env = process.env, { poolMax = 5 } = {}) {
   }
   return {
     db: env.DATABASE_URL ? pgDb({ connectionString: env.DATABASE_URL, max: poolMax }) : memoryDb(),
-    storage: s3FromEnv(env) || memoryStorage(),
+    storage: s3FromEnv(env) || blobFromEnv(env) || memoryStorage(),
     publicUrl,
     minCliVersion: env.MIN_CLI_VERSION || null,
     allowUnverified,

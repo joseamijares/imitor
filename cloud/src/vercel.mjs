@@ -41,9 +41,10 @@ function refused(request, env) {
   return host !== new URL(env.PUBLIC_URL).host;
 }
 
-/** A production deployment keeps nothing in memory: it needs the database and the bucket. */
+/** A production deployment keeps nothing in memory: it needs the database and a store for files (S3 or Vercel Blob). */
 function configured(env) {
-  const missing = ["DATABASE_URL", "S3_BUCKET", "PUBLIC_URL"].filter((k) => !env[k]);
+  const missing = ["DATABASE_URL", "PUBLIC_URL"].filter((k) => !env[k]);
+  if (!env.S3_BUCKET && !env.BLOB_READ_WRITE_TOKEN) missing.push("S3_BUCKET or BLOB_READ_WRITE_TOKEN");
   if (missing.length) throw new Error(`Imitor Cloud on Vercel needs ${missing.join(", ")}`);
   return depsFromEnv(env, { poolMax: 1 });
 }

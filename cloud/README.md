@@ -78,6 +78,7 @@ For people (a session cookie):
 | `S3_ENDPOINT` | e.g. `https://<account>.r2.cloudflarestorage.com` or `http://127.0.0.1:9000` (MinIO). Path-style when set; AWS virtual-hosted when not. |
 | `S3_BUCKET`, `S3_REGION` | `S3_REGION` defaults to `auto` (R2). Without `S3_BUCKET`, files are kept in memory. |
 | `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | |
+| `BLOB_READ_WRITE_TOKEN` | A private Vercel Blob store instead of S3, used when `S3_BUCKET` is not set. Vercel sets it when a Blob store is connected to the project. Uploads and downloads use Blob's presigned URLs; Blob keeps no SHA-256, so `complete` reads each file once and hashes it. |
 | `S3_CHECKSUMS` | `off` to stop signing `x-amz-checksum-sha256` into uploads, for a store that does not support it. Then storage keeps no SHA-256 to check, so the server refuses to start unless `IMITOR_ALLOW_UNVERIFIED_UPLOADS` is also set. |
 | `IMITOR_ALLOW_UNVERIFIED_UPLOADS` | `1` to let `complete` accept a file whose stored object has no SHA-256 (size and content type are still checked). **Unsafe**: the bytes are then whatever was uploaded to the URL, not necessarily what the run declared. Only for a store without checksum support. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | A Google OAuth client of type "Web application" whose authorized redirect URI is `PUBLIC_URL/auth/google/callback`. Scopes: `openid email profile`. Both or neither. |
@@ -150,9 +151,10 @@ The cloud runs in the same Vercel project as the public site, on a host of its o
   only, never from a Host header. Every answer is `cache-control: private, no-store` with the strict
   Content-Security-Policy, `frame-ancestors 'none'`, `nosniff` and `Referrer-Policy: same-origin`.
 - **Environment.** Add, for Production only and as Sensitive: `PUBLIC_URL` (`https://app.imitor.dev`),
-  `DATABASE_URL` (a pooled connection string; each function instance holds one connection), `S3_*`,
-  `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `IMITOR_ALLOWED_EMAILS`, `CRON_SECRET`, and `IMITOR_ADMIN_TOKEN` only if
-  you need it. Without `DATABASE_URL` and `S3_BUCKET` the function refuses to run rather than keep anything in memory.
+  `DATABASE_URL` (a pooled connection string; each function instance holds one connection), a store for files
+  (`BLOB_READ_WRITE_TOKEN` from a connected private Blob store, or `S3_*`), `GOOGLE_CLIENT_ID`,
+  `GOOGLE_CLIENT_SECRET`, `IMITOR_ALLOWED_EMAILS`, `CRON_SECRET`, and `IMITOR_ADMIN_TOKEN` only if you need it.
+  Without a database and a store the function refuses to run rather than keep anything in memory.
 - **Database timeouts.** Each connection gives up connecting after 5 s, is closed after 10 s idle, and asks the server
   to cancel any statement after 10 s (`statement_timeout`, sent as a startup parameter; the client also stops waiting
   2 s later). A pooler (PgBouncer, which Neon's `-pooler` hosts are, or a URL with `pgbouncer=true`) refuses startup
@@ -166,7 +168,7 @@ The cloud runs in the same Vercel project as the public site, on a host of its o
   lock ends with the transaction: the pooled URL (a pooler in transaction mode) works as well as a direct one.
 - **Google.** Register `PUBLIC_URL/auth/google/callback` as the client's authorized redirect URI.
 - **Bucket CORS.** `imitor push` uploads with presigned PUTs from Node, which sends no `Origin`, so no CORS rule is
-  needed for the CLI. The interface only loads files through redirects into `<img>` and `<video>`, which need none
+  needed for the CLI (nor is any setting on a Blob store). The interface only loads files through redirects into `<img>` and `<video>`, which need none
   either; allow `GET` from `PUBLIC_URL` if you want to be explicit.
 - **Keep Standard Deployment Protection** on: it protects preview deployments (which the function refuses anyway) and
   leaves the production domains public, as the sign-in needs.
@@ -179,32 +181,29 @@ holds the cloud's secrets; `test/site.test.mjs` checks both.
 
 ### Go-live checklist
 
-In this order. The owner does the account steps; nothing here needs a secret to be shared with anyone.
+Everything but Google lives in the Vercel project. In this order; nothing here needs a secret to be shared with anyone.
 
-1. **Neon** (Vercel Marketplace or neon.tech): make a project. Keep two connection strings: the pooled one (host ends
-   in `-pooler`) for Vercel, and the direct one for migrations.
-2. **Migrations**, from your machine with the direct URL: `DATABASE_URL=<direct> npm run migrate --prefix cloud`, then
-   run it again and see it apply nothing. Then, over the same URL,
-   `ALTER ROLE <role> SET statement_timeout = '10s';` (the pooled connections cannot send it themselves).
-3. **Cloudflare R2**: a private bucket with no public access, an API token with Object Read & Write on that bucket
-   only, and a lifecycle rule that aborts incomplete multipart uploads after a day. No CORS rule is needed (see Bucket
-   CORS above). The endpoint is `https://<account id>.r2.cloudflarestorage.com`, the region `auto`.
-4. **Google Cloud**: an OAuth client of type "Web application" with the redirect URI
+1. **Database**: in the project's Storage tab, create a Neon database (Vercel's Neon integration) and connect it to
+   this project with no environment-variable prefix. That sets `DATABASE_URL` (pooled) and `DATABASE_URL_UNPOOLED`
+   (direct). The production build then applies the migrations itself (`cloud/scripts/deploy-migrate.mjs`, over the
+   direct URL) and sets the role's `statement_timeout`; a failed migration fails the build.
+2. **Files**: a private Vercel Blob store connected to the project, which sets `BLOB_READ_WRITE_TOKEN`. (Done for
+   imitor.dev: `imitor-cloud-runs`, in iad1.) An S3-compatible bucket works instead: set `S3_*`.
+3. **Google Cloud**: an OAuth client of type "Web application" with the redirect URI
    `https://app.imitor.dev/auth/google/callback`. Consent screen: External, scopes `openid email profile`, publishing
    status **Testing**, with each allowlisted address as a test user. Testing needs no verification. Publishing later
    needs `imitor.dev` as an authorized domain, the live `https://imitor.dev/privacy/` and `/terms/`, and the domain
    verified in Search Console.
-5. **Vercel** environment, Production only, Sensitive: `DATABASE_URL` (the pooled URL), `S3_ENDPOINT`, `S3_REGION`,
-   `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `CRON_SECRET`
+4. **Vercel** environment, Production only, Sensitive: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `CRON_SECRET`
    (`openssl rand -base64 32`). `PUBLIC_URL` and `IMITOR_ALLOWED_EMAILS` are already set. Leave `IMITOR_ADMIN_TOKEN`
-   unset. Then redeploy production.
-6. **Check from outside**: `CRON_SECRET=... npm run verify-deploy --prefix cloud`. It covers the site, the host-scoped
+   unset. Then redeploy production, and check the build log says the migrations ran.
+5. **Check from outside**: `CRON_SECRET=... npm run verify-deploy --prefix cloud`. It covers the site, the host-scoped
    redirects and rewrites, path recovery and the bundle (`/projects/` answers a stranger with a redirect to sign in),
    the 308 on `POST /v1/runs`, the CSP, and one run of the retention job.
-7. **Sign in** at `https://app.imitor.dev`, make a project, make an access key, and push a run:
+6. **Sign in** at `https://app.imitor.dev`, make a project, make an access key, and push a run:
    `IMITOR_CLOUD_URL=https://app.imitor.dev IMITOR_TOKEN=imk_... npx imitor push`. Open the run; its screenshots load
-   through the five-minute storage links, which shows the checksummed uploads worked on R2.
-8. **The next morning**, open the project's Cron Jobs logs and confirm the retention job answered 200.
+   through the five-minute storage links, which shows the presigned uploads and the checksum check worked.
+7. **The next morning**, open the project's Cron Jobs logs and confirm the retention job answered 200.
 
 ### Not verified yet
 
@@ -215,6 +214,11 @@ follows (or no redirect at all), that `/` on the app host redirects to `/project
 page, that `includeFiles` bundles the interface, that Vercel Cron's call carries `Authorization: Bearer <CRON_SECRET>`,
 and that sign-in completes against Google. After the first night, open the project's Cron Jobs logs and confirm the
 04:17 UTC call to `/api/cron-retention/` answered 200 (not 308 or 401).
+
+The Vercel Blob adapter is tested against a fake of the SDK only. On the first push, check that Blob accepts the
+presigned PUT with the headers the adapter hands out (they copy what Vercel's own client sends), that it stores the
+declared content type, and how long `complete` takes: it reads every file of the run once to hash it, so a run near
+the 300 MB limit may need a longer `maxDuration` than the 30 s in `vercel.json`.
 
 ## Security notes
 

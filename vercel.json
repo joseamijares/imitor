@@ -2,7 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
   "installCommand": "npm ci --prefix cloud --omit=dev --ignore-scripts",
-  "buildCommand": "node site/build.mjs",
+  "buildCommand": "node site/build.mjs && node cloud/scripts/deploy-migrate.mjs",
   "outputDirectory": "site/dist",
   "trailingSlash": true,
   "functions": {

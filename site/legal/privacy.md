@@ -30,7 +30,7 @@ Only to run the service: to sign you in, to keep your projects separate from eve
 
 - Vercel runs the service.
 - Neon (PostgreSQL) holds accounts, projects and run data.
-- Cloudflare R2 holds screenshots and videos. They are reached only through links that expire after five minutes.
+- Vercel Blob, in a private store, holds screenshots and videos. They are reached only through links that expire after five minutes.
 - Google handles sign-in.
 
 These providers may process data outside your country.
