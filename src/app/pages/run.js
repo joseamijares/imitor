@@ -1,5 +1,5 @@
 // A run: tabs Shots, Live, Problems, Captures. Shots groups the run's shots by flow, filtered by device and scheme.
-import { api } from "../api.js";
+import { api, isStatic, LIVE_NEEDS_APP } from "../api.js";
 import { html, raw, icon, statusMark, chip, seg, pill, button, thumb, loadingLine, errorState } from "../components.js";
 import { ago, deviceName, schemeName, humanize, stepLabel, plural } from "../format.js";
 import { pageHeader } from "./common.js";
@@ -21,6 +21,9 @@ export async function mount(ctx) {
     return;
   }
   if (!ctx.isCurrent()) return;
+  if (isStatic) { await ctx.projectReady(); if (!ctx.isCurrent()) return; }
+  // An exported site has no preview server unless it was exported with --preview-url: say so on the way in.
+  const liveNote = isStatic && !ctx.state.project?.previewUrl ? LIVE_NEEDS_APP : undefined;
 
   const { run, flows = [], problems = [] } = data;
   const devices = data.devices?.length ? data.devices : [...new Set(flows.map((f) => f.device))];
@@ -34,7 +37,7 @@ export async function mount(ctx) {
   const header = pageHeader(
     html`<a class="crumb" href="/runs">Runs</a><span class="sep">/</span><h1 title="${title}">${title}</h1>${run.commit ? chip(run.commit) : ""}`,
     html`${button("Copy link", "secondary", { icon: "copy", attrs: `data-copy="${escAttr(location.origin + base)}" data-copy-toast="Link copied"` })}
-         ${button("Open live preview", "primary", { href: `${base}/live` })}`);
+         ${button("Open live preview", "primary", { href: `${base}/live`, title: liveNote })}`);
   main.innerHTML = String(html`${header}<div class="toolbar run-tabs"></div><div class="content"></div>`);
   const bar = main.querySelector(".run-tabs");
   const content = main.querySelector(".content");

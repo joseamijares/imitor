@@ -1,6 +1,6 @@
 // Onboarding: three steps without the sidebar. 1 Add Imitor (agent prompt or by hand, and whether a build and a first
 // run exist yet), 2 Stand-ins (read-only, from imitor.config.json), 3 First run (the latest run's first shots).
-import { api } from "../api.js";
+import { api, isStatic } from "../api.js";
 import { html, raw, icon, logo, statusMark, chip, pill, seg, avatar, button, codeBlock, thumb, loadingLine, errorState } from "../components.js";
 import { ago, deviceName, schemeName, humanize, stepLabel, plural } from "../format.js";
 
@@ -94,6 +94,7 @@ async function stepAdd(ctx, col) {
     if (status.kind === "run" || !col.querySelector(".onb-status")) render();
     else col.querySelector(".onb-status").innerHTML = String(statusRow(status, name));
     if (status.kind === "run") return; // nothing more to wait for
+    if (isStatic) return; // an exported site never changes
     await new Promise((ok) => setTimeout(ok, POLL_MS));
   }
 }

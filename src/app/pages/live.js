@@ -3,8 +3,8 @@
 // The preview is served on its own origin (GET /api/project previewUrl). Every page of it loads a small driver
 // (src/live-driver.js) that this page talks to with postMessage: it performs flow steps inside the frame, clears the
 // app's stored state, and reports the route and the stand-ins on screen.
-import { api } from "../api.js";
-import { html, raw, icon, logo, statusMark, chip, pill, switchEl, loadingLine, errorState, codeBlock } from "../components.js";
+import { api, isStatic, isDemo, LIVE_NEEDS_APP } from "../api.js";
+import { html, raw, icon, logo, statusMark, chip, pill, switchEl, loadingLine, errorState, codeBlock, demoPill } from "../components.js";
 import { ago, deviceName, humanize, stepLabel, plural } from "../format.js";
 
 const STRIP = { ios: 47, android: 28 }; // status bar drawn above the app (device px); the app's viewport stays the device's size
@@ -51,6 +51,7 @@ function topBar({ runId, project, run, problems, shots, builtAt }) {
       <a class="tab" href="${base}/problems">Problems${problems != null ? html`<span class="count${problems.open ? " bad" : ""}">${problems.total}</span>` : ""}</a>
     </nav>` : html`<span></span>`}
     <div class="live-actions">
+      ${isDemo ? demoPill() : ""}
       ${builtAt ? html`<span class="built" title="${new Date(builtAt).toLocaleString()}"><span class="dot" aria-hidden="true"></span>Built ${ago(builtAt) === "now" ? "just now" : `${ago(builtAt)} ago`}</span>` : ""}
       <button type="button" class="btn btn-secondary" data-live-copy data-copy="${location.href}" data-copy-toast="Link copied">${icon("copy", 14)}Copy link</button>
     </div>
@@ -312,6 +313,12 @@ function createLive(ctx, project, detail) {
   }
 
   function renderStage() {
+    // An exported site has no preview server unless it was exported with --preview-url.
+    if (isStatic && !project.previewUrl) {
+      const shots = runId ? `/runs/${encodeURIComponent(runId)}` : "/runs";
+      fit.innerHTML = String(html`<div class="state stage-state"><h2>No live preview on this site</h2><p>${LIVE_NEEDS_APP} <a href="${shots}" style="text-decoration:underline">${runId ? "See this run’s shots" : "See the runs and their shots"}</a> instead.</p></div>`);
+      return false;
+    }
     if (!project.built) {
       fit.innerHTML = String(html`<div class="state stage-state"><h2>No preview build yet</h2><p>Build the web preview of ${project.name} first. The live preview shows that build.</p>${codeBlock(["npx imitor build"])}</div>`);
       return false;

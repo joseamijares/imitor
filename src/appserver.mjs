@@ -13,7 +13,7 @@ import { TOOLS } from "./mcp.mjs";
 import { serve } from "./serve.mjs";
 import { agentsData, gitInfo, listCaptures, listProblems, listRuns, readRun, setSeen } from "./store.mjs";
 
-const APP_DIR = fileURLToPath(new URL("./app", import.meta.url));
+export const APP_DIR = fileURLToPath(new URL("./app", import.meta.url));
 
 const TYPES = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css",
@@ -95,9 +95,10 @@ function stepLabel(step) {
   return String(value);
 }
 
-export function projectData(root, { previewUrl = null } = {}) {
+/** `git` ({ branch, commit }) replaces reading the checkout, for data assembled elsewhere (the demo). */
+export function projectData(root, { previewUrl = null, git = null } = {}) {
   const config = loadConfig(root);
-  const info = gitInfo(root);
+  const info = git || gitInfo(root);
   let name = path.basename(root);
   try {
     name = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).name || name;
@@ -130,19 +131,31 @@ function readBody(req) {
   });
 }
 
+/**
+ * The body of a GET API route, shared by the server and `imitor export` so the two cannot drift.
+ * Returns { status: 200, body } , { status: 404, body: { error } } for an unknown id, or null for no such endpoint.
+ * opts: { previewUrl, git } for /api/project.
+ */
+export function apiGet(root, route, opts = {}) {
+  const out = path.join(root, loadConfig(root).out);
+  if (route === "/api/project") return { status: 200, body: projectData(root, opts) };
+  if (route === "/api/runs") return { status: 200, body: { runs: listRuns(out) } };
+  const m = /^\/api\/runs\/([^/]+)$/.exec(route);
+  if (m) {
+    const run = readRun(out, m[1]);
+    return run ? { status: 200, body: run } : { status: 404, body: { error: `no run ${m[1]}` } };
+  }
+  if (route === "/api/captures") return { status: 200, body: { captures: listCaptures(out) } };
+  if (route === "/api/problems") return { status: 200, body: { problems: listProblems(out) } };
+  if (route === "/api/agents") return { status: 200, body: agentsData(out, TOOLS) };
+  return null;
+}
+
 async function api(req, res, root, out, route, previewUrl) {
   const get = req.method === "GET" || req.method === "HEAD";
-  if (get && route === "/api/project") return json(res, 200, projectData(root, { previewUrl }));
-  if (get && route === "/api/runs") return json(res, 200, { runs: listRuns(out) });
-  let m = /^\/api\/runs\/([^/]+)$/.exec(route);
-  if (get && m) {
-    const run = readRun(out, m[1]);
-    return run ? json(res, 200, run) : notFound(res, `no run ${m[1]}`);
-  }
-  if (get && route === "/api/captures") return json(res, 200, { captures: listCaptures(out) });
-  if (get && route === "/api/problems") return json(res, 200, { problems: listProblems(out) });
-  if (get && route === "/api/agents") return json(res, 200, agentsData(out, TOOLS));
-  m = /^\/api\/problems\/([^/]+)\/seen$/.exec(route);
+  const answer = get ? apiGet(root, route, { previewUrl }) : null;
+  if (answer) return json(res, answer.status, answer.body);
+  const m = /^\/api\/problems\/([^/]+)\/seen$/.exec(route);
   if (req.method === "POST" && m) {
     let body;
     try {

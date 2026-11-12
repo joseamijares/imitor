@@ -123,10 +123,11 @@ export function runStatus(manifest) {
 
 /**
  * Keep a copy of the run that just finished (its manifest and screens, already written at the top of `out`)
- * under runs/<runId>/, then prune to the newest KEEP_RUNS.
+ * under runs/<runId>/, then prune to the newest KEEP_RUNS. `git` ({ branch, commit, subject }) replaces reading the
+ * checkout, for data assembled elsewhere (the demo).
  */
-export function recordRun(out, { root, config, manifest, startedAt, finishedAt = new Date().toISOString(), by, env = process.env }) {
-  const info = gitInfo(root, env);
+export function recordRun(out, { root, config, manifest, startedAt, finishedAt = new Date().toISOString(), by, env = process.env, git: gitOverride = null }) {
+  const info = gitOverride || gitInfo(root, env);
   const commit = manifest.commit ?? info.commit;
   let id = `${stamp(startedAt)}-${commit || "nocommit"}`;
   for (let n = 2; fs.existsSync(path.join(runsDir(out), id)); n++) id = `${stamp(startedAt)}-${commit || "nocommit"}-${n}`;

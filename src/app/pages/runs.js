@@ -1,5 +1,5 @@
 // Runs: one row per run, grouped Today / Yesterday / Earlier, filtered All / Pull requests / Main.
-import { api } from "../api.js";
+import { api, isStatic } from "../api.js";
 import { html, raw, icon, statusMark, chip, seg, who, button, skeletonRows, errorState } from "../components.js";
 import { ago, dayGroup, isMainBranch, plural } from "../format.js";
 import { pageHeader, noRuns } from "./common.js";
@@ -11,7 +11,8 @@ export async function mount(ctx) {
   const { main } = ctx;
   document.title = "Runs · Imitor";
   let filter = FILTERS.some((f) => f.value === ctx.url.searchParams.get("filter")) ? ctx.url.searchParams.get("filter") : "all";
-  const header = pageHeader(html`<h1>Runs</h1>`,
+  // An exported site cannot start a run, so it has no "Run now".
+  const header = pageHeader(html`<h1>Runs</h1>`, isStatic ? "" :
     button("Run now", "secondary", { icon: "play", attrs: 'data-copy="npx imitor" data-copy-toast="Copied “npx imitor”: run it in the project to start a run"', title: "Copy the command that starts a run" }));
   main.innerHTML = String(html`${header}<div class="content">${skeletonRows(8)}</div>`);
 
@@ -68,6 +69,7 @@ function row(r) {
     <span>${statusMark(r.status, label)}</span>
     <span class="pr">${r.pr != null ? `#${r.pr}` : ""}</span>
     <span class="title" title="${r.title || ""}">${r.title || r.id}</span>
+    <span class="m-sub">${r.by?.name || "Unknown"} · ${plural(r.shots ?? 0, "shot")}${r.problems ? html` · <span class="bad">${plural(r.problems, "problem")}</span>` : ""}</span>
     <span class="branch">${icon("branch", 14)}<span>${r.branch || "—"}</span></span>
     ${who(r.by)}
     <span class="num shots">${r.shots ?? "—"}</span>

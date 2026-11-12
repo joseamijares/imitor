@@ -735,3 +735,7 @@ a.crumb-run:hover, .crumb-project:hover { color: var(--color-t-1); }
 .onb-col.w720 .onb-foot { margin-top: 44px; }
 .t1 { color: var(--color-t-1); }
 .device-wrap.ios .statusbar .cam, .device-wrap.android .statusbar .island { display: none; }
+
+/* --- static export --- */
+.demo-pill { margin-left: auto; display: inline-flex; }
+@media (max-width: 900px) { .side-brand .demo-pill { display: none; } }
