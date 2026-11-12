@@ -106,6 +106,13 @@ export function statusMark(kind, label) {
 export const pill = (label, tone = "neutral") => html`<span class="pill pill-${raw(tone)}">${label}</span>`;
 /** Shown in the shell of the public demo (imitor export --demo), so its invented data is not mistaken for a project. */
 export const demoPill = () => html`<span class="demo-pill" title="This is a demo: the app, runs and shots are invented.">${pill("Demo data")}</span>`;
+/** A quiet marker for a shot that shows invented data: a state label for the stand-ins, or a seed. "" when neither. */
+export function madeMark(item) {
+  if (!item || !(item.state || item.seeded)) return "";
+  const label = item.state && item.seeded ? `${item.state} · seeded` : item.state || "Seeded";
+  const what = [item.state ? `the state "${item.state}" handed to the stand-ins` : "", item.seeded ? "seeded data" : ""].filter(Boolean).join(" and ");
+  return html`<span class="made-mark" title="${`Started from ${what}. Invented data, not the real app’s.`}">${pill(label)}</span>`;
+}
 export const chip = (text, title) => html`<span class="chip"${title ? html` title="${title}"` : ""}>${text}</span>`;
 
 /** kind: primary | secondary | ghost. opts: { icon, attrs (trusted string), disabled, href, title } */

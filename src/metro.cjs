@@ -9,6 +9,11 @@ const BUILT_IN = {
   sqljs: path.join(SHIM_DIR, "expo-sqlite.js"),
   inert: path.join(SHIM_DIR, "inert.js"),
   skia: path.join(SHIM_DIR, "skia.js"),
+  // The real @shopify/react-native-skia, whose web build draws with CanvasKit. Nothing is redirected: `imitor build`
+  // loads CanvasKit and sets global.CanvasKit before the bundle runs. CanvasKit's loader is only bundled if the app
+  // imports LoadSkiaWeb itself, and its require("fs") / require("path") then resolve to empty modules (Expo does that
+  // for Node built-ins on web).
+  canvaskit: null,
 };
 
 function loadConfig(projectRoot) {
@@ -18,7 +23,7 @@ function loadConfig(projectRoot) {
 }
 
 function shimPath(projectRoot, value) {
-  if (BUILT_IN[value]) return BUILT_IN[value];
+  if (Object.hasOwn(BUILT_IN, value)) return BUILT_IN[value];
   return path.resolve(projectRoot, value); // app-provided stand-in
 }
 
@@ -36,7 +41,7 @@ function withImitor(config, options = {}) {
       const hit = names.find((n) => moduleName === n || moduleName.startsWith(n + "/"));
       const filePath = hit && shimPath(projectRoot, shims[hit]);
       // A stand-in that imports the module it replaces (to wrap or re-export parts of it) gets the real one.
-      if (hit && context.originModulePath !== filePath) return { type: "sourceFile", filePath };
+      if (filePath && context.originModulePath !== filePath) return { type: "sourceFile", filePath };
     }
     // Stand-ins live outside the app; resolve their imports as if from the app.
     if (!moduleName.startsWith(".") && context.originModulePath && context.originModulePath.startsWith(SHIM_DIR)) {

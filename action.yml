@@ -22,6 +22,18 @@ inputs:
   output-directory:
     description: Imitor's output folder inside the working directory ("out" in imitor.config.json).
     default: preview
+  comment:
+    description: >-
+      On pull_request events, post the verdict and the shots as one comment on the pull request, updated in place on
+      every push. Needs "permissions: contents: write" (the shots branch) and "pull-requests: write" (the comment).
+      Ignored on other events. Set to "false" to turn it off.
+    default: "true"
+  shots-branch:
+    description: Branch of this repository that holds the screenshots shown in the comment. Rewritten on every push; never your working branch.
+    default: imitor-shots
+  max-shots:
+    description: Most shots shown per flow in the comment (one device and scheme, the first configured).
+    default: "12"
 outputs:
   passed:
     description: "true or false"
@@ -53,6 +65,51 @@ runs:
       env:
         IMITOR_FAIL_ON: ${{ inputs.fail-on }}
       run: npx imitor gate --fail-on "$IMITOR_FAIL_ON"
+    - name: Publish the shots for the comment
+      id: shots
+      if: always() && inputs.comment == 'true' && github.event_name == 'pull_request' && steps.gate.outcome != 'skipped'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        IMITOR_SHOTS_BRANCH: ${{ inputs.shots-branch }}
+        IMITOR_PR: ${{ github.event.pull_request.number }}
+        IMITOR_SHA: ${{ github.event.pull_request.head.sha }}
+      run: |
+        # Never fails the job: without a pushable token the comment lists file paths instead of images.
+        if ! npx imitor publish-shots --branch "$IMITOR_SHOTS_BRANCH" --pr "$IMITOR_PR" --sha "$IMITOR_SHA" > /dev/null; then
+          echo "::notice title=Imitor: shots not published::Could not push the screenshots to the $IMITOR_SHOTS_BRANCH branch, so the comment lists file paths instead of images. The workflow needs 'permissions: contents: write' (a pull request from a fork never gets it)."
+        fi
+    - name: Comment on the pull request
+      if: always() && inputs.comment == 'true' && github.event_name == 'pull_request' && steps.gate.outcome != 'skipped'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        GH_TOKEN: ${{ github.token }}
+        IMITOR_FAIL_ON: ${{ inputs.fail-on }}
+        IMITOR_MAX_SHOTS: ${{ inputs.max-shots }}
+        IMITOR_IMAGE_BASE: ${{ steps.shots.outputs.image-base }}
+        IMITOR_PR: ${{ github.event.pull_request.number }}
+        IMITOR_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: |
+        # Never fails the job: the gate's own result stays the job's result.
+        notice() { echo "::notice title=Imitor: no comment::$1"; exit 0; }
+        body="$(mktemp)"
+        args=(--fail-on "$IMITOR_FAIL_ON" --max-shots "$IMITOR_MAX_SHOTS" --report-url "$IMITOR_RUN_URL")
+        if [ -n "$IMITOR_IMAGE_BASE" ]; then args+=(--image-base "$IMITOR_IMAGE_BASE"); fi
+        npx imitor comment "${args[@]}" > "$body" || notice "There is no run to comment on (did the build fail?)."
+        # The one comment to update is found by its hidden marker line.
+        existing="$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$IMITOR_PR/comments" \
+          --jq '.[] | select((.body // "") | startswith("<!-- imitor-comment -->")) | .id')" \
+          || notice "Could not read the pull request's comments. The workflow needs 'permissions: pull-requests: write'."
+        existing="${existing%%$'\n'*}"
+        if [ -n "$existing" ]; then
+          gh api --silent -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$existing" -F "body=@$body" \
+            || notice "Could not update the Imitor comment. The workflow needs 'permissions: pull-requests: write' (a pull request from a fork never gets it)."
+        else
+          gh api --silent -X POST "repos/$GITHUB_REPOSITORY/issues/$IMITOR_PR/comments" -F "body=@$body" \
+            || notice "Could not post the Imitor comment. The workflow needs 'permissions: pull-requests: write' (a pull request from a fork never gets it)."
+        fi
     - name: Upload the report
       if: always() && inputs.upload-report == 'true'
       uses: actions/upload-artifact@v4

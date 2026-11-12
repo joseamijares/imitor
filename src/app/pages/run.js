@@ -1,6 +1,6 @@
 // A run: tabs Shots, Live, Problems, Captures. Shots groups the run's shots by flow, filtered by device and scheme.
 import { api, isStatic, LIVE_NEEDS_APP } from "../api.js";
-import { html, raw, icon, statusMark, chip, seg, pill, button, thumb, loadingLine, errorState } from "../components.js";
+import { html, raw, icon, statusMark, chip, seg, pill, button, thumb, loadingLine, errorState, madeMark } from "../components.js";
 import { ago, deviceName, schemeName, humanize, stepLabel, plural } from "../format.js";
 import { pageHeader } from "./common.js";
 import { withBase } from "../base.js";
@@ -133,7 +133,7 @@ function tile(f, s) {
   return html`<div class="tile${missing ? " is-missing" : ""}">
     ${thumb(s.shot, s.status, { alt })}
     <div class="tile-label"><span class="mono">${num}</span><span class="name" title="${label}">${label}</span></div>
-    ${s.status === "stand-in" ? html`<span class="tile-pill" title="${s.standIns?.length ? `Stand-in: ${s.standIns.join(", ")}` : "Contains a stand-in"}">${pill("Stand-in", "warn")}</span>` : ""}
+    ${s.status === "stand-in" || s.state || s.seeded ? html`<span class="tile-marks">${s.status === "stand-in" ? html`<span class="tile-pill" title="${s.standIns?.length ? `Stand-in: ${s.standIns.join(", ")}` : "Contains a stand-in"}">${pill("Stand-in", "warn")}</span>` : ""}${madeMark(s)}</span>` : ""}
     ${s.status === "failed" ? html`<span class="tile-note">${icon("warn", 12)}Failed at this step</span>` : ""}
   </div>`;
 }

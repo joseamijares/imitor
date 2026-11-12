@@ -8,6 +8,7 @@ import { execSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { stateInfo } from "./state.mjs";
 
 export const KEEP_RUNS = 50;
 export const PROBLEM_RUNS = 20;
@@ -100,7 +101,8 @@ export function flowDetail(config, manifest) {
         let failedMarked = false;
         const steps = shotSteps.map(({ step, index }) => {
           const shot = manifest.shots.find((s) => here(s) && s.shot === step.shot);
-          if (shot) return { index, name: step.shot, status: shot.stubs.length ? "stand-in" : "ok", shot: shot.file, route: shot.route, standIns: shot.stubs };
+          // state and seeded: whether the shot shows invented data (a state label for the stand-ins, or a seed).
+          if (shot) return { index, name: step.shot, status: shot.stubs.length ? "stand-in" : "ok", shot: shot.file, route: shot.route, standIns: shot.stubs, state: shot.state ?? null, seeded: shot.seeded === true };
           if (failure && !failedMarked && (failure.step == null || index >= failure.step)) {
             failedMarked = true;
             return { index, name: step.shot, status: "failed", shot: failure.file || null, route: null, standIns: [] };
@@ -108,7 +110,7 @@ export function flowDetail(config, manifest) {
           return { index, name: step.shot, status: "not-reached", shot: null, route: null, standIns: [] };
         });
         const status = failure ? "failed" : steps.some((s) => s.status === "stand-in") ? "stand-ins" : "passed";
-        flows.push({ name: flow.name, status, device: device.name, scheme, steps });
+        flows.push({ name: flow.name, status, device: device.name, scheme, ...stateInfo(flow), steps });
       }
     }
   }
@@ -116,7 +118,7 @@ export function flowDetail(config, manifest) {
 }
 
 export function runStatus(manifest) {
-  if (manifest.problems.some((p) => p.kind === "flow-failed")) return "failed";
+  if (manifest.problems.some((p) => p.kind === "flow-failed" || p.kind === "seed-failed")) return "failed";
   if (manifest.shots.some((s) => s.stubs.length)) return "stand-ins";
   return "passed";
 }
@@ -212,13 +214,13 @@ function runProblems(loaded, previous) {
   const ref = { id: run.id, pr: run.pr, commit: run.commit, title: run.title };
   const out = [];
   for (const p of manifest.problems) {
-    if (p.kind !== "flow-failed" && p.kind !== "page-error" && p.kind !== "dialog") continue;
+    if (p.kind !== "flow-failed" && p.kind !== "page-error" && p.kind !== "dialog" && p.kind !== "seed-failed") continue;
     const { flow, device, scheme } = locate(p);
     const failed = p.kind === "flow-failed";
     out.push({
       id: problemId(run.id, p.kind, flow, device, scheme, p.message),
       kind: p.kind,
-      title: failed ? (p.step ? `${flow} failed at step ${p.step}` : `${flow} failed before its first step`) : p.kind === "dialog" ? `Dialog in ${flow}${p.step ? ` at step ${p.step}` : ""}` : `Page error in ${flow}`,
+      title: failed ? (p.step ? `${flow} failed at step ${p.step}` : `${flow} failed before its first step`) : p.kind === "dialog" ? `Dialog in ${flow}${p.step ? ` at step ${p.step}` : ""}` : p.kind === "seed-failed" ? `Seed problem in ${flow}` : `Page error in ${flow}`,
       run: ref,
       device,
       scheme,
@@ -299,10 +301,10 @@ export function setSeen(out, id, seen) {
 const capturesFile = (out) => path.join(out, "captures", "index.jsonl");
 
 /** Append one capture. `file` is relative to `out` (or absolute). */
-export function appendCapture(out, { kind, file, route = null, flow = null, device = null, scheme = null, by, at = new Date().toISOString(), seconds = null, standIns = [] }) {
+export function appendCapture(out, { kind, file, route = null, flow = null, device = null, scheme = null, by, at = new Date().toISOString(), seconds = null, standIns = [], state = null, seeded = false }) {
   const n = readLines(capturesFile(out)).length + 1;
   const rel = path.isAbsolute(file) ? path.relative(out, file) : file;
-  const line = { id: `c_${stamp(at)}_${n}`, kind, file: rel.split(path.sep).join("/"), route, flow, device, scheme, by, at, seconds, standIns };
+  const line = { id: `c_${stamp(at)}_${n}`, kind, file: rel.split(path.sep).join("/"), route, flow, device, scheme, by, at, seconds, standIns, state, seeded };
   appendLine(capturesFile(out), line);
   return line;
 }
@@ -310,9 +312,10 @@ export function appendCapture(out, { kind, file, route = null, flow = null, devi
 /** Record what `imitor screenshot`, `imitor flow` or `imitor record` (or their MCP tools) produced. Paths in `result` are relative to `root`. */
 export function recordCaptures(out, root, command, result, by) {
   const abs = (f) => path.join(root, f);
-  if (command === "screenshot") return [appendCapture(out, { kind: "screenshot", file: abs(result.file), route: result.route, flow: result.flow ?? null, device: result.device, scheme: result.scheme, by, standIns: result.standIns })];
-  if (command === "flow") return result.shots.map((s) => appendCapture(out, { kind: "screenshot", file: abs(s.file), route: s.route, flow: result.flow, device: result.device, scheme: result.scheme, by, standIns: s.standIns }));
-  if (command === "record") return [appendCapture(out, { kind: "video", file: abs(result.file), route: null, flow: result.flow, device: result.device, scheme: result.scheme, by, seconds: result.seconds, standIns: [] })];
+  const made = { state: result.state ?? null, seeded: result.seeded === true };
+  if (command === "screenshot") return [appendCapture(out, { kind: "screenshot", file: abs(result.file), route: result.route, flow: result.flow ?? null, device: result.device, scheme: result.scheme, by, standIns: result.standIns, ...made })];
+  if (command === "flow") return result.shots.map((s) => appendCapture(out, { kind: "screenshot", file: abs(s.file), route: s.route, flow: result.flow, device: result.device, scheme: result.scheme, by, standIns: s.standIns, ...made }));
+  if (command === "record") return [appendCapture(out, { kind: "video", file: abs(result.file), route: null, flow: result.flow, device: result.device, scheme: result.scheme, by, seconds: result.seconds, standIns: [], ...made })];
   throw new Error(`unknown capture command ${command}`);
 }
 

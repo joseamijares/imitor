@@ -18,6 +18,7 @@ const PROMPT = `Set up Imitor (${REPO}) in this repo by following the "Set up" s
 const KIND_TEXT = {
   sqljs: "Real SQLite in the browser (sql.js)",
   skia: "Keeps the box, draws nothing",
+  canvaskit: "Real Skia drawing in the browser (CanvasKit)",
   inert: "Every export exists and does nothing",
 };
 
@@ -157,7 +158,7 @@ async function stepStandIns(ctx, col) {
         <span role="cell" class="t2">${KIND_TEXT[s.kind] || (/^\.{0,2}\//.test(s.kind) ? "Your own stand-in" : "Replaced for the web")}</span>
         <span role="cell">${s.fidelity === "genuine" ? pill("Genuine", "ok") : pill("Stand-in", "warn")}</span>
         <span role="cell" class="right">${chip(s.kind)}</span></div>`)}
-    </div>` : html`<div class="onb-empty t2">Every module the app imports is bundled as it is. If the build fails on a native-only module, add it under <span class="mono">"shims"</span> with <span class="mono">"inert"</span>, <span class="mono">"skia"</span> or <span class="mono">"sqljs"</span>.</div>`}
+    </div>` : html`<div class="onb-empty t2">Every module the app imports is bundled as it is. If the build fails on a native-only module, add it under <span class="mono">"shims"</span> with <span class="mono">"inert"</span>, <span class="mono">"skia"</span>, <span class="mono">"canvaskit"</span> or <span class="mono">"sqljs"</span>.</div>`}
     <p class="onb-footnote">${statusMark("standin", "Stand-in")}<span>Stand-ins only change the preview build. Your iOS and Android builds keep the real modules.</span></p>
     ${footer(button("Back", "ghost", { href: STEPS[0].path }), button("Continue", "primary", { href: STEPS[2].path }))}`);
 }

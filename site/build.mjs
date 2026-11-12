@@ -20,7 +20,7 @@ const SHOTS = ["welcome", "your-space", "add-plant", "plant-details", "schedule"
 export const PAGES = {
   "how-to-use": { title: "How to use", description: "Set up Imitor in a React Native / Expo app: install, wrap Metro, describe flows, choose stand-ins, review and publish a run.",
     sections: ["What you get", "Set up", "Flow steps", "Stand-ins", "The app", "Publish a run", "What it does not show"] },
-  agents: { title: "For agents", description: "Connect Imitor to Claude Code, Cursor, Codex or any MCP client: the command, the seven tools, and the same operations as JSON commands for CI.",
+  agents: { title: "For agents", description: "Connect Imitor to Claude Code, Cursor, Codex or any MCP client: the command, the eight tools, and the same operations as JSON commands for CI.",
     sections: ["For agents"] },
 };
 
