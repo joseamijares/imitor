@@ -139,6 +139,16 @@ test("problems: flow failures, page errors and stand-ins, with stable ids and se
   assert.deepEqual(readState(f.out).seenProblems, [standInAgain.id]);
 });
 
+test("problems: a dialog the app showed is listed with its flow and step", () => {
+  const f = fixture();
+  const run = fakeRun(f, { shots: allShots(), problems: [{ where: "first-run / iphone-16 / light", kind: "dialog", message: "alert: Error No connection", flow: "first-run", device: "iphone-16", scheme: "light", step: 4 }], startedAt: "2026-11-10T09:00:00.000Z" });
+  const [dialog] = listProblems(f.out);
+  assert.equal(dialog.kind, "dialog");
+  assert.equal(dialog.run.id, run.id);
+  assert.equal(dialog.title, "Dialog in first-run at step 4");
+  assert.equal(dialog.detail.message, "alert: Error No connection");
+});
+
 test("problems from manifests written before problems carried flow, device and scheme", () => {
   const f = fixture();
   const run = fakeRun(f, { shots: [], problems: [{ where: "first-run / iphone-16 / light", kind: "flow-failed", message: "boom", file: "screens/first-run-FAILED-iphone-16-light.png" }], startedAt: "2026-11-10T09:00:00.000Z" });

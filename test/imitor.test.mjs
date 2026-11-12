@@ -102,3 +102,28 @@ test("expo-sqlite stand-in: sync API, params, transactions, reload persistence",
   assert.equal(again.getAllSync("SELECT * FROM a").length, 3);
   assert.equal((await again.getFirstAsync("SELECT count(*) AS n FROM a")).n, 3);
 });
+
+test("metro: stand-ins replace a module on web only, and a stand-in that imports what it replaces gets the real module", () => {
+  const fs = require("node:fs");
+  const os = require("node:os");
+  const path = require("node:path");
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "imitor-metro-"));
+  fs.writeFileSync(path.join(root, "imitor.config.json"), JSON.stringify({ shims: { "some-sdk": "./stand-ins/some-sdk.js", "native-thing": "inert" } }));
+  const before = process.env.IMITOR;
+  process.env.IMITOR = "1";
+  try {
+    const { withImitor } = require("../src/metro.cjs");
+    const real = (context, moduleName) => ({ type: "sourceFile", filePath: `/real/${moduleName}` });
+    const { resolver } = withImitor({ projectRoot: root, resolver: { resolveRequest: real } });
+    const from = (originModulePath) => ({ originModulePath });
+    const own = path.join(root, "stand-ins", "some-sdk.js");
+    assert.equal(resolver.resolveRequest(from(path.join(root, "app.js")), "some-sdk", "web").filePath, own);
+    assert.equal(resolver.resolveRequest(from(path.join(root, "app.js")), "some-sdk/sub", "web").filePath, own);
+    assert.equal(resolver.resolveRequest(from(path.join(root, "app.js")), "some-sdk", "ios").filePath, "/real/some-sdk");
+    assert.equal(resolver.resolveRequest(from(own), "some-sdk", "web").filePath, "/real/some-sdk");
+    assert.match(resolver.resolveRequest(from(own), "native-thing", "web").filePath, /shims[\\/]inert\.js$/);
+  } finally {
+    if (before === undefined) delete process.env.IMITOR;
+    else process.env.IMITOR = before;
+  }
+});

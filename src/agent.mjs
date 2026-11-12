@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { DEVICES, loadConfig } from "./config.mjs";
 import { serve } from "./serve.mjs";
-import { doStep, loadPlaywright, settle, visibleStandIns } from "./shoot.mjs";
+import { doStep, loadPlaywright, settle, visibleStandIns, watchDialogs } from "./shoot.mjs";
 
 const slug = (s) => String(s).replace(/^\/+|\/+$/g, "").replace(/[^a-zA-Z0-9]+/g, "-") || "root";
 /**
@@ -27,7 +27,7 @@ function findFlow(config, name) {
 }
 
 function appDir(root, config) {
-  const dir = path.join(root, config.out, "app");
+  const dir = path.resolve(root, config.out, "app");
   if (!fs.existsSync(path.join(dir, "index.html"))) throw new Error(`no preview build at ${path.relative(root, dir) || dir}. Build one first (imitor build, or the imitor_build tool).`);
   return dir;
 }
@@ -40,6 +40,7 @@ async function withPage(root, config, opts, task) {
   const server = await serve(appDir(root, config));
   const browser = await chromium.launch();
   const errors = [];
+  const dialogs = [];
   try {
     const context = await browser.newContext({
       viewport: { width: device.width, height: device.height },
@@ -55,9 +56,10 @@ async function withPage(root, config, opts, task) {
     const page = await context.newPage();
     page.on("pageerror", (e) => errors.push(String(e.message).split("\n")[0]));
     page.on("console", (m) => m.type() === "error" && errors.push(m.text().split("\n")[0].slice(0, 300)));
+    watchDialogs(page, (message) => dialogs.push(message));
     const result = await task({ page, context, device, scheme, baseUrl: server.url });
     await context.close(); // flushes the video file
-    return { ...result, device: device.name, scheme, pageErrors: [...new Set(errors)] };
+    return { ...result, device: device.name, scheme, pageErrors: [...new Set(errors)], dialogs };
   } finally {
     await browser.close();
     server.close();
@@ -90,7 +92,7 @@ async function runSteps(page, steps, baseUrl, config, onShot) {
  */
 export async function screenshot(root, opts = {}) {
   const config = loadConfig(root);
-  const dir = path.join(root, config.out, "captures");
+  const dir = path.resolve(root, config.out, "captures");
   fs.mkdirSync(dir, { recursive: true });
   return withPage(root, config, opts, async ({ page, device, scheme, baseUrl }) => {
     const flow = opts.flow ? findFlow(config, opts.flow) : null;
@@ -114,7 +116,7 @@ export async function screenshot(root, opts = {}) {
 export async function runFlow(root, opts = {}) {
   const config = loadConfig(root);
   const flow = findFlow(config, opts.flow);
-  const dir = path.join(root, config.out, "captures", slug(flow.name));
+  const dir = path.resolve(root, config.out, "captures", slug(flow.name));
   fs.mkdirSync(dir, { recursive: true });
   const suffix = uniqueSuffix();
   return withPage(root, config, opts, async ({ page, device, scheme, baseUrl }) => {
@@ -140,7 +142,7 @@ export async function runFlow(root, opts = {}) {
 export async function recordVideo(root, opts = {}) {
   const config = loadConfig(root);
   const flow = findFlow(config, opts.flow);
-  const dir = path.join(root, config.out, "captures");
+  const dir = path.resolve(root, config.out, "captures");
   const tmp = fs.mkdtempSync(path.join(dir.replace(/captures$/, ""), ".video-"));
   fs.mkdirSync(dir, { recursive: true });
   let video;
@@ -166,7 +168,7 @@ export async function recordVideo(root, opts = {}) {
 /** Problems and coverage of the last full run (imitor, or imitor shoot). */
 export function readProblems(root) {
   const config = loadConfig(root);
-  const file = path.join(root, config.out, "manifest.json");
+  const file = path.resolve(root, config.out, "manifest.json");
   if (!fs.existsSync(file)) throw new Error("no run found. Run `imitor` (or the imitor_build tool, then imitor_run_flow) first.");
   const m = JSON.parse(fs.readFileSync(file, "utf8"));
   const standIns = [...new Set(m.shots.flatMap((s) => s.stubs))];
@@ -176,5 +178,5 @@ export function readProblems(root) {
 /** Flows, devices and schemes an agent can ask for. */
 export function describe(root) {
   const config = loadConfig(root);
-  return { flows: config.flows.map((f) => ({ name: f.name, start: f.start || "/", steps: (f.steps || []).length, shots: (f.steps || []).filter((s) => s.shot).map((s) => s.shot) })), devices: [...new Set([...config.devices.map((d) => d.name), ...Object.keys(DEVICES)])], schemes: ["light", "dark"], standIns: config.shims, built: fs.existsSync(path.join(root, config.out, "app", "index.html")) };
+  return { flows: config.flows.map((f) => ({ name: f.name, start: f.start || "/", steps: (f.steps || []).length, shots: (f.steps || []).filter((s) => s.shot).map((s) => s.shot) })), devices: [...new Set([...config.devices.map((d) => d.name), ...Object.keys(DEVICES)])], schemes: ["light", "dark"], standIns: config.shims, built: fs.existsSync(path.resolve(root, config.out, "app", "index.html")) };
 }

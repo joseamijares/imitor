@@ -56,7 +56,7 @@ export function patchHtml(html, { boot = true } = {}) {
 
 /** Build the web preview. With quiet: true nothing is printed (needed when stdout carries a protocol). */
 export function build(root, config, { quiet = false } = {}) {
-  const appDir = path.join(root, config.out, "app");
+  const appDir = path.resolve(root, config.out, "app");
   fs.rmSync(appDir, { recursive: true, force: true });
   const result = spawnSync("npx", ["expo", "export", "--platform", "web", "--output-dir", appDir], {
     cwd: root,

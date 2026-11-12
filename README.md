@@ -10,7 +10,7 @@ It is an imitation, not a simulator. It shows layout, copy, colours, states and
 flows. It does not replace a final check on a real phone; it shrinks what that
 check has to find.
 
-Status: early (v0). Tested on one Expo SDK 54 app so far.
+Status: early (v0). Tried on two Expo SDK 54 apps so far.
 
 Site: [imitor.vercel.app](https://imitor.vercel.app) · Live demo: [imitor-demo.vercel.app](https://imitor-demo.vercel.app)
 
@@ -34,12 +34,14 @@ preview/
    npx playwright install chromium
    ```
 
-2. Wrap your Metro config. It does nothing unless Imitor is running the build.
+2. Wrap your Metro config: keep building `config` as you do now (`getDefaultConfig`, Sentry's `getSentryExpoConfig`, your transformers) and wrap what you export. It does nothing unless Imitor is running the build.
 
    ```js
    // metro.config.js
    module.exports = require("imitor/metro").withImitor(config);
    ```
+
+   Add the output folder (`preview/` by default) to `.gitignore`.
 
 3. Add `imitor.config.json` next to `package.json`:
 
@@ -73,6 +75,8 @@ preview/
    ```bash
    npx imitor
    ```
+
+   `imitor build` runs `expo export --platform web` with your environment, so `EXPO_PUBLIC_*` values are inlined into the build as usual. If the app needs them to start (a backend URL, a public key), pass harmless placeholders for that command rather than real ones, for example `EXPO_PUBLIC_API_URL=http://127.0.0.1:9 npx imitor build`; the app then sees an unreachable backend.
 
 Other commands: `imitor build`, `imitor shoot` (reuse the last build), `imitor serve` (click around by hand), `imitor app` (the review interface), `imitor export` (the interface as a static site).
 
@@ -147,7 +151,9 @@ The site holds the app's screenshots and videos. Publish it only where those may
 | `sqljs` | `expo-sqlite` | Real SQLite (sql.js, wasm) in memory, including the synchronous API. Mirrored to `sessionStorage` so a reload keeps data. |
 | `skia` | `@shopify/react-native-skia` | `<Canvas>` keeps its box but draws nothing. Shots containing one are labelled in the report. |
 | `inert` | any module | Every export exists and does nothing. Components render nothing. |
-| `./path/to/file.js` | any module | Your own stand-in. |
+| `./path/to/file.js` | any module | Your own stand-in. Inside it, `require` of the module it replaces gets the real one, so a stand-in can re-export most of a package and replace one function (for example a backend client's `createClient`, to show signed-in screens with invented data). |
+
+A key matches the module name as the app imports it (`"some-sdk"` also covers `"some-sdk/sub/path"`), before path aliases are resolved.
 
 Stand-ins only apply to the web build Imitor makes (`IMITOR=1`). Your iOS and Android builds are untouched.
 
@@ -155,15 +161,21 @@ Stand-ins only apply to the web build Imitor makes (`IMITOR=1`). Your iOS and An
 
 | Step | Meaning |
 | --- | --- |
-| `{ "shot": "name" }` | Screenshot. Add `"fullPage": true` for the whole scroll height. |
+| `{ "shot": "name" }` | Screenshot. Add `"fullPage": true` for the whole scroll height of the page. Most React Native Web screens scroll inside a `ScrollView`, not the page, and then get the viewport only: use `scroll` steps and more shots. |
 | `{ "tap": "Visible text" }` | Tap by exact text. Also `{ "tap": { "testId" \| "label" \| "text" \| "css": ... } }`. |
 | `{ "fill": { "placeholder" \| "label" \| "testId": ..., "value": "..." } }` | Type into a field. |
 | `{ "goto": "/route" }` | Navigate (full reload). |
-| `{ "waitFor": "Visible text" }`, `{ "wait": 500 }`, `{ "scroll": 400 }` | Wait or scroll. |
+| `{ "waitFor": "Visible text" }`, `{ "wait": 500 }`, `{ "scroll": 400 }` | Wait or scroll (the wheel, in the middle of the screen). |
 
-Each flow runs in a fresh browser, once per device and colour scheme. A failed
+Each flow runs in a fresh browser, once per device and colour scheme (an app that
+only has a light appearance can set `"schemes": ["light"]`). A failed
 step is recorded in the report with a screenshot of where it stopped, and the
 command exits non-zero.
+
+Browser dialogs (`window.alert`, `confirm`, `prompt`, which many apps use for
+errors on web) never appear in a screenshot. Imitor dismisses them and records
+their text as a `dialog` problem with the step that raised it; `imitor flow`,
+`screenshot` and `record` list them under `dialogs`.
 
 Other config keys: `locale` (default `en-US`), `timezone` (`UTC`), `settleMs` (`600`),
 `reducedMotion` (`true`), `out` (`preview`). Devices: `iphone-16`, `iphone-se`,
