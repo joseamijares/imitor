@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
 import { redact } from "../src/redact.mjs";
-import { checkUpload, MAX_BODY_BYTES, MAX_FILE_BYTES, pathProblem, sizeProblem } from "../src/upload.mjs";
+import { checkUpload, fileRefs, MAX_BODY_BYTES, MAX_FILE_BYTES, pathProblem, sizeProblem } from "../src/upload.mjs";
 import { validate } from "./jsonschema.mjs";
 
 const SCHEMA = JSON.parse(fs.readFileSync(new URL("../src/schema/run-upload.v1.json", import.meta.url), "utf8"));
@@ -108,6 +108,19 @@ test("every file the run points at must be one of its own listed files, with a s
   assert.match(checkUpload(failed({ file: "screens/first-run-FAILED-iphone-16-light.png" })), /points at screens\/first-run-FAILED-iphone-16-light.png, which is not in files/);
   assert.match(checkUpload(failed({ file: 42 })), /manifest.problems\[0\].file must be a non-empty string/);
   assert.equal(checkUpload(failed({ file: null, lastGoodShot: WELCOME })), null, "no failure screenshot is fine");
+});
+
+test("fileRefs lists every file a body points at, and skips parts of the wrong shape instead of throwing", () => {
+  const b = withManifest({ problems: [{ kind: "flow-failed", file: "screens/first-run-FAILED-iphone-16-light.png", lastGoodShot: WELCOME }] });
+  b.captures = [{ file: "captures/x.png" }];
+  assert.deepEqual(fileRefs(b).map((r) => [r.at, r.path, r.optional]), [
+    ["manifest.shots[0].file", WELCOME, false],
+    ["manifest.problems[0].file", "screens/first-run-FAILED-iphone-16-light.png", true],
+    ["manifest.problems[0].lastGoodShot", WELCOME, true],
+    ["run.flows[0].steps[0].shot", WELCOME, true],
+    ["captures[0].file", "captures/x.png", true],
+  ]);
+  for (const odd of [null, [], {}, { run: { flows: [1, { steps: "x" }] }, manifest: { shots: {}, problems: [null] } }]) assert.deepEqual(fileRefs(odd), []);
 });
 
 test("checkUpload refuses a deeply nested or oversized body without overflowing the stack, before redaction", () => {
