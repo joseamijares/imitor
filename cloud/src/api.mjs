@@ -104,8 +104,39 @@ const expired = (deps, run) => run.status !== "ready" && Date.parse(run.createdA
 
 /** Files of a run with no object of the declared size, from one listing of the run's prefix. */
 async function missingFiles(storage, run) {
-  const found = new Map((await storage.list(runPrefix(run))).map((o) => [o.key, o.size]));
-  return run.files.filter((f) => found.get(f.key) !== f.size);
+  return (await listMissing(storage, run)).missing;
+}
+
+async function listMissing(storage, run) {
+  const found = new Map((await storage.list(runPrefix(run))).map((o) => [o.key, o]));
+  const missing = run.files.filter((f) => found.get(f.key)?.size !== f.size);
+  return { missing, stale: missing.filter((f) => found.has(f.key)).map((f) => found.get(f.key)) };
+}
+
+/**
+ * Delete objects only if they are still the ones that were listed or read ({ key, etag }), where the store can say so
+ * (deleteIfUnchanged): a request that was slow to get here must not delete a file another request has since
+ * uploaded and verified. On such a store an object without an etag is left alone, never deleted blindly. A store
+ * without conditional deletes (S3, whose upload URLs pin the SHA-256, so a deleted file can only come back as the
+ * declared bytes) gets a plain delete.
+ */
+async function removeIfUnchanged(storage, objects) {
+  if (!storage.deleteIfUnchanged) return objects.length ? storage.delete(objects.map((o) => o.key)) : undefined;
+  const known = objects.filter((o) => o.etag);
+  if (known.length) await storage.deleteIfUnchanged(known);
+}
+
+/**
+ * Files to upload again for a run pushed a second time. An object of the wrong size (an upload cut off) is deleted
+ * first: a store that refuses overwrites (the Blob adapter does, so a verified file cannot be replaced afterwards)
+ * would otherwise refuse the new upload. If the run became ready meanwhile (another push completed it), no URL is
+ * signed at all.
+ */
+async function filesToUpload(deps, run) {
+  const { missing, stale } = await listMissing(deps.storage, run);
+  if (stale.length) await removeIfUnchanged(deps.storage, stale);
+  if ((await deps.db.getRun(run.id))?.status !== "uploading") return [];
+  return missing;
 }
 
 /** Files whose object is not exactly as declared: size, content type and SHA-256, a few HEADs at a time. */
@@ -113,7 +144,8 @@ async function unverifiedFiles(deps, files) {
   const checked = await mapLimit(files, async (f) => {
     const o = await deps.storage.head(f.key);
     const sum = o?.sha256 === f.sha256 || (o?.sha256 == null && deps.allowUnverified === true);
-    return o && o.size === f.size && o.contentType === f.contentType && sum ? null : f;
+    if (!o) return { file: f, found: false }; // gone since the listing: nothing of it to delete
+    return o.size === f.size && o.contentType === f.contentType && sum ? null : { file: f, found: true, etag: o.etag ?? null };
   });
   return checked.filter(Boolean);
 }
@@ -155,7 +187,7 @@ async function createRun(request, deps, key) {
     return fail(409, `run ${clean.clientRunId} was already pushed to this project with different files; push it again under a new run`, { id: run.id });
   }
   if (run.status === "ready") return json(200, { id: run.id, status: run.status, uploads: [], complete: `/v1/runs/${run.id}/complete`, url: await runUrl(deps, run) });
-  return json(200, { id: run.id, status: run.status, uploads: await uploadsFor(storage, await missingFiles(storage, run)), complete: `/v1/runs/${run.id}/complete` });
+  return json(200, { id: run.id, status: run.status, uploads: await uploadsFor(storage, await filesToUpload(deps, run)), complete: `/v1/runs/${run.id}/complete` });
 }
 
 async function completeRun(deps, key, id) {
@@ -172,9 +204,11 @@ async function completeRun(deps, key, id) {
   if (run.status !== "ready") {
     const missing = await missingFiles(storage, run);
     const present = run.files.filter((f) => !missing.includes(f));
-    const wrong = await unverifiedFiles(deps, present);
-    // Deleted, so the next push lists them as missing and uploads them again.
-    if (wrong.length) await storage.delete(wrong.map((f) => f.key)).catch((error) => deps.log?.(error));
+    const checked = await unverifiedFiles(deps, present);
+    const wrong = checked.map((c) => c.file);
+    // Deleted (if unchanged since it was read), so the next push lists them as missing and uploads them again.
+    const found = checked.filter((c) => c.found).map((c) => ({ key: c.file.key, etag: c.etag }));
+    if (found.length) await removeIfUnchanged(storage, found).catch((error) => deps.log?.(error));
     const bad = [...missing, ...wrong];
     if (bad.length) {
       const names = bad.slice(0, 5).map((f) => f.path).join(", ");

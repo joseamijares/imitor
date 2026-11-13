@@ -45,6 +45,10 @@ test("only production, only the app host: everything else is 404 before the clou
   }
   const unconfigured = await cloudFunction({ VERCEL_ENV: "production", PUBLIC_URL: APP }).fetch(rewritten("/login"));
   assert.equal(unconfigured.status, 500, "production without a database or bucket refuses rather than keep things in memory");
+  const db = { VERCEL_ENV: "production", PUBLIC_URL: APP, DATABASE_URL: "postgres://u:p@127.0.0.1:1/x" };
+  assert.equal((await cloudFunction(db).fetch(rewritten("/login"))).status, 500, "a database alone is not enough: files need a store");
+  const blob = await cloudFunction({ ...db, BLOB_READ_WRITE_TOKEN: "vercel_blob_rw_AbC123xyz_s3cr3t" }).fetch(rewritten("/login"));
+  assert.equal(blob.status, 200, "a connected Vercel Blob store stands in for S3");
 });
 
 test("every answer is private, no-store, with the security headers; the path comes back from the rewrite", async () => {

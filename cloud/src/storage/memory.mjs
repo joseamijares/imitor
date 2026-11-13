@@ -35,13 +35,16 @@ export function memoryStorage({ baseUrl = null, now = () => Date.now() } = {}) {
     },
     async head(key) {
       const o = objects.get(key);
-      return o ? { size: o.body.length, contentType: o.contentType, sha256: crypto.createHash("sha256").update(o.body).digest("hex") } : null;
+      return o ? { size: o.body.length, contentType: o.contentType, sha256: crypto.createHash("sha256").update(o.body).digest("hex"), etag: o.etag ?? null } : null;
     },
     async list(prefix) {
-      return [...objects].filter(([key]) => key.startsWith(prefix)).map(([key, o]) => ({ key, size: o.body.length }));
+      return [...objects].filter(([key]) => key.startsWith(prefix)).map(([key, o]) => ({ key, size: o.body.length, etag: o.etag ?? null }));
     },
     async delete(keys) {
       for (const key of keys) objects.delete(key);
+    },
+    async deleteIfUnchanged(list) {
+      for (const { key, etag } of list) if (objects.get(key)?.etag === etag) objects.delete(key);
     },
     /** Answer a request to a URL from presignPut or presignGet. */
     async handle(request) {
@@ -67,7 +70,7 @@ export function memoryStorage({ baseUrl = null, now = () => Date.now() } = {}) {
       const body = Buffer.from(await request.arrayBuffer());
       if (body.length !== Number(signed.size)) return plain(400, `IncompleteBody: expected ${signed.size} bytes, got ${body.length}`);
       if (crypto.createHash("sha256").update(body).digest("hex") !== signed.sha256) return plain(400, "BadDigest");
-      objects.set(key, { body, contentType: signed.type });
+      objects.set(key, { body, contentType: signed.type, etag: crypto.randomBytes(8).toString("hex") });
       return new Response(null, { status: 200 });
     },
   };

@@ -23,6 +23,10 @@ export async function migrate(pool, { dir = MIGRATIONS_DIR, log = () => {} } = {
   const locked = async (fn) => {
     try {
       await client.query("begin");
+      // No statement timeout for a migration or its wait for the lock: the role's own (10 s on Vercel, set by
+      // cloud/scripts/deploy-migrate.mjs) is for requests. "set local" ends with the transaction, so it is safe
+      // through a pooler too.
+      await client.query("set local statement_timeout = 0");
       await client.query("select pg_advisory_xact_lock($1)", [LOCK]);
       const done = await fn();
       await client.query("commit");

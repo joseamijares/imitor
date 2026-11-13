@@ -18,10 +18,14 @@
  * @property {(key: string, opts?: { expiresIn?: number }) => Promise<string>} presignGet  A short-lived download URL.
  * @property {(key: string) => Promise<{ size: number, contentType: string | null, sha256: string | null } | null>} head
  *   null when there is no object. sha256 (64 hex digits) is the checksum the store keeps for the object, or null when
- *   it keeps none (S3_CHECKSUMS=off); the API compares all three with what the run declared.
+ *   it keeps none (S3_CHECKSUMS=off); the API compares all three with what the run declared. Where the store has
+ *   them, `etag` identifies this version of the object (see deleteIfUnchanged).
  * @property {(prefix: string) => Promise<{ key: string, size: number }[]>} list  Every object whose key starts with
- *   `prefix`, in one call per 1000 objects, so finding a run's missing files does not take a call per file.
+ *   `prefix`, in one call per 1000 objects, so finding a run's missing files does not take a call per file. Each
+ *   may carry an `etag`.
  * @property {(keys: string[]) => Promise<void>} delete  Missing keys are not an error; any other failure throws.
+ * @property {(objects: { key: string, etag: string }[]) => Promise<void>} [deleteIfUnchanged]  Optional: delete each
+ *   object only if it still has that etag; one that changed or is gone is left alone, not an error.
  */
 
 export {};
