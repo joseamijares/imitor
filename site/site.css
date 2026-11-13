@@ -286,6 +286,18 @@ section.band { padding-top: 136px; }
 .table tr:last-child td { border-bottom: 0; }
 .table td { color: var(--color-t-2); }
 .table td:first-child { width: 42%; }
+.table.cmp { margin: 0; }
+.table.cmp tbody th { width: 28%; background: none; color: var(--color-t-1); border-bottom: 1px solid var(--color-line); }
+.table.cmp tr:last-child th { border-bottom: 0; }
+.table.cmp td:first-child { width: auto; }
+.cmp-note { margin: 16px 0 0; font-size: 13px; line-height: 20px; color: var(--color-t-3, var(--color-t-2)); max-width: 72ch; }
+.cmp-note a { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+@media (max-width: 720px) {
+  .table.cmp { margin-right: 0; border-radius: 8px; }
+  .table.cmp table { min-width: 0; font-size: 13px; line-height: 19px; }
+  .table.cmp th, .table.cmp td { padding: 10px; }
+  .table.cmp tbody th { width: 30%; }
+}
 @media (max-width: 720px) { .table table { min-width: 620px; } .table { margin-right: calc(-1 * var(--gutter)); border-radius: 8px 0 0 8px; } }
 .connect { display: grid; gap: 0; border: 1px solid var(--color-line); border-radius: 10px; overflow: hidden; margin: 16px 0 8px; }
 .connect-row { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 6px 20px; padding: 16px; border-bottom: 1px solid var(--color-line); align-items: center; }
