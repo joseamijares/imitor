@@ -71,6 +71,12 @@ For people (a session cookie):
 | `GET /` | A redirect to `/projects` (on Vercel, `vercel.json` does it, since `/` is the site's own page there). |
 | `/p/<project>/...` | The interface in cloud mode. Its API is `/p/<project>/api/*`, the same answers as the local server's `/api/*` (built with the same code, `src/derive.mjs`), plus `me`, `keys` (`GET`; `POST keys` with `{ name }` and `POST keys/<id>/revoke`, owners only) and `members` (`GET`; `POST members` with `{ email, role }`, `role` being `member` or `owner`, and `POST members/<user id>/remove`, owners only, or anyone for themselves; a project always keeps an owner: the check and the change are one transaction holding the project row, so two owners removing each other at once cannot leave none). Files: `/p/<project>/files/runs/<run>/<path>`, a 302 to storage. |
 
+For the public site (no key, no session):
+
+| Route | |
+| --- | --- |
+| `POST /api/waitlist/` | The waitlist form on the site's pricing page (`src/waitlist.mjs`, the root `api/waitlist.mjs` on Vercel; not part of `handle`). Body `{ "email": "..." }` as JSON, or the form itself. It stores the address in lower case in the `waitlist` table, once, and answers `200 { "ok": true }` whether or not it was listed already (a plain form post gets a `303` back to `/pricing/#joined` or `/pricing/#not-joined`). It sends no email, makes no user and admits nobody. Production only (`404` elsewhere), `403` for a post from another origin, `400` for what is not one address, `429` after five tries from one client address in ten minutes, `503` when the database cannot be reached. It needs only `DATABASE_URL`. Read the list with `select email, created_at from waitlist order by created_at`. |
+
 `imitor push` only sends to an `https://` address, or to plain `http://` on `localhost`, `127.0.0.1` or `[::1]`.
 
 ## Environment
@@ -279,6 +285,7 @@ cloud/
   src/assets.mjs          the interface (../src/app) and design tokens, read from the repository
   src/server.mjs          node:http adapter and the environment; memory adapters unless the environment says otherwise
   src/vercel.mjs          the Vercel functions (root api/ shims), with their production and host guards
+  src/waitlist.mjs        the waitlist function for the site's pricing page (root api/waitlist.mjs)
   src/ids.mjs             ids, key secrets, project slugs
   src/limit.mjs           bounded concurrency for storage calls
   src/db/CONTRACT.md      every repository method, with its arguments and results

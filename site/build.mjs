@@ -1,4 +1,4 @@
-// Builds the public site (landing page, How to use, For agents) into site/dist/:
+// Builds the public site (landing page, pricing, How to use, For agents) into site/dist/:
 //   node site/build.mjs        (or: npm run site)
 // The landing page is hand-written HTML. The two documentation pages are generated from README.md at build time, and
 // the agent connect commands come from src/store.mjs, so the site and the README cannot drift. Node only, no
@@ -227,6 +227,9 @@ export function buildSite({ out = path.join(HERE, "dist") } = {}) {
     fs.mkdirSync(path.join(out, key), { recursive: true });
     fs.writeFileSync(path.join(out, key, "index.html"), legalPage(key, template));
   }
+  // Pricing: hand-written like the landing page; only the contact address is filled in.
+  fs.mkdirSync(path.join(out, "pricing"), { recursive: true });
+  fs.writeFileSync(path.join(out, "pricing", "index.html"), fs.readFileSync(path.join(HERE, "pricing.html"), "utf8").replaceAll("{{contact}}", LEGAL.contact));
   // The demo: a read-only export with invented data, served under /demo/. The site's own vercel.json and 404.html
   // cover it, so the export's per-folder fallbacks are dropped.
   buildDemo({ out: path.join(out, "demo"), base: "/demo" });
