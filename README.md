@@ -448,6 +448,24 @@ This follows the EAS Workflows syntax but has not been run on EAS. Check how you
 - Platform-specific code paths: the build runs as `Platform.OS === "web"`
 - Widgets, notifications, Live Activities, watch apps
 
+## Imitor and cloud simulators
+
+Expo Simulators (launched 12 Nov 2026) gives agents real iOS simulators and Android emulators in Expo's cloud. It and Imitor both put screenshots of a change on the pull request, in different ways. They fit together: Imitor on every commit, a simulator for the final check.
+
+| | Imitor | Expo Simulators |
+|---|---|---|
+| What you see | A web imitation of the app, with stand-ins marked | The real native app |
+| Needs a native build | No | Yes |
+| Runs on | Any Linux box, CI runner or agent session | Expo's cloud |
+| Cost | Free (MIT); you pay only for your own CI minutes | $0.10 a minute on a paid Expo plan (from $19 a month), 60 minutes a month included until 2027 |
+| Native chrome, keyboard, exact fonts, platform code paths | Not shown | Shown |
+| Apps | Expo | Any mobile app linked to Expo Services |
+| Open source, self-hosted | Yes | No |
+
+Expo's figures are from [expo.dev/pricing](https://expo.dev/pricing) on 13 Nov 2026 and may change. We have not run Expo Simulators ourselves; its column is from Expo's own pages.
+
+Use a simulator (or a phone) for everything under [What it does not show](#what-it-does-not-show). Use Imitor when you want a look at layout, copy, colours and states on every push, without a build or a meter running.
+
 ## Roadmap
 
 - Text size and language controls in the live preview (device, scheme and motion are there)
