@@ -76,7 +76,7 @@ for (const [name, factory] of IMPLEMENTATIONS) {
       await fresh();
       const ada = await db.createUser({ email: "Ada@Example.com", name: "Ada" });
       assert.match(ada.id, /^usr_[0-9a-f]{20}$/);
-      assert.deepEqual({ ...ada, id: null, createdAt: null }, { id: null, email: "Ada@Example.com", name: "Ada", allowed: false, createdAt: null });
+      assert.deepEqual({ ...ada, id: null, createdAt: null }, { id: null, email: "Ada@Example.com", name: "Ada", allowed: false, invitedAt: null, createdAt: null });
       assert.deepEqual(await db.findUserByEmail("ada@example.com"), ada);
       assert.deepEqual(await db.getUser(ada.id), ada);
       assert.equal(await db.getUser("usr_none"), null);
@@ -90,6 +90,9 @@ for (const [name, factory] of IMPLEMENTATIONS) {
       assert.equal(await db.findIdentity("google", "other"), null);
       const bob = await db.createUser({ email: "bob@example.com" });
       await assert.rejects(db.addIdentity("google", "1234567890", bob.id), (e) => e.code === "conflict");
+      const cy = await db.createUser({ email: "cy@example.com", allowed: true, invited: true });
+      assert.ok(cy.invitedAt && cy.invitedAt === cy.createdAt, "an invitation is marked when it is made");
+      assert.equal((await db.findUserByEmail("CY@example.com")).invitedAt, cy.invitedAt);
       assert.deepEqual(await db.listIdentities(ada.id), [google]);
     });
 

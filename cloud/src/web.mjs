@@ -110,8 +110,9 @@ export async function admit(deps, claims) {
   const email = String(claims.email || "").toLowerCase();
   if (!email) return null;
   let user = await db.findUserByEmail(email);
-  // Admitted: an address in IMITOR_ALLOWED_EMAILS, or one an owner added to a project (a user kept allowed).
-  if (!deps.allowedEmails?.has(email) && !user?.allowed) return null;
+  // Admitted: an address in IMITOR_ALLOWED_EMAILS, or one an owner invited to a project (marked invitedAt, and not
+  // turned off since). Any other allowed row, such as the admin-token user's, never admits a Google sign-in by address.
+  if (!deps.allowedEmails?.has(email) && !(user?.allowed && user.invitedAt)) return null;
   if (user) {
     // The address is someone's who signed in with another Google account: an address can change hands, so the owner decides.
     // (Its own identity may have been bound by another sign-in of this same account since the lookup above.)
@@ -316,16 +317,25 @@ async function projectApi(request, deps, user, project, member, route) {
     }
     return json(200, { key: publicKey(await db.getAccessKey(id)) });
   }
-  if (route === "/members" || /^\/members\/[^/]+\/remove$/.test(route)) {
-    if (!owner) return fail(403, "only an owner of this project can add or remove its members");
-    return route === "/members" ? addMember(deps, user, project, fields) : removeMember(deps, user, project, decodeURIComponent(route.split("/")[2]));
+  if (route === "/members") {
+    if (!owner) return fail(403, "only an owner of this project can add people to it");
+    return addMember(deps, user, project, fields);
+  }
+  const leave = /^\/members\/([^/]+)\/remove$/.exec(route);
+  if (leave) {
+    let id;
+    try { id = decodeURIComponent(leave[1]); } catch { return fail(400, "that is not a member id"); }
+    // Owners remove anyone; a member can only leave.
+    if (!owner && id !== user.id) return fail(403, "only an owner of this project can remove other people from it");
+    return removeMember(deps, user, project, id);
   }
   return fail(404, `no endpoint POST /api${route}`);
 }
 
 // ---------- members ----------
 
-const EMAIL = /^[^\s@<>",;]+@[^\s@<>",;]+\.[^\s@<>",;]+$/;
+// ASCII only, so lowercasing here and lower() in Postgres agree on what one address is.
+const EMAIL = /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/;
 const publicMember = (m, me) => ({ userId: m.userId, email: m.email, name: m.name, role: m.role, since: m.createdAt, you: m.userId === me.id });
 
 /**
@@ -342,21 +352,22 @@ async function addMember(deps, actor, project, fields) {
   let target = await db.findUserByEmail(email);
   if (!target) {
     try {
-      target = await db.createUser({ email: email.toLowerCase(), allowed: true });
+      target = await db.createUser({ email: email.toLowerCase(), allowed: true, invited: true });
       await db.addAudit({ projectId: project.id, userId: actor.id, action: "user.invite", detail: { email: target.email } });
     } catch (error) {
       if (error.code !== "conflict") throw error;
       target = await db.findUserByEmail(email);
     }
   } else if (!target.allowed) {
-    target = await db.updateUser(target.id, { allowed: true });
+    // Turned off by the operator (users.allowed = false): an owner cannot turn them back on.
+    return fail(409, "this account has been turned off on this server, so it cannot be added");
   }
   const before = await db.getMember(project.id, target.id);
   if (before?.role === "owner" && role !== "owner" && (await db.listMembers(project.id)).filter((m) => m.role === "owner").length === 1) {
     return fail(409, "a project needs an owner: make someone else an owner first");
   }
   await db.addMember(project.id, target.id, role);
-  await db.addAudit({ projectId: project.id, userId: actor.id, action: before ? "member.role" : "member.add", detail: { email: target.email, role } });
+  await db.addAudit({ projectId: project.id, userId: actor.id, action: before ? "member.role" : "member.add", detail: { email: target.email, role, ...(before ? { from: before.role } : {}) } });
   const added = (await db.listMembers(project.id)).find((m) => m.userId === target.id);
   return json(before ? 200 : 201, { member: publicMember(added, actor) });
 }
@@ -369,7 +380,7 @@ async function removeMember(deps, actor, project, userId) {
   if (!target) return fail(404, `no member ${userId} in this project`);
   if (target.role === "owner" && members.filter((m) => m.role === "owner").length === 1) return fail(409, "a project needs an owner: make someone else an owner first");
   await db.removeMember(project.id, userId);
-  await db.addAudit({ projectId: project.id, userId: actor.id, action: "member.remove", detail: { email: target.email } });
+  await db.addAudit({ projectId: project.id, userId: actor.id, action: "member.remove", detail: { email: target.email, self: target.userId === actor.id } });
   return json(200, { removed: userId });
 }
 

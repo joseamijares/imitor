@@ -8,7 +8,7 @@ import { LINE_KINDS } from "./memory.mjs";
 const iso = (v) => (v == null ? null : v instanceof Date ? v.toISOString() : new Date(v).toISOString());
 const json = (v) => JSON.stringify(v);
 
-const user = (r) => r && { id: r.id, email: r.email, name: r.name, allowed: r.allowed, createdAt: iso(r.created_at) };
+const user = (r) => r && { id: r.id, email: r.email, name: r.name, allowed: r.allowed, invitedAt: iso(r.invited_at), createdAt: iso(r.created_at) };
 const identity = (r) => r && { provider: r.provider, subject: r.subject, userId: r.user_id, createdAt: iso(r.created_at) };
 const session = (r) => r && { idHash: r.id_hash, userId: r.user_id, createdAt: iso(r.created_at), expiresAt: iso(r.expires_at) };
 const project = (r) => r && { id: r.id, name: r.name, slug: r.slug, createdAt: iso(r.created_at) };
@@ -135,9 +135,10 @@ export function pgDb({ connectionString, pool = null, schema = null, now = () =>
     },
 
     // ---------- people ----------
-    async createUser({ email, name = null, allowed = false }) {
+    async createUser({ email, name = null, allowed = false, invited = false }) {
       try {
-        return user(await one("insert into users (id, email, name, allowed, created_at) values ($1, $2, $3, $4, $5) returning *", [newId("usr"), email, name, allowed, stamp()]));
+        const now = stamp();
+        return user(await one("insert into users (id, email, name, allowed, invited_at, created_at) values ($1, $2, $3, $4, $5, $6) returning *", [newId("usr"), email, name, allowed, invited ? now : null, now]));
       } catch (error) {
         throw conflict(error, `a user with the address ${email} exists`);
       }

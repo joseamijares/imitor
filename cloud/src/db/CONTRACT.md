@@ -11,7 +11,7 @@ database. A method that would break a unique rule throws an error with `code: "c
 
 ## Records
 
-- **User** `{ id, email, name, allowed, createdAt }`. One per address, whatever its case.
+- **User** `{ id, email, name, allowed, invitedAt, createdAt }`. One per address, whatever its case. `invitedAt` is set when an owner added the address before its person ever signed in, else null.
 - **Identity** `{ provider, subject, userId, createdAt }`: `("google", the ID token's sub)` bound to one user.
 - **Session** `{ idHash, userId, createdAt, expiresAt }`. `idHash` is the SHA-256 of the cookie value; the value itself
   is never stored.
@@ -28,7 +28,7 @@ database. A method that would break a unique rule throws an error with `code: "c
 
 | Method | Arguments | Returns |
 | --- | --- | --- |
-| `createUser` | `{ email, name = null, allowed = false }` | User. Conflict when the address (any case) has a user. |
+| `createUser` | `{ email, name = null, allowed = false, invited = false }` | User; `invited` sets `invitedAt` to now. Conflict when the address (any case) has a user. |
 | `getUser` | `id` | User, or null |
 | `findUserByEmail` | `email` | User whose address equals it ignoring case, or null |
 | `updateUser` | `id, patch` (`name`, `allowed`) | the updated User, or null |

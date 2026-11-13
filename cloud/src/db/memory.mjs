@@ -42,9 +42,10 @@ export function memoryDb({ now = () => new Date() } = {}) {
 
   const db = {
     // ---------- people ----------
-    async createUser({ email, name = null, allowed = false }) {
+    async createUser({ email, name = null, allowed = false, invited = false }) {
       if ([...users.values()].some((u) => lower(u.email) === lower(email))) throw conflict(`a user with the address ${email} exists`);
-      const user = { id: newId("usr"), email, name, allowed, createdAt: stamp() };
+      const now = stamp();
+      const user = { id: newId("usr"), email, name, allowed, invitedAt: invited ? now : null, createdAt: now };
       users.set(user.id, user);
       return copy(user);
     },

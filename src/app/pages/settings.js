@@ -173,7 +173,7 @@ function keyRow(k, canManage) {
 function memberRow(m, canManage) {
   const who = m.name && m.name !== m.email ? m.name : m.email;
   const sub = html`${who !== m.email ? html`<span class="mono">${m.email}</span> · ` : ""}${m.you ? "you · " : ""}added ${ago(m.since) === "now" ? "just now" : `${ago(m.since)} ago`}`;
-  const value = html`${pill(m.role === "owner" ? "Owner" : "Member", m.role === "owner" ? "ok" : "neutral")}${canManage ? button("Remove", "secondary", { attrs: String(html`data-remove-member="${m.userId}" data-email="${m.email}" data-you="${m.you ? "1" : ""}"`) }) : ""}`;
+  const value = html`${pill(m.role === "owner" ? "Owner" : "Member", m.role === "owner" ? "ok" : "neutral")}${canManage || m.you ? button(m.you ? "Leave" : "Remove", "secondary", { attrs: String(html`data-remove-member="${m.userId}" data-email="${m.email}" data-you="${m.you ? "1" : ""}"`) }) : ""}`;
   return html`<div class="set-row" data-member="${m.userId}"><div class="set-label"><span>${who}</span><span class="set-sub">${sub}</span></div><div class="set-value">${value}</div></div>`;
 }
 
@@ -192,7 +192,7 @@ async function mountMembers(ctx, main) {
         <label class="sr-only" for="member-role">Role</label>
         <select class="field" id="member-role" name="role"><option value="member">Member</option><option value="owner">Owner</option></select>
         <button type="submit" class="btn btn-primary">Add</button></form>`
-      : html`<p class="set-empty">Only an owner of this project can add or remove people.</p>`;
+      : html`<p class="set-empty">Only an owner of this project can add or remove people. You can leave it.</p>`;
     box.innerHTML = String(html`${form}${data.members.map((m) => memberRow(m, data.canManage))}`);
   }
   box.addEventListener("submit", async (e) => {
@@ -216,7 +216,7 @@ async function mountMembers(ctx, main) {
     const b = e.target.closest("[data-remove-member]");
     if (!b) return;
     const you = b.dataset.you === "1";
-    if (!confirm(you ? "Remove yourself from this project? You will lose access to it." : `Remove ${b.dataset.email} from this project? Their account stays; they lose access to this project.`)) return;
+    if (!confirm(you ? "Leave this project? You will lose access to it until an owner adds you again." : `Remove ${b.dataset.email} from this project? Their account stays; they lose access to this project.`)) return;
     b.disabled = true;
     try {
       await cloud.removeMember(b.dataset.removeMember);
