@@ -381,6 +381,24 @@ test("access keys: when the message cannot be sent the key is still made and rev
   assert.equal(s.logged.length, 2);
 });
 
+test("a lookup that fails while preparing a message does not fail what was already done: the key's secret is still answered, the person still added", async () => {
+  const s = await twoOwners();
+  const { listMembers, listIdentities } = s.db;
+  s.db.listMembers = async () => { throw new Error("the database went away"); };
+  const made = await s.ada.call("POST", "/p/fernwood/api/keys", { body: { name: "ci" } });
+  assert.equal(made.status, 201);
+  assert.match(made.json.secret, /^imk_/, "the secret is shown once: it must not be lost to a message");
+  assert.equal((await s.ada.call("POST", `/p/fernwood/api/keys/${made.json.key.id}/revoke`, { body: {} })).status, 200);
+  s.db.listMembers = listMembers;
+  s.db.listIdentities = async () => { throw new Error("the database went away"); };
+  const added = await s.ada.call("POST", "/p/fernwood/api/members", { body: { email: "zed@example.com" } });
+  s.db.listIdentities = listIdentities;
+  assert.equal(added.status, 201);
+  assert.equal(added.json.notified, false);
+  assert.equal(s.logged.length, 3);
+  assert.equal(s.mail.transport.sent.filter((m) => m.to === "zed@example.com").length, 0);
+});
+
 test("access keys: with mail off nobody is emailed, and nothing about mail is audited", async () => {
   const s = await twoOwners();
   s.deps.mail = { transport: noMail(), from: null, replyTo: null };

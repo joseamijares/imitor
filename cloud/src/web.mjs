@@ -344,12 +344,21 @@ async function projectApi(request, deps, user, project, member, route) {
  * throws and has its own 5 s limit: the key is made or revoked whatever happens to the messages.
  */
 async function tellOwners(deps, actor, project, key, revoked) {
-  const owners = (await deps.db.listMembers(project.id)).filter((m) => m.role === "owner" && m.userId !== actor.id).slice(0, CAPS.accessKey.perSender);
-  if (!owners.length) return;
-  const url = `${deps.publicUrl}/login?next=${encodeURIComponent(`/p/${project.slug}/settings#access-keys`)}`;
-  const kind = revoked ? "key-revoke" : "key-create";
-  await Promise.all(owners.map((m) => notify(deps, "accessKey", { to: m.email, project, actor, keyName: key.name, revoked, url, key: `${kind}/${key.id}/${m.userId}` })));
+  if (!mailOn(deps)) return;
+  // The key is already made or revoked: a lookup that fails here must not cost the answer (a new key's secret is shown once).
+  try {
+    const owners = (await deps.db.listMembers(project.id)).filter((m) => m.role === "owner" && m.userId !== actor.id).slice(0, CAPS.accessKey.perSender);
+    if (!owners.length) return;
+    const url = `${deps.publicUrl}/login?next=${encodeURIComponent(`/p/${project.slug}/settings#access-keys`)}`;
+    const kind = revoked ? "key-revoke" : "key-create";
+    await Promise.all(owners.map((m) => notify(deps, "accessKey", { to: m.email, project, actor, keyName: key.name, revoked, url, key: `${kind}/${key.id}/${m.userId}` })));
+  } catch (error) {
+    deps.log?.(error);
+  }
 }
+
+/** Whether this server sends mail at all, so what a message needs is not looked up for nothing. */
+const mailOn = (deps) => !!deps.mail?.transport && !deps.mail.transport.off;
 
 // ---------- members ----------
 
@@ -393,13 +402,18 @@ async function addMember(deps, actor, project, fields) {
   // membership's, so two adds racing to the same membership send once, and a remove and re-add sends again. notify()
   // never throws and has its own 5 s limit: whatever happens to the message, the person stays added.
   let notified = false;
-  if (!before && target.id !== actor.id) {
-    // Never signed in (an invited address, from this project or an earlier one): they may not expect this message.
-    const pending = !!target.invitedAt && (await db.listIdentities(target.id)).length === 0;
-    // Signing in lands on the project: /login passes `next` through Google and back (and straight on when signed in).
-    const url = `${deps.publicUrl}/login?next=${encodeURIComponent(`/p/${project.slug}/`)}`;
-    const key = `member-add/${project.id}/${target.id}/${added.createdAt}`;
-    notified = (await notify(deps, "invitation", { to: target.email, project, actor, role, pending, url, key })).sent;
+  if (!before && target.id !== actor.id && mailOn(deps)) {
+    // The person is already added: a lookup that fails here leaves them added and unnotified, it does not fail the add.
+    try {
+      // Never signed in (an invited address, from this project or an earlier one): they may not expect this message.
+      const pending = !!target.invitedAt && (await db.listIdentities(target.id)).length === 0;
+      // Signing in lands on the project: /login passes `next` through Google and back (and straight on when signed in).
+      const url = `${deps.publicUrl}/login?next=${encodeURIComponent(`/p/${project.slug}/`)}`;
+      const key = `member-add/${project.id}/${target.id}/${added.createdAt}`;
+      notified = (await notify(deps, "invitation", { to: target.email, project, actor, role, pending, url, key })).sent;
+    } catch (error) {
+      deps.log?.(error);
+    }
   }
   return json(before ? 200 : 201, { member: publicMember(added, actor), notified });
 }
