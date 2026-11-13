@@ -170,7 +170,7 @@ Imitor Cloud is a place for finished runs that a team signs in to: agents and CI
 IMITOR_CLOUD_URL=https://app.imitor.dev IMITOR_TOKEN=imk_... npx imitor push
 ```
 
-`imitor push` uploads the newest run in the output folder; `--run <id>` picks another. The key can only upload runs to its project. Typed values (passwords, emails) are blanked before anything leaves the machine. Interest in an invitation is collected on [issue #11](https://github.com/joseamijares/imitor/issues/11).
+`imitor push` uploads the newest run in the output folder; `--run <id>` picks another. The key can only upload runs to its project. Typed values (passwords, emails) are blanked before anything leaves the machine. To hear when the hosted service opens, join the waitlist at [imitor.dev/pricing](https://imitor.dev/pricing/#waitlist).
 
 ## Stand-ins
 

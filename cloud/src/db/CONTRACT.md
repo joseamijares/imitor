@@ -101,4 +101,14 @@ database. A method that would break a unique rule throws an error with `code: "c
 | `addAudit` | `{ projectId = null, userId = null, keyId = null, action, detail = {} }` | nothing; `at` is now. `detail` shapes are listed above `audit_log` in the schema. |
 | `listAudit` | none | entries `{ id, at, projectId, userId, keyId, action, detail }`, oldest first |
 
+## Waitlist
+
+Addresses left on the public site's pricing page by people who want the hosted service (`src/waitlist.mjs`). They are
+not users: nothing here lets anyone sign in.
+
+| Method | Arguments | Returns |
+| --- | --- | --- |
+| `addWaitlist` | `email` | `{ added }`: true the first time, false when the address (any case) is on the list already. Stored in lower case. |
+| `listWaitlist` | none | entries `{ email, createdAt }`, oldest first |
+
 `close()` releases the connection pool (nothing for memory).

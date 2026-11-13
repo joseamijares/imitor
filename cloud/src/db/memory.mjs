@@ -35,6 +35,7 @@ export function memoryDb({ now = () => new Date() } = {}) {
   const lines = { captures: [], activity: [] };
   const seen = new Map(); // "projectId\0userId\0problemId" -> seen row
   const audit = [];
+  const waitlist = new Map(); // lower-case address -> waitlist row
   const pending = new Map(); // object key -> pending_deletions row
   let serial = 0; // the identity columns of captures, activity and audit_log
   const stamp = () => now().toISOString();
@@ -258,6 +259,17 @@ export function memoryDb({ now = () => new Date() } = {}) {
     },
     async listAudit() {
       return audit.map(copy);
+    },
+
+    // ---------- waitlist ----------
+    async addWaitlist(email) {
+      const key = email.toLowerCase();
+      if (waitlist.has(key)) return { added: false };
+      waitlist.set(key, { email: key, createdAt: stamp() });
+      return { added: true };
+    },
+    async listWaitlist() {
+      return [...waitlist.values()].map(copy);
     },
     async close() {},
   };

@@ -275,5 +275,16 @@ for (const [name, factory] of IMPLEMENTATIONS) {
       assert.ok(entries[0].id < entries[1].id && entries[1].id < entries[2].id);
       assert.ok(entries.every((e) => typeof e.id === "number" && !Number.isNaN(Date.parse(e.at))));
     });
+
+    test("waitlist: one row per address whatever its case, oldest first", async () => {
+      await fresh();
+      assert.deepEqual(await db.addWaitlist("Ada@Example.com"), { added: true });
+      assert.deepEqual(await db.addWaitlist("grace@example.com"), { added: true });
+      assert.deepEqual(await db.addWaitlist("ada@example.COM"), { added: false });
+      const list = await db.listWaitlist();
+      assert.deepEqual(list.map((e) => e.email), ["ada@example.com", "grace@example.com"]);
+      assert.ok(list.every((e) => !Number.isNaN(Date.parse(e.createdAt))));
+      assert.equal(await db.findUserByEmail("ada@example.com"), null, "the waitlist makes no user");
+    });
   });
 }
