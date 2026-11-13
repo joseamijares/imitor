@@ -19,13 +19,15 @@ const out = buildSite({ out: fs.mkdtempSync(path.join(os.tmpdir(), "imitor-site-
 const landing = fs.readFileSync(path.join(out, "index.html"), "utf8");
 
 test("the site builds every page and every file it links to", () => {
-  for (const f of ["index.html", "404.html", "how-to-use/index.html", "agents/index.html", "tokens.css", "site.css", "site.js"]) assert.ok(fs.existsSync(path.join(out, f)), f);
-  for (const page of ["index.html", "how-to-use/index.html", "agents/index.html", "404.html"]) {
+  for (const f of ["index.html", "404.html", "pricing/index.html", "how-to-use/index.html", "agents/index.html", "tokens.css", "site.css", "site.js"]) assert.ok(fs.existsSync(path.join(out, f)), f);
+  for (const page of ["index.html", "pricing/index.html", "how-to-use/index.html", "agents/index.html", "404.html"]) {
+    // The waitlist function is not a file of the site: Vercel serves it from api/waitlist.mjs.
+    const served = (ref) => ref === "/api/waitlist/" && fs.existsSync(path.join(ROOT, "api", "waitlist.mjs"));
     const html = fs.readFileSync(path.join(out, page), "utf8");
     assert.doesNotMatch(html, /\{\{\w+\}\}/, `${page} has an unfilled placeholder`);
     for (const [, ref] of html.matchAll(/(?:src|href)="(\/[^"#]*)"/g)) {
       const file = ref.endsWith("/") ? path.join(out, ref, "index.html") : path.join(out, ref);
-      assert.ok(fs.existsSync(file), `${page} links to missing ${ref}`);
+      assert.ok(served(ref) || fs.existsSync(file), `${page} links to missing ${ref}`);
     }
   }
 });
@@ -101,7 +103,7 @@ test("the privacy and terms pages are built, linked from every page, and match w
     assert.match(html, /mailto:/, `${key} gives a contact address`);
     assert.doesNotMatch(html, /class="source"/, `${key} does not claim to come from the README`);
   }
-  for (const page of ["index.html", "how-to-use/index.html", "agents/index.html", "404.html", "privacy/index.html"]) {
+  for (const page of ["index.html", "pricing/index.html", "how-to-use/index.html", "agents/index.html", "404.html", "privacy/index.html"]) {
     const html = fs.readFileSync(path.join(out, page), "utf8");
     assert.match(html, /href="\/privacy\/"/, `${page} links to the privacy page`);
     assert.match(html, /href="\/terms\/"/, `${page} links to the terms`);
@@ -110,4 +112,31 @@ test("the privacy and terms pages are built, linked from every page, and match w
   assert.match(privacy, new RegExp(`newest ${KEEP_RUNS} per project`), "the retention stated matches KEEP_RUNS");
   assert.match(privacy, /openid.*email.*profile/s, "the Google scopes stated match the sign-in");
   assert.match(privacy, /Resend sends the service's email/, "the mail provider the cloud uses is named");
+});
+
+test("the pricing page offers a waitlist, not a price: the form posts to the function, and the privacy page covers it", async () => {
+  const { JOINED, NOT_JOINED } = await import("../cloud/src/waitlist.mjs");
+  const html = fs.readFileSync(path.join(out, "pricing", "index.html"), "utf8");
+  const form = html.match(/<form action="([^"]+)" method="post">([\s\S]*?)<\/form>/);
+  assert.ok(form, "a form that works without script");
+  assert.equal(form[1], "/api/waitlist/", "with trailingSlash the function answers at /api/waitlist/; the bare path is a 308");
+  assert.match(form[2], /<input[^>]+name="email"[^>]+type="email"[^>]+required/);
+  assert.match(form[2], /<input[^>]+name="website"/, "the field the function treats as a trap");
+  // Where the function sends a plain form post back to: both targets are on the page.
+  for (const target of [JOINED, NOT_JOINED]) {
+    const [page, id] = target.split("#");
+    assert.equal(page, "/pricing/");
+    assert.match(html, new RegExp(`id="${id}"`), target);
+  }
+  // What it offers, and nothing it cannot keep: no price figure but the free plan's, and the unbuilt part says so.
+  for (const offer of ["Hosting", "Agent use", "Emails"]) assert.match(html, new RegExp(`<h3>${offer}</h3>`));
+  assert.match(html, /<h3>Emails<\/h3>[\s\S]*?<span class="pill warn">Planned<\/span>/, "emails are not built yet, and the page says so");
+  assert.deepEqual([...html.matchAll(/[$€£]\s?\d+/g)].map(([m]) => m), ["$0"]);
+  assert.doesNotMatch(html, /free trial|log in|sign up/i);
+  assert.match(html, /href="\/privacy\/#the-waitlist"/);
+  const privacy = fs.readFileSync(path.join(out, "privacy", "index.html"), "utf8");
+  assert.match(privacy, /id="the-waitlist"/);
+  // Every page's navigation and the landing page lead to it.
+  for (const page of ["index.html", "how-to-use/index.html", "agents/index.html", "404.html"]) assert.match(fs.readFileSync(path.join(out, page), "utf8"), /href="\/pricing\/"/, page);
+  assert.match(landing, /href="\/pricing\/#waitlist"/);
 });

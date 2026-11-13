@@ -1,4 +1,4 @@
-// Imitor site: theme switch, copy buttons, and the ledger's leader lines. No dependencies.
+// Imitor site: theme switch, copy buttons, the ledger's leader lines, and the waitlist form. No dependencies.
 (() => {
   const root = document.documentElement;
 
@@ -58,4 +58,38 @@
     addEventListener("resize", drawLeaders);
     document.fonts?.ready.then(drawLeaders);
   }
+
+  // The waitlist form on the pricing page: posted here, so the answer shows in place. Without this script the form
+  // posts itself and the function sends the browser back to #joined or #not-joined, which the stylesheet shows.
+  const waitlist = document.querySelector("[data-waitlist]");
+  const form = waitlist?.querySelector("form");
+  form?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const button = form.querySelector("button[type=submit]");
+    const failed = waitlist.querySelector(".waitlist-failed");
+    const usual = (failed.dataset.usual ||= failed.innerHTML);
+    const show = (state, message) => {
+      if (location.hash === "#joined" || location.hash === "#not-joined") history.replaceState(null, "", location.pathname + location.search);
+      if (message) failed.textContent = message; else failed.innerHTML = usual;
+      waitlist.dataset.state = state;
+    };
+    button.disabled = true;
+    try {
+      const res = await fetch(form.action, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: form.email.value, website: form.website.value }),
+      });
+      if (res.ok) {
+        show("joined");
+        waitlist.querySelector(".waitlist-done").focus();
+      } else if (res.status === 400) show("failed", "That does not look like an email address. Check it and try again.");
+      else if (res.status === 429) show("failed", "Too many tries from this connection. Try again in a few minutes.");
+      else show("failed");
+    } catch {
+      show("failed");
+    } finally {
+      button.disabled = false;
+    }
+  });
 })();

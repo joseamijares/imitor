@@ -10,7 +10,11 @@ The Imitor CLI, the MCP server and the review interface (`imitor app`) run on yo
 
 ## This website
 
-imitor.dev is a static site. It has no analytics, no advertising and no cookies. It keeps your light or dark theme choice, and in the demo the problems you marked as seen, in your browser's local storage, which never leaves your device. The site loads its fonts from Google Fonts, so Google receives your IP address and browser details when the fonts load. The site is hosted by Vercel, which keeps standard request logs.
+imitor.dev is a static site, apart from the waitlist form on its pricing page. It has no analytics, no advertising and no cookies. It keeps your light or dark theme choice, and in the demo the problems you marked as seen, in your browser's local storage, which never leaves your device. The site loads its fonts from Google Fonts, so Google receives your IP address and browser details when the fonts load. The site is hosted by Vercel, which keeps standard request logs.
+
+### The waitlist
+
+If you join the waitlist on the pricing page, the email address you type and the time you joined are stored in the Imitor Cloud database (Neon, PostgreSQL). Nothing else is kept with it. The address is used once, to tell you that the hosted service is open, and it is not shared, sold or added to a newsletter. Joining creates no account and sends no email. The address stays on the list until that one email has been sent or you ask for it to be removed, whichever comes first: write to {{contact}}.
 
 ## Imitor Cloud
 

@@ -35,6 +35,7 @@ export function memoryDb({ now = () => new Date() } = {}) {
   const lines = { captures: [], activity: [] };
   const seen = new Map(); // "projectId\0userId\0problemId" -> seen row
   const audit = [];
+  const waitlist = new Map(); // lower-case address -> waitlist row
   const pending = new Map(); // object key -> pending_deletions row
   let serial = 0; // the identity columns of captures, activity and audit_log
   const stamp = () => now().toISOString();
@@ -264,6 +265,17 @@ export function memoryDb({ now = () => new Date() } = {}) {
       for (const field of Object.keys(detail)) if (!/^[A-Za-z]+$/.test(field)) throw new Error(`countAudit cannot match the detail field ${JSON.stringify(field)}`); // as pg.mjs
       const matches = (e) => Object.entries(detail).every(([k, v]) => e.detail?.[k] != null && String(e.detail[k]) === String(v));
       return audit.filter((e) => e.action === action && Date.parse(e.at) >= from && (userId == null || e.userId === userId) && matches(e)).length;
+    },
+
+    // ---------- waitlist ----------
+    async addWaitlist(email) {
+      const key = email.toLowerCase();
+      if (waitlist.has(key)) return { added: false };
+      waitlist.set(key, { email: key, createdAt: stamp() });
+      return { added: true };
+    },
+    async listWaitlist() {
+      return [...waitlist.values()].map(copy);
     },
     async close() {},
   };

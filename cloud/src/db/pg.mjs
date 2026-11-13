@@ -346,11 +346,20 @@ export function pgDb({ connectionString, pool = null, schema = null, now = () =>
       const values = [action, since];
       if (userId != null) where.push(`user_id = $${values.push(userId)}`);
       for (const [field, value] of Object.entries(detail)) {
-        // The field name is written into the query (detail->>'to' is the expression 005_mail.sql indexes), so only plain names.
+        // The field name is written into the query (detail->>'to' is the expression 006_mail.sql indexes), so only plain names.
         if (!/^[A-Za-z]+$/.test(field)) throw new Error(`countAudit cannot match the detail field ${JSON.stringify(field)}`);
         where.push(`detail->>'${field}' = $${values.push(String(value))}`);
       }
       return Number((await one(`select count(*) as n from audit_log where ${where.join(" and ")}`, values)).n);
+    },
+
+    // ---------- waitlist ----------
+    async addWaitlist(email) {
+      const rows = await q("insert into waitlist (email, created_at) values ($1, $2) on conflict (email) do nothing returning email", [email.toLowerCase(), stamp()]);
+      return { added: rows.length > 0 };
+    },
+    async listWaitlist() {
+      return (await q("select email, created_at from waitlist order by created_at, email")).map((r) => ({ email: r.email, createdAt: iso(r.created_at) }));
     },
   };
   return db;

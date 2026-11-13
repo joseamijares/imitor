@@ -116,11 +116,13 @@ const toCloud = (v) => {
   return new RegExp(`^${r.source}$`);
 };
 
-test("the root shims and vercel.json: two functions, the cloud's rewrites only on its host, a daily cron", async () => {
+test("the root shims and vercel.json: three functions, the cloud's rewrites only on its host, a daily cron", async () => {
   const v = JSON.parse(fs.readFileSync(`${ROOT}vercel.json`, "utf8"));
-  assert.deepEqual(fs.readdirSync(`${ROOT}api`).sort(), ["cloud.mjs", "cron-retention.mjs"]);
+  assert.deepEqual(fs.readdirSync(`${ROOT}api`).sort(), ["cloud.mjs", "cron-retention.mjs", "waitlist.mjs"]);
   assert.equal((await import("../../api/cloud.mjs")).default.fetch.constructor.name, "AsyncFunction");
   assert.equal(typeof (await import("../../api/cron-retention.mjs")).default.fetch, "function");
+  // The site's pricing page posts to this one on the site's own host: no rewrite, and no redirect, leads to it.
+  assert.equal(typeof (await import("../../api/waitlist.mjs")).default.fetch, "function");
   assert.equal(v.installCommand, "npm ci --prefix cloud --omit=dev --ignore-scripts");
   // trailingSlash answers /api/cron-retention with a 308, and Vercel Cron does not follow redirects.
   assert.equal(v.trailingSlash, true);

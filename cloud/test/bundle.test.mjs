@@ -11,7 +11,7 @@ import { PACK, readAssets, readPack, SOURCES } from "../src/assets.mjs";
 import { packAssets } from "../scripts/pack-assets.mjs";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
-const ENTRIES = ["api/cloud.mjs", "api/cron-retention.mjs"];
+const ENTRIES = ["api/cloud.mjs", "api/cron-retention.mjs", "api/waitlist.mjs"];
 const FORBIDDEN_SPECIFIERS = ["child_process", "node:child_process", "playwright", "playwright-core"];
 const FORBIDDEN_FILES = ["src/build.mjs", "src/shoot.mjs", "src/init.mjs", "src/appserver.mjs", "src/store.mjs", "src/export.mjs", "src/mcp.mjs", "src/agent.mjs", "src/serve.mjs"];
 
