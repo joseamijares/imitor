@@ -208,9 +208,11 @@ In this order. The owner does the account steps; nothing here needs a secret to 
 
 ### Not verified yet
 
-Nothing here has run on Vercel, against a real Google client or a real bucket. Before relying on it, check on a
-first deployment: that the rewrites reach `/api/cloud` with `?__imitor_path=` (the function also accepts the original
-URL if the runtime shows that instead), that `trailingSlash` answers `POST /v1/runs` with a 308 that `imitor push`
+Nothing here has run against a real Google client or a real bucket yet. On Vercel, a preview deployment showed that a
+rewrite reaches `/api/cloud` only when its source accepts the trailing slash `trailingSlash` adds to every page path:
+`/:first(a|b)/:rest*` compiles to a pattern that cannot end in `/`, so `/projects/` fell through to the site's 404.
+The source is now a plain regex, `/(p|v1|…)(/.*)?`, and `cloud/test/vercel.test.mjs` checks it with Vercel's own route
+compiler (`@vercel/routing-utils`). Before relying on the rest, check on the first production deployment: that `trailingSlash` answers `POST /v1/runs` with a 308 that `imitor push`
 follows (or no redirect at all), that `/` on the app host redirects to `/projects/` and `/projects/` shows the projects
 page, that `includeFiles` bundles the interface, that Vercel Cron's call carries `Authorization: Bearer <CRON_SECRET>`,
 and that sign-in completes against Google. After the first night, open the project's Cron Jobs logs and confirm the

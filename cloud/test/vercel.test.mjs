@@ -6,6 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { buildSite } from "../../site/build.mjs";
 import { cloudFunction, cronFunction, originalRequest } from "../src/vercel.mjs";
@@ -96,15 +97,27 @@ test("cron: production only, Authorization: Bearer <CRON_SECRET>, runs retention
   assert.equal((await cronFunction({ ...ENV, CRON_SECRET: "" }, { deps }).fetch(new Request("https://x/api/cron-retention"))).status, 404);
 });
 
-/** vercel.json's redirect that sends the app host's other paths to the site, as a RegExp. */
-const toSite = (v) => {
-  const r = v.redirects.find((x) => x.destination.startsWith("https://imitor.dev/"));
-  return new RegExp(`^${r.source.replace("/(", "/(?:")}$`);
+/**
+ * vercel.json's routes as Vercel compiles them, with Vercel's own compiler (@vercel/routing-utils), so the tests match
+ * paths exactly as production does. A hand-made RegExp once accepted /projects/ while Vercel's did not: with
+ * trailingSlash every page path ends in "/", and "/:first(a|b)/:rest*" compiles to a pattern that cannot.
+ */
+const compiled = (v) => {
+  const { getTransformedRoutes } = createRequire(import.meta.url)("@vercel/routing-utils");
+  const { routes, error } = getTransformedRoutes({ trailingSlash: v.trailingSlash, redirects: v.redirects, rewrites: v.rewrites });
+  if (error) throw new Error(error.message);
+  return routes;
 };
-/** The rewrite of the app host's paths to /api/cloud ("/:first(a|b)/:rest*"), as a RegExp. */
-const toCloud = (v) => {
-  const r = v.rewrites.find((x) => x.destination.startsWith("/api/cloud"));
-  return new RegExp(`^${r.source.replace(":first(", "(").replace("/:rest*", "(?:/.*)?")}$`);
+/** vercel.json's redirect that sends the app host's other paths to the site, as a RegExp. */
+const toSite = (v) => new RegExp(compiled(v).find((r) => r.headers?.Location?.startsWith("https://imitor.dev/")).src);
+/** The rewrite of the app host's paths to /api/cloud: its RegExp and its destination. */
+const cloudRoute = (v) => compiled(v).find((r) => r.dest?.startsWith("/api/cloud"));
+const toCloud = (v) => new RegExp(cloudRoute(v).src);
+/** The URL the function gets for a path on the app host: the rewrite's destination with the captures filled in. */
+const viaRewrite = (v, p) => {
+  const r = cloudRoute(v);
+  const m = p.match(new RegExp(r.src));
+  return m && `${APP}${r.dest.replace(/\$(\d)/g, (_, i) => m[i] ?? "")}`;
 };
 
 test("the root shims and vercel.json: two functions, the cloud's rewrites only on its host, a daily cron", async () => {
@@ -121,8 +134,13 @@ test("the root shims and vercel.json: two functions, the cloud's rewrites only o
   for (const p of ["/", "/login", "/login/", "/logout/", "/p/fernwood/runs/", "/v1/runs/", "/auth/google/callback/", "/projects/", "/static/cloud.css", "/api/cloud"]) assert.ok(!redirect.test(p), `${p} stays on the app host`);
   for (const p of ["/how-to-use/", "/demo/", "/robots.txt"]) assert.ok(redirect.test(p), `${p} goes to the site`);
   const rewrite = toCloud(v);
-  for (const p of ["/login/", "/login/token/", "/logout/everywhere/", "/auth/google/callback/", `${HOME}/`, "/p/fernwood/runs/", "/v1/runs/", "/static/cloud.css"]) assert.ok(rewrite.test(p), `${p} reaches the cloud`);
-  assert.ok(!rewrite.test("/"), "/ is the site's index.html, which a rewrite cannot reach");
+  for (const p of ["/login/", "/login/token/", "/logout/everywhere/", "/auth/google/callback/", `${HOME}/`, "/p/fernwood/runs/", "/v1/runs/", "/static/cloud.css"]) {
+    assert.ok(rewrite.test(p), `${p} reaches the cloud`);
+    // The function recovers the path asked for, without the trailing slash trailingSlash added.
+    const request = new Request(viaRewrite(v, p), { headers: { "x-forwarded-host": "app.imitor.dev" } });
+    assert.equal(new URL(originalRequest(request).url).pathname, p.length > 1 ? p.replace(/\/$/, "") : p, p);
+  }
+  for (const p of ["/", "/pricing/", "/privacy/", "/static-site/", "/api/cloud/", "/demo/"]) assert.ok(!rewrite.test(p), `${p} is not the cloud's`);
 });
 
 test("no path the cloud answers on its host is a file of the site, and / on the app host goes to the projects page", () => {

@@ -57,5 +57,8 @@
     "playwright": {
       "optional": true
     }
+  },
+  "devDependencies": {
+    "@vercel/routing-utils": "5.3.3"
   }
 }
