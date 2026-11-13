@@ -5,7 +5,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import test from "node:test";
 import { handle, KEEP_DAYS } from "../src/api.mjs";
-import { HOME, safeNext } from "../src/web.mjs";
+import { admit, HOME, safeNext } from "../src/web.mjs";
 import { browser, cloud, HTML, PUBLIC_URL } from "./helpers.mjs";
 
 const TOKEN = crypto.randomBytes(32).toString("base64url");
@@ -112,6 +112,101 @@ test("access keys: an owner makes one (the secret once), lists them without secr
   assert.equal((await s.ada.call("POST", "/p/fernwood/api/keys/key_nope/revoke", { body: {} })).status, 404);
   assert.equal((await s.ada.call("POST", "/p/fernwood/api/keys", { body: { name: "" } })).status, 400);
   assert.deepEqual((await s.db.listAudit()).filter((a) => a.action.startsWith("key.")).map((a) => [a.action, a.detail.name]), [["key.create", "ci"], ["key.revoke", "ci"]]);
+});
+
+test("members: an owner adds people by address (as member or owner), lists and removes them; the last owner stays", async () => {
+  const s = await setup();
+  await s.ada.call("POST", "/projects", { body: { name: "fernwood" } });
+  const project = await s.db.getProjectBySlug("fernwood");
+
+  // Bob has an account; Cy has never signed in.
+  assert.equal((await s.ada.call("POST", "/p/fernwood/api/members", { body: { email: "BOB@example.com" } })).status, 201);
+  const cy = await s.ada.call("POST", "/p/fernwood/api/members", { body: { email: "cy@example.com", role: "owner" } });
+  assert.equal(cy.status, 201);
+  assert.deepEqual({ email: cy.json.member.email, role: cy.json.member.role, you: cy.json.member.you }, { email: "cy@example.com", role: "owner", you: false });
+
+  const list = await s.ada.call("GET", "/p/fernwood/api/members");
+  assert.equal(list.json.canManage, true);
+  // Ada signed in with the admin token, as the user "admin".
+  assert.deepEqual(list.json.members.map((m) => [m.email, m.role]), [["admin", "owner"], ["cy@example.com", "owner"], ["bob@example.com", "member"]]);
+  assert.equal(list.json.members.find((m) => m.email === "admin").you, true);
+
+  // Bob is in: he reads the project, and as a member cannot manage people.
+  assert.equal((await s.bob.call("GET", "/p/fernwood/api/members")).json.canManage, false);
+  assert.equal((await s.bob.call("POST", "/p/fernwood/api/members", { body: { email: "eve@example.com" } })).status, 403);
+  assert.equal((await s.db.findUserByEmail("eve@example.com")), null, "a refused add creates nobody");
+
+  // Adding again changes the role; bad input is refused.
+  assert.equal((await s.ada.call("POST", "/p/fernwood/api/members", { body: { email: "bob@example.com", role: "owner" } })).status, 200);
+  for (const body of [{ email: "not an address" }, { email: "" }, {}, { email: "x@example.com", role: "admin" }]) assert.equal((await s.ada.call("POST", "/p/fernwood/api/members", { body })).status, 400, JSON.stringify(body));
+
+  // Removing: a member goes; the last owner cannot.
+  const bobId = s.bobUser.id;
+  assert.equal((await s.ada.call("POST", `/p/fernwood/api/members/${bobId}/remove`, { body: {} })).status, 200);
+  assert.equal(await s.db.getMember(project.id, bobId), null);
+  assert.equal((await s.bob.call("GET", "/p/fernwood/api/project")).status, 404, "removed means out");
+  const cyId = (await s.db.findUserByEmail("cy@example.com")).id;
+  assert.equal((await s.ada.call("POST", `/p/fernwood/api/members/${cyId}/remove`, { body: {} })).status, 200);
+  const adaId = (await s.db.findUserByEmail("admin")).id;
+  assert.equal((await s.ada.call("POST", `/p/fernwood/api/members/${adaId}/remove`, { body: {} })).status, 409, "the last owner stays");
+  assert.equal((await s.ada.call("POST", "/p/fernwood/api/members/usr_nope/remove", { body: {} })).status, 404);
+  assert.deepEqual((await s.db.listAudit()).filter((a) => /^(member|user\.invite)/.test(a.action)).map((a) => [a.action, a.detail.email]), [
+    ["member.add", "bob@example.com"], ["user.invite", "cy@example.com"], ["member.add", "cy@example.com"], ["member.role", "bob@example.com"],
+    ["member.remove", "bob@example.com"], ["member.remove", "cy@example.com"],
+  ]);
+
+  // Bob, made the only owner, cannot step down to member.
+  await s.ada.call("POST", "/p/fernwood/api/members", { body: { email: "bob@example.com", role: "owner" } });
+  assert.equal((await s.ada.call("POST", `/p/fernwood/api/members/${adaId}/remove`, { body: {} })).status, 200, "with two owners one can go");
+  assert.equal((await s.bob.call("POST", "/p/fernwood/api/members", { body: { email: "bob@example.com", role: "member" } })).status, 409, "the last owner cannot step down");
+});
+
+test("someone an owner added signs in with Google without being in IMITOR_ALLOWED_EMAILS; a stranger still cannot", async () => {
+  const s = await setup();
+  await s.ada.call("POST", "/projects", { body: { name: "fernwood" } });
+  await s.ada.call("POST", "/p/fernwood/api/members", { body: { email: "cy@example.com" } });
+  assert.ok(!s.deps.allowedEmails.has("cy@example.com"));
+  const cy = await admit(s.deps, { sub: "google-cy", email: "Cy@Example.com", email_verified: true, name: "Cy" });
+  assert.equal(cy?.email, "cy@example.com");
+  assert.equal(cy.name, "Cy", "the name comes from Google on first sign-in");
+  assert.equal((await s.db.listUserProjects(cy.id))[0].slug, "fernwood");
+  assert.equal((await admit(s.deps, { sub: "google-cy", email: "cy@example.com", email_verified: true })).id, cy.id, "the same account again");
+  assert.equal(await admit(s.deps, { sub: "google-mallory", email: "mallory@example.com", email_verified: true }), null);
+  assert.equal(await admit(s.deps, { sub: "google-other", email: "cy@example.com", email_verified: true }), null, "another Google account with that address is not Cy");
+});
+
+test("an allowed account that was not invited (the admin-token user) never admits a Google sign-in by its address", async () => {
+  const s = await setup();
+  const admin = await s.db.findUserByEmail("admin");
+  await s.db.updateUser(admin.id, { allowed: true });
+  const real = await s.db.createUser({ email: "ops@example.com", allowed: true }); // allowed, but by no invitation
+  assert.equal(await admit(s.deps, { sub: "google-ops", email: "ops@example.com", email_verified: true }), null);
+  assert.equal(real.invitedAt, null);
+});
+
+test("an owner cannot turn back on an account the operator turned off; a member can leave; odd ids are refused", async () => {
+  const s = await setup();
+  await s.ada.call("POST", "/projects", { body: { name: "fernwood" } });
+  const off = await s.db.createUser({ email: "off@example.com", allowed: false });
+  const refused = await s.ada.call("POST", "/p/fernwood/api/members", { body: { email: "off@example.com" } });
+  assert.equal(refused.status, 409);
+  assert.equal((await s.db.getUser(off.id)).allowed, false, "still off");
+  assert.equal(await admit(s.deps, { sub: "google-off", email: "off@example.com", email_verified: true }), null);
+
+  // Bob, a member, leaves; he cannot remove anyone else.
+  await s.ada.call("POST", "/p/fernwood/api/members", { body: { email: "bob@example.com" } });
+  await s.ada.call("POST", "/p/fernwood/api/members", { body: { email: "cy@example.com" } });
+  const cy = await s.db.findUserByEmail("cy@example.com");
+  assert.equal((await s.bob.call("POST", `/p/fernwood/api/members/${cy.id}/remove`, { body: {} })).status, 403);
+  assert.equal((await s.bob.call("POST", `/p/fernwood/api/members/${s.bobUser.id}/remove`, { body: {} })).status, 200);
+  assert.equal((await s.bob.call("GET", "/p/fernwood/api/project")).status, 404);
+  const audit = (await s.db.listAudit()).filter((a) => a.action === "member.remove").at(-1);
+  assert.deepEqual(audit.detail, { email: "bob@example.com", self: true });
+
+  assert.equal((await s.ada.call("POST", "/p/fernwood/api/members/%E0%A4%A/remove", { body: {} })).status, 400, "a malformed id is a 400, not a crash");
+  for (const email of ["ünï@example.com", "a@b", "a b@example.com"]) assert.equal((await s.ada.call("POST", "/p/fernwood/api/members", { body: { email } })).status, 400, email);
+  await s.ada.call("POST", "/p/fernwood/api/members", { body: { email: "cy@example.com", role: "owner" } });
+  assert.deepEqual((await s.db.listAudit()).filter((a) => a.action === "member.role").at(-1).detail, { email: "cy@example.com", role: "owner", from: "member" });
 });
 
 test("membership is checked on every project route: a stranger gets 404, a member reads but cannot manage keys", async () => {

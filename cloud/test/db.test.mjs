@@ -27,9 +27,9 @@ function postgres() {
       const { default: pg } = await import("pg");
       admin = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 1 });
       await admin.query(`create schema ${schema}`);
-      const { migrate } = await import("../src/db/migrate.mjs");
+      const { migrate, migrationFiles } = await import("../src/db/migrate.mjs");
       const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 2, options: `-c search_path=${schema}` });
-      assert.deepEqual(await migrate(pool), ["001_init.sql", "002_project_slugs.sql", "003_valid_project_slugs.sql"]);
+      assert.deepEqual(await migrate(pool), migrationFiles(), "every migration, in order");
       assert.deepEqual(await migrate(pool), [], "a second run applies nothing");
       await pool.end();
     }
@@ -76,7 +76,7 @@ for (const [name, factory] of IMPLEMENTATIONS) {
       await fresh();
       const ada = await db.createUser({ email: "Ada@Example.com", name: "Ada" });
       assert.match(ada.id, /^usr_[0-9a-f]{20}$/);
-      assert.deepEqual({ ...ada, id: null, createdAt: null }, { id: null, email: "Ada@Example.com", name: "Ada", allowed: false, createdAt: null });
+      assert.deepEqual({ ...ada, id: null, createdAt: null }, { id: null, email: "Ada@Example.com", name: "Ada", allowed: false, invitedAt: null, createdAt: null });
       assert.deepEqual(await db.findUserByEmail("ada@example.com"), ada);
       assert.deepEqual(await db.getUser(ada.id), ada);
       assert.equal(await db.getUser("usr_none"), null);
@@ -90,6 +90,9 @@ for (const [name, factory] of IMPLEMENTATIONS) {
       assert.equal(await db.findIdentity("google", "other"), null);
       const bob = await db.createUser({ email: "bob@example.com" });
       await assert.rejects(db.addIdentity("google", "1234567890", bob.id), (e) => e.code === "conflict");
+      const cy = await db.createUser({ email: "cy@example.com", allowed: true, invited: true });
+      assert.ok(cy.invitedAt && cy.invitedAt === cy.createdAt, "an invitation is marked when it is made");
+      assert.equal((await db.findUserByEmail("CY@example.com")).invitedAt, cy.invitedAt);
       assert.deepEqual(await db.listIdentities(ada.id), [google]);
     });
 
@@ -134,6 +137,29 @@ for (const [name, factory] of IMPLEMENTATIONS) {
       await db.addMember(p2.id, bob.id);
       assert.deepEqual((await db.listUserProjects(bob.id)).map((p) => [p.slug, p.role]), [["fernwood-3", "owner"], ["fernwood-2", "member"]], "by name: Ferns, fernwood!");
       assert.deepEqual(await db.listUserProjects(ada.id), [{ ...p1, role: "owner" }]);
+
+      const cy = await db.createUser({ email: "Cy@example.com", name: "Cy" });
+      await db.addMember(p1.id, cy.id);
+      await db.addMember(p1.id, bob.id);
+      assert.deepEqual((await db.listMembers(p1.id)).map((m) => [m.email, m.role]), [["ada@example.com", "owner"], ["bob@example.com", "member"], ["Cy@example.com", "member"]], "owners first, then by address");
+      assert.equal((await db.listMembers(p1.id))[2].name, "Cy");
+      assert.equal(await db.removeMember(p1.id, bob.id), true);
+      assert.equal(await db.removeMember(p1.id, bob.id), false);
+      assert.equal(await db.getMember(p1.id, bob.id), null);
+      assert.deepEqual(await db.listMembers("prj_none"), []);
+
+      // A project keeps an owner, even when its two owners leave at the same moment.
+      const p4 = await db.createProject({ name: "Kept", ownerId: ada.id });
+      await assert.rejects(db.removeMember(p4.id, ada.id), (e) => e.code === "last-owner");
+      await assert.rejects(db.addMember(p4.id, ada.id, "member"), (e) => e.code === "last-owner");
+      await db.addMember(p4.id, bob.id, "owner");
+      const both = await Promise.allSettled([db.removeMember(p4.id, ada.id), db.removeMember(p4.id, bob.id)]);
+      assert.deepEqual(both.map((r) => r.status).sort(), ["fulfilled", "rejected"], "one goes, the other is refused");
+      assert.equal(both.find((r) => r.status === "rejected").reason.code, "last-owner");
+      assert.equal((await db.listMembers(p4.id)).filter((m) => m.role === "owner").length, 1);
+      await db.addMember(p4.id, cy.id, "owner");
+      const demotions = await Promise.allSettled((await db.listMembers(p4.id)).filter((m) => m.role === "owner").map((m) => db.addMember(p4.id, m.userId, "member")));
+      assert.equal(demotions.filter((r) => r.status === "fulfilled").length, 1, "two owners stepping down at once: one stays");
     });
 
     test("access keys: the secret once, only its SHA-256 kept, found while live, listed, revoked", async () => {

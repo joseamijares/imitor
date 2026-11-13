@@ -22,6 +22,8 @@ import { hashSecret, KEY_PREFIX, newId, newSecret, slugAttempt, slugify } from "
 export const LINE_KINDS = ["captures", "activity"];
 
 /** opts: { now: () => Date }. */
+const lastOwner = () => Object.assign(new Error("a project needs an owner: make someone else an owner first"), { code: "last-owner" });
+
 export function memoryDb({ now = () => new Date() } = {}) {
   const users = new Map();
   const identities = new Map(); // "provider\0subject" -> identity
@@ -39,12 +41,14 @@ export function memoryDb({ now = () => new Date() } = {}) {
   const copy = (v) => (v == null ? v : structuredClone(v));
   const lower = (s) => String(s).toLowerCase();
   const conflict = (message) => Object.assign(new Error(message), { code: "conflict" });
+  const owners = (projectId) => [...members.values()].filter((m) => m.projectId === projectId && m.role === "owner").length;
 
   const db = {
     // ---------- people ----------
-    async createUser({ email, name = null, allowed = false }) {
+    async createUser({ email, name = null, allowed = false, invited = false }) {
       if ([...users.values()].some((u) => lower(u.email) === lower(email))) throw conflict(`a user with the address ${email} exists`);
-      const user = { id: newId("usr"), email, name, allowed, createdAt: stamp() };
+      const now = stamp();
+      const user = { id: newId("usr"), email, name, allowed, invitedAt: invited ? now : null, createdAt: now };
       users.set(user.id, user);
       return copy(user);
     },
@@ -125,12 +129,25 @@ export function memoryDb({ now = () => new Date() } = {}) {
     async addMember(projectId, userId, role = "member") {
       if (!projects.has(projectId) || !users.has(userId)) throw new Error(`no project ${projectId} or user ${userId}`);
       const k = `${projectId}\0${userId}`;
+      // Checked and changed in one step (nothing awaits in between), so two requests cannot both pass the check.
+      if (role !== "owner" && members.get(k)?.role === "owner" && owners(projectId) === 1) throw lastOwner();
       const member = { ...(members.get(k) || { projectId, userId, createdAt: stamp() }), role };
       members.set(k, member);
       return copy(member);
     },
     async getMember(projectId, userId) {
       return copy(members.get(`${projectId}\0${userId}`) ?? null);
+    },
+    /** The project's members with their address and name, owners first, then by address. */
+    async listMembers(projectId) {
+      return [...members.values()].filter((m) => m.projectId === projectId && users.has(m.userId))
+        .map((m) => ({ ...copy(m), email: users.get(m.userId).email, name: users.get(m.userId).name }))
+        .sort((a, b) => (a.role === b.role ? 0 : a.role === "owner" ? -1 : 1) || a.email.localeCompare(b.email));
+    },
+    async removeMember(projectId, userId) {
+      const k = `${projectId}\0${userId}`;
+      if (members.get(k)?.role === "owner" && owners(projectId) === 1) throw lastOwner();
+      return members.delete(k);
     },
     /** The user's projects, each with their `role`, by name. */
     async listUserProjects(userId) {

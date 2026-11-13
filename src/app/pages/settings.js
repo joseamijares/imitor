@@ -1,7 +1,8 @@
 // Settings: what Imitor knows about this project, read-only (from GET /api/project), and the app's
 // appearance. There is no settings API: the preview configuration lives in imitor.config.json.
-// In Imitor Cloud the project is what its newest run says, and two more sections appear: the project's upload keys
-// (made, listed and revoked here; a new key is shown once) and the signed-in account.
+// In Imitor Cloud the project is what its newest run says, and three more sections appear: the project's upload keys
+// (made, listed and revoked here; a new key is shown once), its members (added by address and removed by owners) and
+// the signed-in account.
 import { api, cloud, CLOUD_PAGES, isCloud, isStatic } from "../api.js";
 import { html, seg, pill, chip, button, codeBlock, skeletonRows, errorState } from "../components.js";
 import { ago, deviceName, schemeName, humanize, plural } from "../format.js";
@@ -12,6 +13,7 @@ const SECTIONS = isCloud ? [
   { id: "devices", label: "Devices" },
   { id: "flows", label: "Flows" },
   { id: "access-keys", label: "Access keys" },
+  { id: "members", label: "Members" },
   { id: "account", label: "Account" },
   { id: "appearance", label: "Appearance" },
 ] : [
@@ -139,13 +141,19 @@ export async function mount(ctx) {
   if (SECTIONS.some((s) => s.id === hash)) { main.querySelector(`#${hash}`).scrollIntoView({ block: "start" }); setCurrent(hash); }
 }
 
-/* ---------- Imitor Cloud: access keys and the account ---------- */
+/* ---------- Imitor Cloud: access keys, members and the account ---------- */
 
 function cloudSections() {
   return html`<section id="access-keys" class="set-section" aria-labelledby="access-keys-h">
         <h2 id="access-keys-h">Access keys</h2>
         <p class="set-note">Agents and CI push runs to this project with a key. A key can only upload runs here: it cannot read, list or delete anything. Only a hash of it is kept, so it is shown once, when it is made.</p>
         <div data-keys>${skeletonRows(2)}</div>
+      </section>
+
+      <section id="members" class="set-section" aria-labelledby="members-h">
+        <h2 id="members-h">Members</h2>
+        <p class="set-note">Everyone here sees this project’s runs. Owners also make keys and add or remove people. Add someone by the address of their Google account: they sign in with it, even if they have never signed in before.</p>
+        <div data-members>${skeletonRows(2)}</div>
       </section>
 
       <section id="account" class="set-section" aria-labelledby="account-h">
@@ -162,14 +170,77 @@ function keyRow(k, canManage) {
   return html`<div class="set-row" data-key="${k.id}"><div class="set-label"><span>${k.name}</span><span class="set-sub">${sub}</span></div><div class="set-value">${value}</div></div>`;
 }
 
+function memberRow(m, canManage) {
+  const who = m.name && m.name !== m.email ? m.name : m.email;
+  const sub = html`${who !== m.email ? html`<span class="mono">${m.email}</span> · ` : ""}${m.you ? "you · " : ""}added ${ago(m.since) === "now" ? "just now" : `${ago(m.since)} ago`}`;
+  const value = html`${pill(m.role === "owner" ? "Owner" : "Member", m.role === "owner" ? "ok" : "neutral")}${canManage || m.you ? button(m.you ? "Leave" : "Remove", "secondary", { attrs: String(html`data-remove-member="${m.userId}" data-email="${m.email}" data-you="${m.you ? "1" : ""}"`) }) : ""}`;
+  return html`<div class="set-row" data-member="${m.userId}"><div class="set-label"><span>${who}</span><span class="set-sub">${sub}</span></div><div class="set-value">${value}</div></div>`;
+}
+
+async function mountMembers(ctx, main) {
+  const box = main.querySelector("[data-members]");
+  async function load() {
+    let data;
+    try { data = await cloud.members(); } catch (e) {
+      if (ctx.isCurrent()) box.innerHTML = String(errorState("the members", e));
+      return;
+    }
+    if (!ctx.isCurrent()) return;
+    const form = data.canManage ? html`<form class="key-create" data-member-add>
+        <label class="sr-only" for="member-email">Google account address</label>
+        <input class="field" id="member-email" name="email" type="email" maxlength="254" placeholder="name@example.com" autocomplete="off" required>
+        <label class="sr-only" for="member-role">Role</label>
+        <select class="field" id="member-role" name="role"><option value="member">Member</option><option value="owner">Owner</option></select>
+        <button type="submit" class="btn btn-primary">Add</button></form>`
+      : html`<p class="set-empty">Only an owner of this project can add or remove people. You can leave it.</p>`;
+    box.innerHTML = String(html`${form}${data.members.map((m) => memberRow(m, data.canManage))}`);
+  }
+  box.addEventListener("submit", async (e) => {
+    const form = e.target.closest("[data-member-add]");
+    if (!form) return;
+    e.preventDefault();
+    const submit = form.querySelector("button[type=submit]");
+    submit.disabled = true;
+    const email = form.elements.email.value.trim();
+    try {
+      await cloud.addMember(email, form.elements.role.value);
+      if (!ctx.isCurrent()) return;
+      ctx.toast(`Added ${email}`);
+      await load();
+    } catch (err) {
+      ctx.toast(`Couldn’t add ${email}: ${err.message}`);
+      submit.disabled = false;
+    }
+  });
+  box.addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-remove-member]");
+    if (!b) return;
+    const you = b.dataset.you === "1";
+    if (!confirm(you ? "Leave this project? You will lose access to it until an owner adds you again." : `Remove ${b.dataset.email} from this project? Their account stays; they lose access to this project.`)) return;
+    b.disabled = true;
+    try {
+      await cloud.removeMember(b.dataset.removeMember);
+      if (!ctx.isCurrent()) return;
+      if (you) { location.assign(CLOUD_PAGES.projects); return; }
+      ctx.toast(`Removed ${b.dataset.email}`);
+      await load();
+    } catch (err) {
+      ctx.toast(`Couldn’t remove ${b.dataset.email}: ${err.message}`);
+      b.disabled = false;
+    }
+  });
+  await load();
+}
+
 async function mountCloud(ctx, main) {
+  mountMembers(ctx, main);
   const box = main.querySelector("[data-keys]");
   const account = main.querySelector("[data-account]");
 
   cloud.me().then((me) => {
     if (!ctx.isCurrent()) return;
     account.innerHTML = String(html`<div class="set-row"><div class="set-label"><span>Signed in as</span>${me.user.name && me.user.name !== me.user.email ? html`<span class="set-sub">${me.user.name}</span>` : ""}</div><div class="set-value"><span class="mono t2">${me.user.email}</span></div></div>
-      <div class="set-row"><div class="set-label"><span>Your role</span><span class="set-sub">Owners make and revoke keys</span></div><div class="set-value">${pill(me.project.role === "owner" ? "Owner" : "Member")}</div></div>
+      <div class="set-row"><div class="set-label"><span>Your role</span><span class="set-sub">Owners make keys and add people</span></div><div class="set-value">${pill(me.project.role === "owner" ? "Owner" : "Member")}</div></div>
       <div class="set-row"><div class="set-label"><span>Sign out</span><span class="set-sub">Everywhere ends your sessions in every browser</span></div>
         <div class="set-value"><form method="post" action="${CLOUD_PAGES.signOut}"><button type="submit" class="btn btn-secondary">Sign out</button></form><form method="post" action="${CLOUD_PAGES.signOutEverywhere}"><button type="submit" class="btn btn-secondary">Sign out everywhere</button></form></div></div>
       <div class="set-row"><div class="set-label"><span>Projects</span><span class="set-sub">Every project you are a member of</span></div><div class="set-value"><a class="btn btn-secondary" href="${CLOUD_PAGES.projects}">All projects</a></div></div>`);
