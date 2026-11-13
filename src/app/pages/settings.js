@@ -152,7 +152,7 @@ function cloudSections() {
 
       <section id="members" class="set-section" aria-labelledby="members-h">
         <h2 id="members-h">Members</h2>
-        <p class="set-note">Everyone here sees this project’s runs. Owners also make keys and add or remove people. Add someone by the address of their Google account: they sign in with it, even if they have never signed in before.</p>
+        <p class="set-note">Everyone here sees this project’s runs. Owners also make keys and add or remove people. Add someone by the address of their Google account: they sign in with it, even if they have never signed in before. Adding someone already here changes their role. A project always keeps an owner, so its only owner cannot leave until they make someone else an owner.</p>
         <div data-members>${skeletonRows(2)}</div>
       </section>
 
@@ -170,15 +170,18 @@ function keyRow(k, canManage) {
   return html`<div class="set-row" data-key="${k.id}"><div class="set-label"><span>${k.name}</span><span class="set-sub">${sub}</span></div><div class="set-value">${value}</div></div>`;
 }
 
-function memberRow(m, canManage) {
+/** One person; the button is Leave on your own row, Remove on others' (owners only), and absent for a project's only
+ * owner, whom the server would refuse to remove (a project always keeps an owner). */
+function memberRow(m, canManage, onlyOwner) {
   const who = m.name && m.name !== m.email ? m.name : m.email;
   const sub = html`${who !== m.email ? html`<span class="mono">${m.email}</span> · ` : ""}${m.you ? "you · " : ""}added ${ago(m.since) === "now" ? "just now" : `${ago(m.since)} ago`}`;
-  const value = html`${pill(m.role === "owner" ? "Owner" : "Member", m.role === "owner" ? "ok" : "neutral")}${canManage || m.you ? button(m.you ? "Leave" : "Remove", "secondary", { attrs: String(html`data-remove-member="${m.userId}" data-email="${m.email}" data-you="${m.you ? "1" : ""}"`) }) : ""}`;
+  const value = html`${pill(m.role === "owner" ? "Owner" : "Member", m.role === "owner" ? "ok" : "neutral")}${(canManage || m.you) && !(onlyOwner && m.role === "owner") ? button(m.you ? "Leave" : "Remove", "secondary", { attrs: String(html`data-remove-member="${m.userId}" data-email="${m.email}" data-you="${m.you ? "1" : ""}"`) }) : ""}`;
   return html`<div class="set-row" data-member="${m.userId}"><div class="set-label"><span>${who}</span><span class="set-sub">${sub}</span></div><div class="set-value">${value}</div></div>`;
 }
 
 async function mountMembers(ctx, main) {
   const box = main.querySelector("[data-members]");
+  let members = []; // as last shown, to tell an addition from a role change
   async function load() {
     let data;
     try { data = await cloud.members(); } catch (e) {
@@ -193,7 +196,9 @@ async function mountMembers(ctx, main) {
         <select class="field" id="member-role" name="role"><option value="member">Member</option><option value="owner">Owner</option></select>
         <button type="submit" class="btn btn-primary">Add</button></form>`
       : html`<p class="set-empty">Only an owner of this project can add or remove people. You can leave it.</p>`;
-    box.innerHTML = String(html`${form}${data.members.map((m) => memberRow(m, data.canManage))}`);
+    members = data.members;
+    const onlyOwner = data.members.filter((m) => m.role === "owner").length === 1;
+    box.innerHTML = String(html`${form}${data.members.map((m) => memberRow(m, data.canManage, onlyOwner))}`);
   }
   box.addEventListener("submit", async (e) => {
     const form = e.target.closest("[data-member-add]");
@@ -203,12 +208,16 @@ async function mountMembers(ctx, main) {
     submit.disabled = true;
     const email = form.elements.email.value.trim();
     try {
-      await cloud.addMember(email, form.elements.role.value);
+      const before = members.find((m) => m.email.toLowerCase() === email.toLowerCase());
+      const { member } = await cloud.addMember(email, form.elements.role.value);
       if (!ctx.isCurrent()) return;
-      ctx.toast(`Added ${email}`);
+      const role = member.role === "owner" ? "an owner" : "a member";
+      // Your own role decides what the rest of this page offers (keys, the add form), so it is shown afresh.
+      if (before?.you && before.role !== member.role) { location.reload(); return; }
+      ctx.toast(!before ? `Added ${email}` : before.role === member.role ? `${email} is already ${role}` : `${email} is now ${role}`);
       await load();
     } catch (err) {
-      ctx.toast(`Couldn’t add ${email}: ${err.message}`);
+      ctx.toast(`Couldn’t ${members.some((m) => m.email.toLowerCase() === email.toLowerCase()) ? "change" : "add"} ${email}: ${err.message}`);
       submit.disabled = false;
     }
   });
