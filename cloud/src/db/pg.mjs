@@ -214,6 +214,13 @@ export function pgDb({ connectionString, pool = null, schema = null, now = () =>
     async getMember(projectId, userId) {
       return member(await one("select * from project_members where project_id = $1 and user_id = $2", [projectId, userId]));
     },
+    async listMembers(projectId) {
+      const rows = await q("select m.*, u.email, u.name from project_members m join users u on u.id = m.user_id where m.project_id = $1 order by (m.role = 'owner') desc, lower(u.email)", [projectId]);
+      return rows.map((r) => ({ ...member(r), email: r.email, name: r.name }));
+    },
+    async removeMember(projectId, userId) {
+      return (await q("delete from project_members where project_id = $1 and user_id = $2 returning user_id", [projectId, userId])).length > 0;
+    },
     async listUserProjects(userId) {
       const rows = await q("select p.*, m.role from projects p join project_members m on m.project_id = p.id where m.user_id = $1 order by p.name, p.slug", [userId]);
       return rows.map((r) => ({ ...project(r), role: r.role }));

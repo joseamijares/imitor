@@ -134,6 +134,16 @@ for (const [name, factory] of IMPLEMENTATIONS) {
       await db.addMember(p2.id, bob.id);
       assert.deepEqual((await db.listUserProjects(bob.id)).map((p) => [p.slug, p.role]), [["fernwood-3", "owner"], ["fernwood-2", "member"]], "by name: Ferns, fernwood!");
       assert.deepEqual(await db.listUserProjects(ada.id), [{ ...p1, role: "owner" }]);
+
+      const cy = await db.createUser({ email: "Cy@example.com", name: "Cy" });
+      await db.addMember(p1.id, cy.id);
+      await db.addMember(p1.id, bob.id);
+      assert.deepEqual((await db.listMembers(p1.id)).map((m) => [m.email, m.role]), [["ada@example.com", "owner"], ["bob@example.com", "member"], ["Cy@example.com", "member"]], "owners first, then by address");
+      assert.equal((await db.listMembers(p1.id))[2].name, "Cy");
+      assert.equal(await db.removeMember(p1.id, bob.id), true);
+      assert.equal(await db.removeMember(p1.id, bob.id), false);
+      assert.equal(await db.getMember(p1.id, bob.id), null);
+      assert.deepEqual(await db.listMembers("prj_none"), []);
     });
 
     test("access keys: the secret once, only its SHA-256 kept, found while live, listed, revoked", async () => {

@@ -538,6 +538,7 @@ button.thumb:hover { box-shadow: 0 0 0 1px var(--color-t-3); }
 /* Imitor Cloud: access keys, and the dialog that shows a new key once. */
 .key-create { display: flex; gap: 8px; margin: 4px 0 8px; }
 .key-create .field { flex: 1; }
+.key-create select.field { flex: 0 0 auto; width: auto; }
 .key-dialog-backdrop { position: fixed; inset: 0; z-index: 40; background: var(--color-backdrop); display: grid; place-items: center; padding: 16px; }
 .key-dialog {
   width: 100%; max-width: 560px; display: flex; flex-direction: column; gap: 12px; padding: 20px;

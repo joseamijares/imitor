@@ -88,4 +88,7 @@ export const cloud = {
   keys: () => request("GET", "/api/keys"),
   createKey: (name) => request("POST", "/api/keys", { name }),
   revokeKey: (id) => request("POST", `/api/keys/${encodeURIComponent(id)}/revoke`, {}),
+  members: () => request("GET", "/api/members"),
+  addMember: (email, role) => request("POST", "/api/members", { email, role }),
+  removeMember: (userId) => request("POST", `/api/members/${encodeURIComponent(userId)}/remove`, {}),
 };

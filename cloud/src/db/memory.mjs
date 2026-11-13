@@ -132,6 +132,15 @@ export function memoryDb({ now = () => new Date() } = {}) {
     async getMember(projectId, userId) {
       return copy(members.get(`${projectId}\0${userId}`) ?? null);
     },
+    /** The project's members with their address and name, owners first, then by address. */
+    async listMembers(projectId) {
+      return [...members.values()].filter((m) => m.projectId === projectId && users.has(m.userId))
+        .map((m) => ({ ...copy(m), email: users.get(m.userId).email, name: users.get(m.userId).name }))
+        .sort((a, b) => (a.role === b.role ? 0 : a.role === "owner" ? -1 : 1) || a.email.localeCompare(b.email));
+    },
+    async removeMember(projectId, userId) {
+      return members.delete(`${projectId}\0${userId}`);
+    },
     /** The user's projects, each with their `role`, by name. */
     async listUserProjects(userId) {
       return [...members.values()].filter((m) => m.userId === userId && projects.has(m.projectId))
