@@ -6,7 +6,7 @@ import fs from "node:fs";
 import test from "node:test";
 import { handle, KEEP_DAYS } from "../src/api.mjs";
 import { CAPS, noMail } from "../src/mail/index.mjs";
-import { admit, HOME, safeNext } from "../src/web.mjs";
+import { admit, HOME, safeNext, UNSUBSCRIBE_FAILURES } from "../src/web.mjs";
 import { browser, cloud, HTML, PUBLIC_URL } from "./helpers.mjs";
 
 const TOKEN = crypto.randomBytes(32).toString("base64url");
@@ -593,4 +593,110 @@ test("scheduled retention: needs CRON_SECRET; prunes every project and drops exp
   assert.ok(await s.db.getRun(fresh));
   assert.equal([...s.storage.objects.keys()].filter((k) => k.includes(old) || k.includes(stale)).length, 0, "their files are deleted");
   assert.equal((await call(`Bearer ${secret}`, "POST")).status, 200, "POST works too");
+});
+
+// ---------- run emails: the Settings switch and the unsubscribe link ----------
+
+/** Fernwood (Ada owns it) with Bob, signed in with Google, as a member. */
+async function runMailSetup() {
+  const s = await setup();
+  const { json: { project } } = await s.ada.call("POST", "/projects", { body: { name: "Fernwood" } });
+  await s.db.addMember(project.id, s.bobUser.id);
+  await s.db.addIdentity("google", "google-bob", s.bobUser.id);
+  return { ...s, project };
+}
+const runMailRows = async (s) => (await s.db.listAudit()).filter((a) => a.action === "member.run-mail").map((a) => [a.userId, a.projectId, a.detail]);
+
+test("run emails in Settings: you read and change only your own choice, per project, audited when it changes", async () => {
+  const s = await runMailSetup();
+  assert.deepEqual((await s.bob.call("GET", "/p/fernwood/api/notifications")).json, { runProblems: true, available: true }, "on by default");
+  // Ada signed in with the admin token: no Google sign-in and no address, so no message could reach her.
+  assert.deepEqual((await s.ada.call("GET", "/p/fernwood/api/notifications")).json, { runProblems: true, available: false });
+
+  const off = await s.bob.call("POST", "/p/fernwood/api/notifications", { body: { runProblems: false, userId: (await s.db.findUserByEmail("admin")).id } });
+  assert.equal(off.status, 200);
+  assert.deepEqual(off.json, { runProblems: false, available: true });
+  assert.equal((await s.db.getMember(s.project.id, s.bobUser.id)).notifyRuns, false);
+  assert.equal((await s.db.getMember(s.project.id, (await s.db.findUserByEmail("admin")).id)).notifyRuns, true, "a userId in the body is not read");
+  assert.equal((await s.bob.call("POST", "/p/fernwood/api/notifications", { body: { runProblems: false } })).status, 200);
+  assert.deepEqual(await runMailRows(s), [[s.bobUser.id, s.project.id, { on: false, via: "settings" }]], "audited once: the second changed nothing");
+  assert.deepEqual((await s.bob.call("POST", "/p/fernwood/api/notifications", { body: { runProblems: true } })).json, { runProblems: true, available: true });
+  assert.equal((await runMailRows(s)).length, 2);
+
+  for (const body of [{}, { runProblems: "no" }, { runProblems: 0 }]) assert.equal((await s.bob.call("POST", "/p/fernwood/api/notifications", { body })).status, 400, JSON.stringify(body));
+  assert.equal((await s.bob.call("POST", "/p/fernwood/api/notifications", { body: { runProblems: false }, origin: "https://evil.example" })).status, 403, "the Origin check still applies here");
+  // Someone else's project reads as none; a member's choice in one project leaves their others alone.
+  const stranger = await s.bob.call("POST", "/projects", { body: { name: "Oak" } });
+  assert.equal((await s.ada.call("POST", "/p/oak/api/notifications", { body: { runProblems: false } })).status, 404);
+  await s.bob.call("POST", "/p/oak/api/notifications", { body: { runProblems: false } });
+  assert.equal((await s.db.getMember(stranger.json.project.id, s.bobUser.id)).notifyRuns, false);
+  assert.equal((await s.db.getMember(s.project.id, s.bobUser.id)).notifyRuns, true);
+
+  s.deps.mail = { transport: noMail(), from: null, replyTo: null };
+  assert.deepEqual((await s.bob.call("GET", "/p/fernwood/api/notifications")).json, { runProblems: true, available: false }, "this server sends no mail");
+});
+
+test("unsubscribe: the link shows the project and changes nothing; its POST, with no cookies and no Origin, turns run emails off", async () => {
+  const s = await runMailSetup();
+  const token = await s.db.runMailToken(s.project.id, s.bobUser.id);
+  assert.match(token, /^[A-Za-z0-9_-]{43}$/);
+  assert.equal(await s.db.runMailToken(s.project.id, s.bobUser.id), token, "the same link every time");
+  const raw = (method, path, init = {}) => handle(new Request(new URL(path, PUBLIC_URL), { method, ...init }), s.deps);
+
+  for (const path of [`/unsubscribe/?t=${token}`, `/unsubscribe?t=${token}`]) {
+    const page = await raw("GET", path, { headers: HTML });
+    assert.equal(page.status, 200, path);
+    const text = await page.text();
+    assert.match(text, /Stop run emails\?/);
+    assert.match(text, /“Fernwood”/);
+    assert.ok(text.includes(`<form method="post" action="/unsubscribe/?t=${token}">`));
+    assert.doesNotMatch(text, /bob@example\.com|<script/);
+  }
+  assert.equal((await s.db.getMember(s.project.id, s.bobUser.id)).notifyRuns, true, "opening the link turns nothing off");
+
+  // RFC 8058: a mail client POSTs List-Unsubscribe=One-Click, without cookies or Origin.
+  const one = await raw("POST", `/unsubscribe/?t=${token}`, { headers: { "content-type": "application/x-www-form-urlencoded" }, body: "List-Unsubscribe=One-Click" });
+  assert.equal(one.status, 200);
+  assert.match(await one.text(), /You will not get these emails/);
+  assert.equal((await s.db.getMember(s.project.id, s.bobUser.id)).notifyRuns, false);
+  assert.ok(!one.headers.getSetCookie().length, "no session is made or touched");
+  const again = await raw("POST", `/unsubscribe?t=${token}`, { headers: { origin: "https://mail.example" } });
+  assert.equal(again.status, 200, "repeatable, from anywhere");
+  assert.deepEqual(await runMailRows(s), [[s.bobUser.id, s.project.id, { on: false, via: "unsubscribe" }]]);
+  assert.match(await (await raw("GET", `/unsubscribe/?t=${token}`)).text(), /You will not get these emails[\s\S]*href="\/p\/fernwood\/settings#account"/);
+  assert.deepEqual((await s.bob.call("GET", "/p/fernwood/api/notifications")).json, { runProblems: false, available: true }, "Settings shows it off");
+  assert.equal((await s.db.getMember(s.project.id, (await s.db.findUserByEmail("admin")).id)).notifyRuns, true, "only that membership");
+  assert.equal((await raw("PUT", `/unsubscribe/?t=${token}`)).status, 405);
+});
+
+test("unsubscribe: a malformed, unknown or stale token gets one calm 404, and a removed and re-added member starts over", async () => {
+  const s = await runMailSetup();
+  const token = await s.db.runMailToken(s.project.id, s.bobUser.id);
+  const raw = (method, path, headers = {}) => handle(new Request(new URL(path, PUBLIC_URL), { method, headers: { "x-forwarded-for": "203.0.113.9", ...headers } }), s.deps);
+  const answers = [];
+  for (const path of ["/unsubscribe", "/unsubscribe/?t=", "/unsubscribe/?t=short", `/unsubscribe/?t=${"A".repeat(43)}`, `/unsubscribe/?t=${token}x`, `/unsubscribe/?t=${encodeURIComponent("' or 1=1 --")}`]) {
+    for (const method of ["GET", "POST"]) {
+      const res = await raw(method, path);
+      answers.push([res.status, (await res.text()).replace(/\s+/g, " ")]);
+    }
+  }
+  assert.ok(answers.every(([status, text]) => status === 404 && text === answers[0][1]), "the same page for all of them");
+  assert.match(answers[0][1], /This link does not work/);
+  assert.equal((await s.db.getMember(s.project.id, s.bobUser.id)).notifyRuns, true);
+
+  // Removed: the old link is dead. Added again: run emails are on, with a new link.
+  await s.db.setRunMail(s.project.id, s.bobUser.id, false);
+  await s.ada.call("POST", `/p/fernwood/api/members/${s.bobUser.id}/remove`, { body: {} });
+  const gone = await raw("GET", `/unsubscribe/?t=${token}`);
+  assert.equal(gone.status, 404);
+  assert.equal((await gone.text()).replace(/\s+/g, " "), answers[0][1]);
+  await s.ada.call("POST", "/p/fernwood/api/members", { body: { email: "bob@example.com" } });
+  assert.equal((await s.db.getMember(s.project.id, s.bobUser.id)).notifyRuns, true);
+  assert.notEqual(await s.db.runMailToken(s.project.id, s.bobUser.id), token);
+
+  // Past UNSUBSCRIBE_FAILURES links that name nobody, the address waits, even with a good link; others do not.
+  for (let i = answers.length + 1; i < UNSUBSCRIBE_FAILURES; i++) await raw("GET", "/unsubscribe/?t=nope");
+  const good = await s.db.runMailToken(s.project.id, s.bobUser.id);
+  assert.equal((await raw("GET", `/unsubscribe/?t=${good}`)).status, 429);
+  assert.equal((await raw("GET", `/unsubscribe/?t=${good}`, { "x-forwarded-for": "198.51.100.1" })).status, 200);
 });

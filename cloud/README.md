@@ -49,7 +49,7 @@ For agents and CI (a project key):
 | Route | |
 | --- | --- |
 | `POST /v1/runs` | `Authorization: Bearer imk_...`. Body: [`src/schema/run-upload.v1.json`](../src/schema/run-upload.v1.json). `201` with `{ id, status, uploads: [{ path, method, url, headers }], complete }`. Idempotent on the run's folder name within the project: a repeat answers `200` with the same `id` and upload URLs only for files not stored yet. |
-| `POST /v1/runs/:id/complete` | Checks every declared file is in storage with its declared size, content type and SHA-256 (one listing of the run's folder, then at most 16 HEADs at a time), marks the run ready, prunes the project, answers `{ id, status: "ready", url }`; `url` is the run in the interface, `<PUBLIC_URL>/p/<project>/runs/<id>`. Repeatable. `409` with `missing` when files have not arrived; a stored file that does not match is deleted, so the next push uploads it again. |
+| `POST /v1/runs/:id/complete` | Checks every declared file is in storage with its declared size, content type and SHA-256 (one listing of the run's folder, then at most 16 HEADs at a time), marks the run ready, prunes the project, answers `{ id, status: "ready", url }`; `url` is the run in the interface, `<PUBLIC_URL>/p/<project>/runs/<id>`. When the run has problems and mail is on, the project's members are emailed first (see `RESEND_API_KEY`), so with someone to tell this answer can wait up to about 5 seconds longer; the answer itself never changes. Repeatable (only the first complete emails). `409` with `missing` when files have not arrived; a stored file that does not match is deleted, so the next push uploads it again. |
 | `GET` or `POST /v1/cron/retention` | `Authorization: Bearer <CRON_SECRET>`. Prunes every project and drops expired sessions; answers `{ projects, pruned, failed, sessions }`. `404` without `CRON_SECRET`. |
 
 Errors are JSON, `{ "error": "..." }`, in plain words: `400` for a body or file that is not accepted, `401` for a
@@ -68,8 +68,9 @@ For people (a session cookie):
 | `GET` and `POST /login/token` | The admin token form, only with `IMITOR_ADMIN_TOKEN`. |
 | `POST /logout`, `POST /logout/everywhere` | End this session, or every session of the person. |
 | `GET /projects` | The person's projects, and a form to make one (`POST /projects`). The same path answers JSON to a request whose `Accept` does not name `text/html` (`GET` and `POST /projects`). Signing in lands here. |
+| `GET /unsubscribe?t=<token>`, `POST` | The unsubscribe link of a run email, used without signing in. `GET` names the project and offers a button, and changes nothing (mail scanners open links). `POST` turns run emails off for the one membership the token names and answers `200`, again when repeated; it is the `List-Unsubscribe` one-click target (RFC 8058), so it is the one route that takes a POST without `Origin` or cookies. A malformed, unknown or stale token gets the same `404` page; 20 of them from one address in 10 minutes and that address gets `429` until the window ends. |
 | `GET /` | A redirect to `/projects` (on Vercel, `vercel.json` does it, since `/` is the site's own page there). |
-| `/p/<project>/...` | The interface in cloud mode. Its API is `/p/<project>/api/*`, the same answers as the local server's `/api/*` (built with the same code, `src/derive.mjs`), plus `me`, `keys` (`GET`; `POST keys` with `{ name }` and `POST keys/<id>/revoke`, owners only) and `members` (`GET`; `POST members` with `{ email, role }`, `role` being `member` or `owner`, and `POST members/<user id>/remove`, owners only, or anyone for themselves; a project always keeps an owner: the check and the change are one transaction holding the project row, so two owners removing each other at once cannot leave none). Files: `/p/<project>/files/runs/<run>/<path>`, a 302 to storage. |
+| `/p/<project>/...` | The interface in cloud mode. Its API is `/p/<project>/api/*`, the same answers as the local server's `/api/*` (built with the same code, `src/derive.mjs`), plus `me`, `keys` (`GET`; `POST keys` with `{ name }` and `POST keys/<id>/revoke`, owners only) `notifications` (`GET` answers `{ runProblems, available }`: whether you are emailed when a run of the project has problems, and whether this server could email you at all; `POST` with `{ runProblems: true | false }` changes it, for yourself only, audited as `member.run-mail`) and `members` (`GET`; `POST members` with `{ email, role }`, `role` being `member` or `owner`, and `POST members/<user id>/remove`, owners only, or anyone for themselves; a project always keeps an owner: the check and the change are one transaction holding the project row, so two owners removing each other at once cannot leave none). Files: `/p/<project>/files/runs/<run>/<path>`, a 302 to storage. |
 
 For the public site (no key, no session):
 
@@ -95,7 +96,7 @@ For the public site (no key, no session):
 | `IMITOR_ALLOWED_EMAILS` | Comma-separated addresses that may sign in the first time (compared lowercased). An address an owner adds to a project (Settings, Members) before its person ever signed in may sign in too (`users.invited_at`): the owner's invitation stands in for this list, so any owner can admit people, with no cap. Removing someone from a project does not stop them signing in; an account turned off (`users.allowed = false`) cannot be added back by an owner. When mail is on (`RESEND_API_KEY`), the added address is emailed a link to the project. After someone's first sign-in their Google account decides, so removing an address does not lock its person out; to do that, set `users.allowed` to false (their sessions end at their next request). |
 | `IMITOR_ADMIN_TOKEN` | For a private instance without Google: at least 32 characters (`openssl rand -base64 32`). Turns on `/login/token`, which signs in an admin user (`IMITOR_ADMIN_EMAIL`, default `admin`). Anyone with the token is that admin; leave it unset where Google sign-in is configured. |
 | `CRON_SECRET` | At least 32 characters. Turns on the retention call and is its bearer token (Vercel Cron sends it). |
-| `RESEND_API_KEY` | Turns on transactional email, sent through [Resend](https://resend.com)'s HTTP API (no SDK). Without it, mail is off and nothing is sent. Needs `MAIL_FROM` (both or neither) and `PUBLIC_URL`, since every message links to it. Two kinds of message are sent. When an owner adds someone to a project (not when they change a role), that person gets a link to sign in with and land on the project. When an owner makes or revokes an access key, the project's other owners (not the one who did it, not members) are told which key, by whom, with a link to the project's keys in Settings, so an owner learns of a key they did not make; the message names the key, never its secret. Each kind has its own caps in any 24 hours: invitations, at most 20 per sender and 3 to one address (from everyone together); key notices, 30 and 10. Past a cap the person is still added or the key still made, just without the email. A message that cannot be sent never fails the request. Every message sent, failed or held back is audited (`mail.send`, `mail.fail`, `mail.limit`; see `migrations/006_mail.sql`). |
+| `RESEND_API_KEY` | Turns on transactional email, sent through [Resend](https://resend.com)'s HTTP API (no SDK). Without it, mail is off and nothing is sent. Needs `MAIL_FROM` (both or neither) and `PUBLIC_URL`, since every message links to it. Three kinds of message are sent. When an owner adds someone to a project (not when they change a role), that person gets a link to sign in with and land on the project. When an owner makes or revokes an access key, the project's other owners (not the one who did it, not members) are told which key, by whom, with a link to the project's keys in Settings, so an owner learns of a key they did not make; the message names the key, never its secret. When a key completes a run that has problems (as the run's Problems tab counts them: failed flows, page errors, dialogs, seed problems; not stand-ins), the project's members are emailed at once: only those who have signed in with Google at least once (never an address that was added but whose person never came) and who did not turn it off (Settings, Account, per project; or the link at the bottom of each message, which also goes out as `List-Unsubscribe`). On by default; at most 10 members per run (owners first), sent together. The message names the run (title, branch, commit), how many problems it has and up to three of their titles, with a link to the run; never a problem's message. Each kind has its own caps in any 24 hours: invitations, at most 20 per sender and 3 to one address (from everyone together); key notices, 30 and 10; run emails, which no person sends, 5 to one address about one project and 10 to one address from all projects. Past a cap the person is still added, the key still made, or the run still stored, just without the email. A message that cannot be sent never fails the request. Every message sent, failed or held back is audited (`mail.send`, `mail.fail`, `mail.limit`; see `migrations/006_mail.sql`). |
 | `MAIL_FROM` | The sender, e.g. `Imitor Cloud <hello@jamaklab.com>`. Its domain must be verified in Resend, or Resend refuses every message. |
 | `MAIL_REPLY_TO` | Optional: where replies go, when not to `MAIL_FROM`. |
 | `MIN_CLI_VERSION` | Oldest `imitor` accepted, e.g. `0.1.0`. |
@@ -226,7 +227,10 @@ Everything but Google lives in the Vercel project. In this order; nothing here n
    (the DNS records it lists), and make an API key that can only send. In Vercel, Production only, Sensitive:
    `RESEND_API_KEY`, and `MAIL_FROM` with an address on that domain (e.g. `Imitor Cloud <hello@jamaklab.com>`); then
    redeploy. To test, add an address of your own to a project in Settings, Members: the toast says it was emailed,
-   the message arrives with a link to the project, and the audit log has a `mail.send` row.
+   the message arrives with a link to the project, and the audit log has a `mail.send` row. Then push a run with a
+   failing flow: each member who signed in gets one email, with a link to the run and an unsubscribe link; check that
+   the mail client offers its own "Unsubscribe" (from `List-Unsubscribe`), and that using it turns the switch off in
+   Settings, Account.
 8. **The next morning**, open the project's Cron Jobs logs and confirm the retention job answered 200.
 
 ### Seen in production
@@ -253,6 +257,9 @@ On app.imitor.dev (Vercel, Neon Postgres, Vercel Blob, a Google client in Testin
   limit may need more than the 60 s `maxDuration` in `vercel.json` (then: record each verified file, so a retry does not
   hash it again).
 - A pull request from a fork, or a CI job, pushing to the hosted instance (the first push came from a person's machine).
+- Run emails against the real Resend: that its `headers` field (as its API reference documents it) reaches the message
+  as `List-Unsubscribe` and `List-Unsubscribe-Post`, and that Gmail and Apple Mail offer their own "Unsubscribe" and
+  POST it to `/unsubscribe/?t=...` (the trailing slash is Vercel's form of the path, so the POST is not redirected).
 - Publishing the Google consent screen. It stays in Testing, so every allowlisted address must also be a test user.
 
 ## Security notes
@@ -288,8 +295,15 @@ On app.imitor.dev (Vercel, Neon Postgres, Vercel Blob, a Google client in Testin
   serverless platform. Two adds at the same moment can both pass a cap by one; the notices of one key are sent
   together, so they all pass its count, and so go to at most 30 owners. Messages carry no images or remote content,
   names in them are escaped and kept to one line in the subject, and each message has an idempotency key (per
-  membership; per key, action and recipient for key notices), so a retried request does not send twice. A key notice
-  names the key, never its secret (which is not kept), hash or prefix.
+  membership; per key, action and recipient for key notices; per run and recipient for run emails), so a retried
+  request does not send twice. A key notice names the key, never its secret (which is not kept), hash or prefix.
+- Run emails go only to members who have signed in, and are capped per address, not per sender, since a key sends
+  them: a CI pushing failing runs all day reaches one inbox at most 5 times a day per project and 10 times in all.
+  They name only what a member sees in the interface (titles of failed flows, never a problem's message), and typed
+  values were blanked before upload anyway. Each carries an unsubscribe link: a random 32-byte token per membership
+  (`project_members.run_mail_token`, made with the first message and then reused, so a link in an old message keeps
+  working; kept as is, not hashed, since every message must carry the same one). It reveals no id, needs no server
+  secret, and can only turn run emails off for that one membership; removing someone from a project drops it.
 
 ## Layout
 
@@ -347,5 +361,7 @@ contract again against a `postgres:16` service (the Postgres suite works in a sc
 ## Next
 
 - An owner's view of the audit log.
+- Resend's bounce and complaint webhooks are not handled: an address that bounces or marks a run email as spam keeps
+  being sent to (within the caps) until its person turns run emails off or is removed from the project.
 - `imitor push` after every run (automatic) and uploading captures and agent activity with a run; the API already
   accepts `captures` and `activity` lines.

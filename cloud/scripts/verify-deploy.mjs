@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Checks a production deployment of the site and Imitor Cloud from the outside, without signing in: the routes the
-// Vercel configuration is meant to produce, and the answers the cloud gives a stranger. Read-only: it sends GETs, and
-// one POST /v1/runs with no key (answered 401 before anything is stored).
+// Vercel configuration is meant to produce, and the answers the cloud gives a stranger. Read-only: it sends GETs (an
+// unsubscribe link with a made-up token among them, which changes nothing), and one POST /v1/runs with no key
+// (answered 401 before anything is stored).
 //
 //   node cloud/scripts/verify-deploy.mjs [app URL] [site URL]
 //   CRON_SECRET=... node cloud/scripts/verify-deploy.mjs      # also runs the retention job once and expects 200
@@ -98,6 +99,12 @@ await check("app host: POST /v1/runs without a key is a JSON 401 (trailing-slash
 await check("app host: the interface API refuses a stranger with JSON", async () => {
   const res = await follow(`${app}/p/nothing-here/api/project`, {});
   expect(res.status === 401 && isJson(res), `got ${res.status} ${res.headers.get("content-type")}`);
+});
+
+await check("app host: an unsubscribe link that names no membership is a calm 404 page", async () => {
+  const res = await follow(`${app}/unsubscribe/?t=${"x".repeat(43)}`, { headers: { accept: "text/html" } });
+  expect(res.status === 404, `got ${res.status}`);
+  expect(/This link does not work/.test(await res.text()), "not the cloud's page: is /unsubscribe in vercel.json's rewrites?");
 });
 
 await check("retention cron refuses a call without the secret", async () => {

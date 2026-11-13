@@ -22,13 +22,13 @@ If you join the waitlist on the pricing page, the email address you type and the
 
 - **Your account:** the email address, name and account id that Google returns when you sign in. Sign-in asks Google only for `openid`, `email` and `profile`.
 - **Sessions:** a random sign-in token in a cookie on app.imitor.dev. The service keeps only a hash of it.
-- **Projects and access keys:** project names, who belongs to them (including the addresses owners add, before those people first sign in), and a hash of each key. The key itself is shown once and not stored.
+- **Projects and access keys:** project names, who belongs to them (including the addresses owners add, before those people first sign in), whether each member wants emails about runs with problems, with the random code in their unsubscribe link, and a hash of each key. The key itself is shown once and not stored.
 - **Runs you upload:** each run's data (flows, steps, shots, problems, the commit and branch), its screenshots and videos, and, if the uploader sends them, the agent activity and captures that go with it. Values a flow types into a field, such as passwords, are replaced with dots before upload and again on arrival. The service never stores or runs your app's code.
-- **An audit log:** sign-ups, sign-ins, project creation, who was added to or removed from a project, access-key creation and revocation, run uploads and removals, and the emails the service sent, could not send or held back under its daily limits, with the address each was for. Repeated failed admin sign-ins record the address they came from.
+- **An audit log:** sign-ups, sign-ins, project creation, who was added to or removed from a project, who turned run emails on or off, access-key creation and revocation, run uploads and removals, and the emails the service sent, could not send or held back under its daily limits, with the address each was for. Repeated failed admin sign-ins record the address they came from.
 
 ### Why
 
-Only to run the service: to sign you in, to keep your projects separate from everyone else's, to show you your runs, to email you when a project owner adds you to a project, and to tell a project's owners when another owner creates or revokes one of its access keys. Nothing is sold, used for advertising or used to train models.
+Only to run the service: to sign you in, to keep your projects separate from everyone else's, to show you your runs, to email you when a project owner adds you to a project, to tell a project's owners when another owner creates or revokes one of its access keys, and to email a project's members when a run they can see has problems, unless they turned that off. Nothing is sold, used for advertising or used to train models.
 
 ### Where
 
@@ -36,7 +36,7 @@ Only to run the service: to sign you in, to keep your projects separate from eve
 - Neon (PostgreSQL) holds accounts, projects and run data.
 - Vercel Blob, in a private store, holds screenshots and videos. They are reached only through links that expire after five minutes.
 - Google handles sign-in.
-- Resend sends the service's email. When an owner adds someone to a project, Resend receives the message: that person's address, the project's name and a link to it, and the name of the owner who added them (or their address, when they have no name). When an owner creates or revokes an access key, Resend receives a message to each of the project's other owners: their address, the project's name, the key's name, a link to the project's settings, and the name (or address) of the owner who did it. The key itself is never sent.
+- Resend sends the service's email. When an owner adds someone to a project, Resend receives the message: that person's address, the project's name and a link to it, and the name of the owner who added them (or their address, when they have no name). When an owner creates or revokes an access key, Resend receives a message to each of the project's other owners: their address, the project's name, the key's name, a link to the project's settings, and the name (or address) of the owner who did it. The key itself is never sent. When a run uploaded to a project has problems, Resend receives a message to each member who has signed in and has not turned these emails off: their address, the project's name, the run's title, branch and commit, how many problems it has and up to three of their titles, a link to the run, and the member's unsubscribe link.
 
 These providers may process data outside your country.
 
@@ -47,6 +47,8 @@ These providers may process data outside your country.
 - Your account: until you ask for it to be deleted.
 
 ### Your choices
+
+Emails about runs with problems are on when you join a project. To stop them, use the link at the bottom of any of them, or your mail app's own unsubscribe button, or turn off "Email me when a run has problems" in the project's Settings, under Account. This works for each project on its own, needs no sign-in from the link, and does not change any other email.
 
 You can ask to see, export or delete your account, a project or a run by writing to {{contact}}. An export is a copy of the stored files: each run's data, screenshots and videos. Deleting your account deletes your sessions and your access to every project. Projects you own are deleted with their runs unless you ask otherwise.
 

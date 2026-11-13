@@ -2,7 +2,7 @@
 // them and test/db.test.mjs runs one suite against both. Every query is parameterised. Times come from `now` (the
 // server's clock, like memory.mjs), not from the database, so retention behaves the same on either.
 // `pg` is loaded only when this is used, so the memory adapters and their tests need no install.
-import { hashSecret, KEY_PREFIX, newId, newSecret, slugAttempt, slugify } from "../ids.mjs";
+import { hashSecret, KEY_PREFIX, newId, newSecret, newToken, slugAttempt, slugify } from "../ids.mjs";
 import { LINE_KINDS } from "./memory.mjs";
 
 const iso = (v) => (v == null ? null : v instanceof Date ? v.toISOString() : new Date(v).toISOString());
@@ -12,7 +12,8 @@ const user = (r) => r && { id: r.id, email: r.email, name: r.name, allowed: r.al
 const identity = (r) => r && { provider: r.provider, subject: r.subject, userId: r.user_id, createdAt: iso(r.created_at) };
 const session = (r) => r && { idHash: r.id_hash, userId: r.user_id, createdAt: iso(r.created_at), expiresAt: iso(r.expires_at) };
 const project = (r) => r && { id: r.id, name: r.name, slug: r.slug, createdAt: iso(r.created_at) };
-const member = (r) => r && { projectId: r.project_id, userId: r.user_id, role: r.role, createdAt: iso(r.created_at) };
+// run_mail_token is never part of a Member: only runMailToken hands it out.
+const member = (r) => r && { projectId: r.project_id, userId: r.user_id, role: r.role, notifyRuns: r.notify_runs, createdAt: iso(r.created_at) };
 const accessKey = (r) => r && {
   id: r.id, projectId: r.project_id, name: r.name, prefix: r.prefix, secretSha256: r.secret_sha256, createdAt: iso(r.created_at),
   lastUsedAt: iso(r.last_used_at), revokedAt: iso(r.revoked_at), expiresAt: iso(r.expires_at),
@@ -231,14 +232,26 @@ export function pgDb({ connectionString, pool = null, schema = null, now = () =>
       return member(await one("select * from project_members where project_id = $1 and user_id = $2", [projectId, userId]));
     },
     async listMembers(projectId) {
-      const rows = await q("select m.*, u.email, u.name from project_members m join users u on u.id = m.user_id where m.project_id = $1 order by (m.role = 'owner') desc, lower(u.email)", [projectId]);
-      return rows.map((r) => ({ ...member(r), email: r.email, name: r.name }));
+      const rows = await q("select m.*, u.email, u.name, exists (select 1 from identities i where i.user_id = m.user_id) as signed_in from project_members m join users u on u.id = m.user_id where m.project_id = $1 order by (m.role = 'owner') desc, lower(u.email)", [projectId]);
+      return rows.map((r) => ({ ...member(r), email: r.email, name: r.name, signedIn: r.signed_in }));
     },
     async removeMember(projectId, userId) {
       return transaction(async (query) => {
         await keepsOwner(query, projectId, userId);
         return (await query("delete from project_members where project_id = $1 and user_id = $2 returning user_id", [projectId, userId])).length > 0;
       });
+    },
+    async setRunMail(projectId, userId, on) {
+      return member(await one("update project_members set notify_runs = $3 where project_id = $1 and user_id = $2 returning *", [projectId, userId, on === true]));
+    },
+    async runMailToken(projectId, userId) {
+      // coalesce: two messages at once to one membership both get the token the first of them wrote.
+      const row = await one("update project_members set run_mail_token = coalesce(run_mail_token, $3) where project_id = $1 and user_id = $2 returning run_mail_token", [projectId, userId, newToken()]);
+      return row?.run_mail_token ?? null;
+    },
+    async findRunMailToken(token) {
+      if (typeof token !== "string" || !token) return null;
+      return member(await one("select * from project_members where run_mail_token = $1", [token]));
     },
     async listUserProjects(userId) {
       const rows = await q("select p.*, m.role from projects p join project_members m on m.project_id = p.id where m.user_id = $1 order by p.name, p.slug", [userId]);
@@ -341,10 +354,11 @@ export function pgDb({ connectionString, pool = null, schema = null, now = () =>
       const rows = await q("select * from audit_log order by id");
       return rows.map((r) => ({ id: Number(r.id), at: iso(r.at), projectId: r.project_id, userId: r.user_id, keyId: r.key_id, action: r.action, detail: r.detail }));
     },
-    async countAudit({ action, since, userId = null, detail = {} }) {
+    async countAudit({ action, since, userId = null, projectId = null, detail = {} }) {
       const where = ["action = $1", "at >= $2"];
       const values = [action, since];
       if (userId != null) where.push(`user_id = $${values.push(userId)}`);
+      if (projectId != null) where.push(`project_id = $${values.push(projectId)}`);
       for (const [field, value] of Object.entries(detail)) {
         // The field name is written into the query (detail->>'to' is the expression 006_mail.sql indexes), so only plain names.
         if (!/^[A-Za-z]+$/.test(field)) throw new Error(`countAudit cannot match the detail field ${JSON.stringify(field)}`);

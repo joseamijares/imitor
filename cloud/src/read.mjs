@@ -83,6 +83,13 @@ export async function readRoute(db, project, userId, route, { now = new Date() }
   return null;
 }
 
+/**
+ * The problems of one run record that its Problems tab counts (failed flows, page errors, dialogs, seed problems; not
+ * stand-ins, which it lists but does not count): what the run's page shows as its number of problems. They do not
+ * depend on the run before it, so none is needed.
+ */
+export const runFailures = (record) => runProblems(loaded(record), null).filter((p) => p.kind !== "stand-in");
+
 /** The run a problem id belongs to, among the project's ready runs, or null. */
 export async function problemRun(db, project, problemId) {
   const runs = await readyRuns(db, project.id);

@@ -162,6 +162,44 @@ for (const [name, factory] of IMPLEMENTATIONS) {
       assert.equal(demotions.filter((r) => r.status === "fulfilled").length, 1, "two owners stepping down at once: one stays");
     });
 
+    test("run emails: on by default per membership, set per member, listed with whether they signed in; one token each", async () => {
+      await fresh();
+      const ada = await db.createUser({ email: "ada@example.com" });
+      const bob = await db.createUser({ email: "bob@example.com", invited: true });
+      const p1 = await db.createProject({ name: "Fernwood", ownerId: ada.id });
+      const p2 = await db.createProject({ name: "Oak", ownerId: ada.id });
+      await db.addMember(p1.id, bob.id);
+      assert.equal((await db.getMember(p1.id, ada.id)).notifyRuns, true, "an owner made with the project");
+      assert.deepEqual({ ...(await db.getMember(p1.id, bob.id)), createdAt: null }, { projectId: p1.id, userId: bob.id, role: "member", notifyRuns: true, createdAt: null });
+      await db.addIdentity("google", "g-ada", ada.id);
+      assert.deepEqual((await db.listMembers(p1.id)).map((m) => [m.email, m.notifyRuns, m.signedIn]), [["ada@example.com", true, true], ["bob@example.com", true, false]]);
+
+      const off = await db.setRunMail(p1.id, ada.id, false);
+      assert.deepEqual({ ...off, createdAt: null }, { projectId: p1.id, userId: ada.id, role: "owner", notifyRuns: false, createdAt: null });
+      assert.equal((await db.getMember(p2.id, ada.id)).notifyRuns, true, "each project on its own");
+      assert.equal((await db.listMembers(p1.id))[0].notifyRuns, false);
+      assert.equal((await db.addMember(p1.id, ada.id, "owner")).notifyRuns, false, "adding again keeps the choice");
+      assert.equal(await db.setRunMail(p1.id, "usr_none", false), null);
+      assert.equal((await db.setRunMail(p1.id, ada.id, true)).notifyRuns, true);
+
+      const token = await db.runMailToken(p1.id, bob.id);
+      assert.match(token, /^[A-Za-z0-9_-]{43}$/);
+      assert.equal(await db.runMailToken(p1.id, bob.id), token, "made once");
+      const [x, y] = await Promise.all([db.runMailToken(p2.id, ada.id), db.runMailToken(p2.id, ada.id)]);
+      assert.equal(x, y, "two at once agree");
+      assert.notEqual(x, token);
+      assert.equal(await db.runMailToken(p1.id, "usr_none"), null);
+      assert.deepEqual(await db.findRunMailToken(token), await db.getMember(p1.id, bob.id));
+      for (const t of [null, "", "nope", `${token}x`]) assert.equal(await db.findRunMailToken(t), null, String(t));
+      for (const m of [...(await db.listMembers(p1.id)), await db.getMember(p1.id, bob.id), await db.setRunMail(p1.id, bob.id, false)]) assert.ok(!JSON.stringify(m).includes(token), "a Member never carries its token");
+
+      // Removed and added again: the default, and the old token names nobody.
+      await db.removeMember(p1.id, bob.id);
+      assert.equal(await db.findRunMailToken(token), null);
+      assert.equal((await db.addMember(p1.id, bob.id)).notifyRuns, true);
+      assert.notEqual(await db.runMailToken(p1.id, bob.id), token);
+    });
+
     test("access keys: the secret once, only its SHA-256 kept, found while live, listed, revoked", async () => {
       await fresh();
       const p = await db.createProject({ name: "fernwood" });
@@ -302,6 +340,15 @@ for (const [name, factory] of IMPLEMENTATIONS) {
       assert.equal(await db.countAudit({ action: "mail.fail", since: day, detail: { status: 500 } }), 1, "compared as text");
       assert.equal(await db.countAudit({ action: "mail.limit", since: day }), 0);
       await assert.rejects(db.countAudit({ action: "mail.send", since: day, detail: { "to' or '1": "x" } }), /cannot match the detail field/);
+
+      // By project: rows of that project only; without one, any project or none.
+      const p = await db.createProject({ name: "fernwood" });
+      const q = await db.createProject({ name: "oak" });
+      for (const projectId of [p.id, p.id, q.id]) await db.addAudit({ projectId, action: "mail.send", detail: { kind: "runProblems", to: "cy@example.com" } });
+      assert.equal(await db.countAudit({ action: "mail.send", since: day, projectId: p.id, detail: { to: "cy@example.com", kind: "runProblems" } }), 2);
+      assert.equal(await db.countAudit({ action: "mail.send", since: day, projectId: q.id, detail: { to: "cy@example.com" } }), 1);
+      assert.equal(await db.countAudit({ action: "mail.send", since: day, detail: { to: "cy@example.com", kind: "runProblems" } }), 3);
+      assert.equal(await db.countAudit({ action: "mail.send", since: day, userId: ada.id, projectId: p.id }), 0);
     });
 
     test("waitlist: one row per address whatever its case, oldest first", async () => {

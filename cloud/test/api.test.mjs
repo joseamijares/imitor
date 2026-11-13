@@ -2,10 +2,12 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import test from "node:test";
-import { handle, KEEP_RUNS, MAX_UNFINISHED, UPLOAD_SECONDS } from "../src/api.mjs";
+import { handle, KEEP_RUNS, MAX_UNFINISHED, RUN_MAIL_MAX, UPLOAD_SECONDS } from "../src/api.mjs";
 import { memoryDb } from "../src/db/memory.mjs";
+import { CAPS, noMail } from "../src/mail/index.mjs";
 import { depsFromEnv } from "../src/server.mjs";
 import { memoryStorage } from "../src/storage/memory.mjs";
+import { cloud as webCloud, PUBLIC_URL } from "./helpers.mjs";
 
 const BASE = "http://cloud.test";
 const sha = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
@@ -469,4 +471,140 @@ test("finding missing files takes one listing, and checking them at most 16 HEAD
   assert.equal((await call(s, "POST", `/v1/runs/${created.body.id}/complete`)).status, 200);
   assert.equal(calls.head, 70);
   assert.equal(most, 16);
+});
+
+// ---------- run problem emails ----------
+
+/**
+ * Fernwood with its people, on the shared test cloud (recorded mail): Ada (owner) and Bob (member) have signed in; Cy
+ * was invited and never came; Dee signed in and turned run emails off; "admin" (the admin token's user) is no address.
+ */
+async function mailSetup() {
+  const c = webCloud();
+  const { db } = c;
+  const person = async (email, { identity = true, invited = false } = {}) => {
+    const u = await db.createUser({ email, name: email.split("@")[0], allowed: true, invited });
+    if (identity) await db.addIdentity("google", `g-${email}`, u.id);
+    return u;
+  };
+  const ada = await person("ada@example.com");
+  const bob = await person("bob@example.com");
+  const cy = await person("cy@example.com", { identity: false, invited: true });
+  const dee = await person("dee@example.com");
+  const admin = await person("admin");
+  const fernwood = await db.createProject({ name: "Fernwood", ownerId: ada.id });
+  for (const u of [bob, cy, dee, admin]) await db.addMember(fernwood.id, u.id);
+  await db.setRunMail(fernwood.id, dee.id, false);
+  const s = { ...c, fernwood, ada, bob, cy, dee, admin, key: await db.createAccessKey(fernwood.id) };
+  return s;
+}
+
+const FAILING = {
+  shots: [{ file: "screens/first-run-01-welcome-iphone-16-light.png", flow: "first-run", shot: "01-welcome", device: "iphone-16", scheme: "light", route: "/", stubs: ["camera"] }],
+  problems: [
+    { kind: "flow-failed", flow: "checkout", device: "iphone-16", scheme: "dark", step: 3, message: "locator.click: Timeout 10000ms exceeded.", stepConfig: { tap: "Pay" } },
+    { kind: "page-error", flow: "checkout", device: "iphone-16", scheme: "dark", message: "TypeError: card of ••• is undefined" },
+  ],
+};
+
+/** Register, upload and complete one run; returns the complete call's answer. */
+async function pushRun(s, clientRunId, manifest = FAILING, run = {}) {
+  const body = runBody(clientRunId);
+  body.manifest = { app: "fernwood", ...manifest };
+  body.run = { ...body.run, branch: "main", commit: "abc1234", ...run };
+  const created = await call(s, "POST", "/v1/runs", { body });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  await putAll(s, created.body.uploads);
+  return call(s, "POST", `/v1/runs/${created.body.id}/complete`);
+}
+
+test("a completed run with problems emails each member who signed in and did not opt out, once", async () => {
+  const s = await mailSetup();
+  const done = await pushRun(s, "run-a");
+  assert.equal(done.status, 200);
+  assert.deepEqual(done.body, { id: done.body.id, status: "ready", url: `${PUBLIC_URL}/p/fernwood/runs/${done.body.id}` }, "the push's answer is as always");
+  const sent = s.mail.transport.sent;
+  assert.deepEqual(sent.map((m) => m.to).sort(), ["ada@example.com", "bob@example.com"], "not Cy (never signed in), Dee (opted out) or admin (no address)");
+  const runUrl = `${PUBLIC_URL}/login?next=${encodeURIComponent(`/p/fernwood/runs/${done.body.id}`)}`;
+  for (const m of sent) {
+    const user = m.to === "ada@example.com" ? s.ada : s.bob;
+    assert.equal(m.idempotencyKey, `run-problems/${done.body.id}/${user.id}`);
+    assert.equal(m.subject, '2 problems in "Larger tap targets" of "Fernwood" on Imitor Cloud', "stand-ins are not counted, as on the run's page");
+    const token = await s.db.runMailToken(s.fernwood.id, user.id);
+    const unsubscribe = `${PUBLIC_URL}/unsubscribe/?t=${token}`;
+    assert.deepEqual([...m.html.matchAll(/href="([^"]*)"/g)].map((x) => x[1]), [runUrl.replace(/&/g, "&amp;"), unsubscribe]);
+    assert.deepEqual(m.headers, { "List-Unsubscribe": `<${unsubscribe}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" });
+    assert.match(m.text, /- checkout failed at step 3\n- Page error in checkout/);
+    assert.doesNotMatch(m.text + m.html, /Timeout|TypeError|Pay/, "never a problem's message or a step's values");
+  }
+  const rows = (await s.db.listAudit()).filter((a) => a.action.startsWith("mail."));
+  assert.deepEqual(rows.map((a) => [a.action, a.projectId, a.userId, a.detail.kind]), [["mail.send", s.fernwood.id, null, "runProblems"], ["mail.send", s.fernwood.id, null, "runProblems"]]);
+
+  // Completing it again tells nobody: only the step to ready sends.
+  const again = await call(s, "POST", `/v1/runs/${done.body.id}/complete`);
+  assert.deepEqual(again, done);
+  assert.equal(sent.length, 2);
+  // Each membership keeps one unsubscribe link: the next run's message carries the same one.
+  await pushRun(s, "run-b");
+  const ada = sent.filter((m) => m.to === "ada@example.com");
+  assert.equal(ada.length, 2);
+  assert.deepEqual(ada[0].headers, ada[1].headers);
+});
+
+test("a clean run, or one with only stand-ins, emails nobody", async () => {
+  const s = await mailSetup();
+  assert.equal((await pushRun(s, "clean", { shots: [], problems: [] })).status, 200);
+  assert.equal((await pushRun(s, "stand-ins", { shots: FAILING.shots, problems: [] })).status, 200);
+  assert.equal(s.mail.transport.sent.length, 0);
+  assert.equal(await s.db.runMailToken(s.fernwood.id, "usr_none"), null);
+});
+
+test("the push's answer is the same with mail off, with the provider failing, and with nobody to tell", async () => {
+  const answers = [];
+  const shape = (r) => ({ status: r.status, keys: Object.keys(r.body), status2: r.body.status, url: r.body.url.replace(/run_[0-9a-f]+/, "run") });
+  // Mail on, sent.
+  const on = await mailSetup();
+  answers.push(shape(await pushRun(on, "x")));
+  assert.equal(on.mail.transport.sent.length, 2);
+  // Mail off: nothing sent, nothing about mail audited, and no token made.
+  const off = await mailSetup();
+  off.deps.mail = { transport: noMail(), from: null, replyTo: null };
+  answers.push(shape(await pushRun(off, "x")));
+  assert.equal((await off.db.listAudit()).filter((a) => a.action.startsWith("mail.")).length, 0);
+  // The provider refuses: audited as mail.fail and logged, and the push still answers 200.
+  const failing = await mailSetup();
+  failing.mail.transport.fail = "the provider is down";
+  answers.push(shape(await pushRun(failing, "x")));
+  assert.deepEqual((await failing.db.listAudit()).filter((a) => a.action.startsWith("mail.")).map((a) => a.action), ["mail.fail", "mail.fail"]);
+  assert.equal(failing.logged.length, 2);
+  // The database breaks while looking for recipients: logged, still 200.
+  const broken = await mailSetup();
+  broken.db.listMembers = async () => { throw new Error("db down"); };
+  answers.push(shape(await pushRun(broken, "x")));
+  assert.match(String(broken.logged[0]?.message), /db down/);
+  // Everyone opted out.
+  const quiet = await mailSetup();
+  for (const u of [quiet.ada, quiet.bob]) await quiet.db.setRunMail(quiet.fernwood.id, u.id, false);
+  answers.push(shape(await pushRun(quiet, "x")));
+  assert.equal(quiet.mail.transport.sent.length, 0);
+  for (const a of answers) assert.deepEqual(a, answers[0]);
+  assert.deepEqual(answers[0], { status: 200, keys: ["id", "status", "url"], status2: "ready", url: `${PUBLIC_URL}/p/fernwood/runs/run` });
+});
+
+test("at most RUN_MAIL_MAX members are emailed about one run, and each address at most 5 a day about one project", async () => {
+  const s = await mailSetup();
+  for (let i = 0; i < RUN_MAIL_MAX + 5; i++) {
+    const u = await s.db.createUser({ email: `m${String(i).padStart(2, "0")}@example.com`, allowed: true });
+    await s.db.addIdentity("google", `g-m${i}`, u.id);
+    await s.db.addMember(s.fernwood.id, u.id);
+  }
+  await pushRun(s, "many");
+  assert.equal(s.mail.transport.sent.length, RUN_MAIL_MAX);
+  assert.equal(s.mail.transport.sent[0].to, "ada@example.com", "owners first");
+
+  const t = await mailSetup();
+  for (let i = 0; i < CAPS.runProblems.perProjectAddress + 2; i++) await pushRun(t, `r${i}`);
+  const toAda = t.mail.transport.sent.filter((m) => m.to === "ada@example.com");
+  assert.equal(toAda.length, CAPS.runProblems.perProjectAddress);
+  assert.equal((await t.db.listAudit()).filter((a) => a.action === "mail.limit" && a.detail.to === "ada@example.com").length, 2);
 });

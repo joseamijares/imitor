@@ -9,9 +9,11 @@
 //   /p/<slug>/api/...                                 the interface's API (read.mjs) and the project's access keys
 //   GET  /p/<slug>/files/runs/<run>/<path>            302 to a 5-minute storage URL for a file of a ready run
 //   GET  /p/<slug>/...                                the interface (src/app), marked as cloud mode under that base
+//   GET  /unsubscribe?t=<token>, POST (one-click)     turn off run emails for one membership, by its token alone
 //
 // Every route below /p/ checks that the signed-in person is a member of the project; run ids are not access control.
-// Every request that changes something must come from a page of this server (Origin or Referer is PUBLIC_URL).
+// Every request that changes something must come from a page of this server (Origin or Referer is PUBLIC_URL), except
+// the unsubscribe link's POST, which a mail client sends with no cookies and no Origin, and which can only turn emails off.
 import crypto from "node:crypto";
 import path from "node:path";
 import { markIndex } from "../../src/app-index.mjs";
@@ -20,8 +22,9 @@ import { OidcError } from "./auth/oidc.mjs";
 import { cookieNames, currentUser, endSession, sameOrigin, startSession, clearSessionCookie } from "./auth/session.mjs";
 import { EMAIL } from "./email.mjs";
 import { cookie, cookies, fail, json, page, randomToken, readFields, redirect, safeEqual } from "./http.mjs";
+import { TOKEN } from "./ids.mjs";
 import { CAPS, notify } from "./mail/index.mjs";
-import { HOME, inviteOnlyPage, loginPage, noticePage, PAGE_CSS, projectsPage, tokenPage } from "./pages.mjs";
+import { HOME, inviteOnlyPage, loginPage, noticePage, PAGE_CSS, projectsPage, tokenPage, unsubscribePage } from "./pages.mjs";
 import { problemRun, readRoute } from "./read.mjs";
 import { clientAddress, throttle } from "./throttle.mjs";
 
@@ -48,6 +51,10 @@ export async function handleWeb(request, deps) {
   const { method } = request;
   const read = method === "GET" || method === "HEAD";
   const isApi = /^\/p\/[^/]+\/api(\/|$)/.test(p) || p === "/projects";
+
+  // Before the Origin check: a mail client's one-click POST (RFC 8058) carries no Origin and no cookies. The token in the
+  // link is all it trusts, and all it can do is turn run emails off for the one membership it names.
+  if (p === "/unsubscribe" || p === "/unsubscribe/") return unsubscribe(request, deps, url);
 
   if (!read && !sameOrigin(request, deps.publicUrl)) {
     return isApi ? fail(403, "this request did not come from a page of this server") : noticePage(403, "Request refused", "This form was sent from somewhere other than this server, so it was not acted on. Go back, reload the page and try again.");
@@ -282,6 +289,7 @@ async function projectApi(request, deps, user, project, member, route) {
   const { db } = deps;
   const owner = member.role === "owner";
   if (request.method === "GET" || request.method === "HEAD") {
+    if (route === "/notifications") return json(200, await notifications(deps, user, member));
     if (route === "/me") return json(200, { user: { email: user.email, name: user.name }, project: { name: project.name, slug: project.slug, role: member.role } });
     if (route === "/keys") return json(200, { keys: (await db.listAccessKeys(project.id)).map(publicKey), canManage: owner });
     if (route === "/members") return json(200, { members: (await db.listMembers(project.id)).map((m) => publicMember(m, user)), canManage: owner });
@@ -291,6 +299,15 @@ async function projectApi(request, deps, user, project, member, route) {
   if (request.method !== "POST") return fail(405, "method not allowed");
   const { fields, error } = await readFields(request);
   if (error) return fail(400, error);
+
+  if (route === "/notifications") {
+    // Only ever the signed-in person's own choice: there is no field naming whose, and none is read.
+    if (typeof fields.runProblems !== "boolean") return fail(400, 'body must be JSON like {"runProblems": false}');
+    const updated = await db.setRunMail(project.id, user.id, fields.runProblems);
+    if (!updated) return fail(404, `no project ${project.slug}`); // left it a moment ago
+    if (updated.notifyRuns !== member.notifyRuns) await db.addAudit({ projectId: project.id, userId: user.id, action: "member.run-mail", detail: { on: updated.notifyRuns, via: "settings" } });
+    return json(200, await notifications(deps, user, updated));
+  }
 
   const seen = /^\/problems\/([^/]+)\/seen$/.exec(route);
   if (seen) {
@@ -359,6 +376,59 @@ async function tellOwners(deps, actor, project, key, revoked) {
 
 /** Whether this server sends mail at all, so what a message needs is not looked up for nothing. */
 const mailOn = (deps) => !!deps.mail?.transport && !deps.mail.transport.off;
+
+// ---------- run emails ----------
+
+/**
+ * The signed-in person's email settings for a project: { runProblems, available }. runProblems: whether they are
+ * emailed when a run has problems (their membership's choice). available: whether such a message could reach them at
+ * all: this server sends mail, their account's address is one, and they have signed in with Google (see runMail in
+ * api.mjs), so Settings shows the switch only when it does something.
+ */
+async function notifications(deps, user, member) {
+  const on = !!deps.mail?.transport && !deps.mail.transport.off;
+  const available = on && user.email.length <= 254 && EMAIL.test(user.email) && (await deps.db.listIdentities(user.id)).length > 0;
+  return { runProblems: member.notifyRuns !== false, available };
+}
+
+// Unsubscribe links that name no membership, per client address: UNSUBSCRIBE_FAILURES per TOKEN_WINDOW_MS, counted
+// like wrong admin tokens (in this process). A token is 32 random bytes, so this is not what stops guessing; it keeps
+// a client from making the server look up token after token.
+export const UNSUBSCRIBE_FAILURES = 20;
+const unsubscribeThrottles = new WeakMap();
+const unsubscribeThrottle = (deps) => {
+  if (!unsubscribeThrottles.has(deps)) unsubscribeThrottles.set(deps, throttle({ limit: UNSUBSCRIBE_FAILURES, windowMs: TOKEN_WINDOW_MS, now: () => nowOf(deps) }));
+  return unsubscribeThrottles.get(deps);
+};
+
+/**
+ * The unsubscribe link of a run email, used without signing in. GET shows the project and a button, and changes
+ * nothing (mail scanners open links); POST, the button's and a mail client's one-click target, turns run emails off for
+ * the membership the token names and answers 200, again if repeated. A token that is malformed, unknown or of a
+ * membership that is gone gets the same 404 page, so a link says nothing about memberships it does not name.
+ */
+async function unsubscribe(request, deps, url) {
+  const { method } = request;
+  const read = method === "GET" || method === "HEAD";
+  if (!read && method !== "POST") return fail(405, "method not allowed");
+  const guard = unsubscribeThrottle(deps);
+  const from = clientAddress(request);
+  const wait = guard.blocked(from);
+  if (wait) return noticePage(429, "Too many tries", "Too many links that do not work came from this address. Try again in a few minutes.", { link: null, headers: { "retry-after": String(Math.ceil(wait / 1000)) } });
+  const token = url.searchParams.get("t") || "";
+  const member = TOKEN.test(token) ? await deps.db.findRunMailToken(token) : null;
+  const project = member && (await deps.db.getProject(member.projectId));
+  if (!project) {
+    guard.fail(from);
+    return noticePage(404, "This link does not work", "It may be from an older email. To choose which emails you get, sign in and open a project's Settings.", { link: { href: HOME, label: "Your projects" } });
+  }
+  if (read) return unsubscribePage({ project, token, off: !member.notifyRuns });
+  if (member.notifyRuns) {
+    await deps.db.setRunMail(project.id, member.userId, false);
+    await deps.db.addAudit({ projectId: project.id, userId: member.userId, action: "member.run-mail", detail: { on: false, via: "unsubscribe" } });
+  }
+  return unsubscribePage({ project, token, off: true });
+}
 
 // ---------- members ----------
 

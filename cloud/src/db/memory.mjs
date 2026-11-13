@@ -2,7 +2,7 @@
 // (cloud/migrations/), and the fields here are its columns in camelCase (secretSha256 is secret_sha256). CONTRACT.md
 // lists every method; test/db.test.mjs runs one suite against both. Access key secrets are never stored: only their
 // SHA-256.
-import { hashSecret, KEY_PREFIX, newId, newSecret, slugAttempt, slugify } from "../ids.mjs";
+import { hashSecret, KEY_PREFIX, newId, newSecret, newToken, slugAttempt, slugify } from "../ids.mjs";
 
 /**
  * @typedef {object} RunRecord             a row of runs
@@ -30,6 +30,7 @@ export function memoryDb({ now = () => new Date() } = {}) {
   const sessions = new Map(); // idHash -> session
   const projects = new Map();
   const members = new Map(); // "projectId\0userId" -> member
+  const tokens = new Map(); // "projectId\0userId" -> run_mail_token, kept apart so no Member copy carries it
   const keys = new Map(); // secretSha256 -> access_keys row
   const runs = new Map();
   const lines = { captures: [], activity: [] };
@@ -115,7 +116,7 @@ export function memoryDb({ now = () => new Date() } = {}) {
       if (ownerId && !users.has(ownerId)) throw new Error(`no user ${ownerId}`);
       const project = { id: newId("prj"), name, slug: slugAttempt(base, n), createdAt: stamp() };
       projects.set(project.id, project);
-      if (ownerId) members.set(`${project.id}\0${ownerId}`, { projectId: project.id, userId: ownerId, role: "owner", createdAt: stamp() });
+      if (ownerId) members.set(`${project.id}\0${ownerId}`, { projectId: project.id, userId: ownerId, role: "owner", notifyRuns: true, createdAt: stamp() });
       return copy(project);
     },
     async getProject(id) {
@@ -132,23 +133,43 @@ export function memoryDb({ now = () => new Date() } = {}) {
       const k = `${projectId}\0${userId}`;
       // Checked and changed in one step (nothing awaits in between), so two requests cannot both pass the check.
       if (role !== "owner" && members.get(k)?.role === "owner" && owners(projectId) === 1) throw lastOwner();
-      const member = { ...(members.get(k) || { projectId, userId, createdAt: stamp() }), role };
+      const member = { ...(members.get(k) || { projectId, userId, notifyRuns: true, createdAt: stamp() }), role };
       members.set(k, member);
       return copy(member);
     },
     async getMember(projectId, userId) {
       return copy(members.get(`${projectId}\0${userId}`) ?? null);
     },
-    /** The project's members with their address and name, owners first, then by address. */
+    /** The project's members with their address, name and whether they ever signed in, owners first, then by address. */
     async listMembers(projectId) {
+      const signedIn = new Set([...identities.values()].map((i) => i.userId));
       return [...members.values()].filter((m) => m.projectId === projectId && users.has(m.userId))
-        .map((m) => ({ ...copy(m), email: users.get(m.userId).email, name: users.get(m.userId).name }))
+        .map((m) => ({ ...copy(m), email: users.get(m.userId).email, name: users.get(m.userId).name, signedIn: signedIn.has(m.userId) }))
         .sort((a, b) => (a.role === b.role ? 0 : a.role === "owner" ? -1 : 1) || a.email.localeCompare(b.email));
     },
     async removeMember(projectId, userId) {
       const k = `${projectId}\0${userId}`;
       if (members.get(k)?.role === "owner" && owners(projectId) === 1) throw lastOwner();
+      tokens.delete(k); // the row's columns go with it: a member added again starts from the defaults
       return members.delete(k);
+    },
+    async setRunMail(projectId, userId, on) {
+      const member = members.get(`${projectId}\0${userId}`);
+      if (!member) return null;
+      member.notifyRuns = on === true;
+      return copy(member);
+    },
+    /** The membership's unsubscribe token, made on first use and the same ever after; null for no such member. */
+    async runMailToken(projectId, userId) {
+      const k = `${projectId}\0${userId}`;
+      if (!members.has(k)) return null;
+      if (!tokens.has(k)) tokens.set(k, newToken());
+      return tokens.get(k);
+    },
+    async findRunMailToken(token) {
+      if (typeof token !== "string" || !token) return null;
+      for (const [k, t] of tokens) if (t === token) return copy(members.get(k) ?? null);
+      return null;
     },
     /** The user's projects, each with their `role`, by name. */
     async listUserProjects(userId) {
@@ -260,11 +281,11 @@ export function memoryDb({ now = () => new Date() } = {}) {
     async listAudit() {
       return audit.map(copy);
     },
-    async countAudit({ action, since, userId = null, detail = {} }) {
+    async countAudit({ action, since, userId = null, projectId = null, detail = {} }) {
       const from = Date.parse(since);
       for (const field of Object.keys(detail)) if (!/^[A-Za-z]+$/.test(field)) throw new Error(`countAudit cannot match the detail field ${JSON.stringify(field)}`); // as pg.mjs
       const matches = (e) => Object.entries(detail).every(([k, v]) => e.detail?.[k] != null && String(e.detail[k]) === String(v));
-      return audit.filter((e) => e.action === action && Date.parse(e.at) >= from && (userId == null || e.userId === userId) && matches(e)).length;
+      return audit.filter((e) => e.action === action && Date.parse(e.at) >= from && (userId == null || e.userId === userId) && (projectId == null || e.projectId === projectId) && matches(e)).length;
     },
 
     // ---------- waitlist ----------
