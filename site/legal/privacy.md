@@ -24,7 +24,7 @@ imitor.dev is a static site. It has no analytics, no advertising and no cookies.
 
 ### Why
 
-Only to run the service: to sign you in, to keep your projects separate from everyone else's, to show you your runs, and to email you when a project owner adds you to a project. Nothing is sold, used for advertising or used to train models.
+Only to run the service: to sign you in, to keep your projects separate from everyone else's, to show you your runs, to email you when a project owner adds you to a project, and to tell a project's owners when another owner creates or revokes one of its access keys. Nothing is sold, used for advertising or used to train models.
 
 ### Where
 
@@ -32,7 +32,7 @@ Only to run the service: to sign you in, to keep your projects separate from eve
 - Neon (PostgreSQL) holds accounts, projects and run data.
 - Vercel Blob, in a private store, holds screenshots and videos. They are reached only through links that expire after five minutes.
 - Google handles sign-in.
-- Resend sends the service's email. When an owner adds someone to a project, Resend receives the message: that person's address, the project's name and a link to it, and the name of the owner who added them (or their address, when they have no name).
+- Resend sends the service's email. When an owner adds someone to a project, Resend receives the message: that person's address, the project's name and a link to it, and the name of the owner who added them (or their address, when they have no name). When an owner creates or revokes an access key, Resend receives a message to each of the project's other owners: their address, the project's name, the key's name, a link to the project's settings, and the name (or address) of the owner who did it. The key itself is never sent.
 
 These providers may process data outside your country.
 

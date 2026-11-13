@@ -20,7 +20,7 @@ import { OidcError } from "./auth/oidc.mjs";
 import { cookieNames, currentUser, endSession, sameOrigin, startSession, clearSessionCookie } from "./auth/session.mjs";
 import { EMAIL } from "./email.mjs";
 import { cookie, cookies, fail, json, page, randomToken, readFields, redirect, safeEqual } from "./http.mjs";
-import { notify } from "./mail/index.mjs";
+import { CAPS, notify } from "./mail/index.mjs";
 import { HOME, inviteOnlyPage, loginPage, noticePage, PAGE_CSS, projectsPage, tokenPage } from "./pages.mjs";
 import { problemRun, readRoute } from "./read.mjs";
 import { clientAddress, throttle } from "./throttle.mjs";
@@ -308,6 +308,7 @@ async function projectApi(request, deps, user, project, member, route) {
       if (!name || name.length > 60) return fail(400, "a key needs a name of 1 to 60 characters");
       const key = await db.createAccessKey(project.id, { name });
       await db.addAudit({ projectId: project.id, userId: user.id, action: "key.create", detail: { keyId: key.id, name } });
+      await tellOwners(deps, user, project, key, false);
       return json(201, { key: publicKey(key), secret: key.secret });
     }
     const id = decodeURIComponent(route.split("/")[2]);
@@ -316,6 +317,7 @@ async function projectApi(request, deps, user, project, member, route) {
     if (!key.revokedAt) {
       await db.revokeAccessKey(id);
       await db.addAudit({ projectId: project.id, userId: user.id, action: "key.revoke", detail: { keyId: id, name: key.name } });
+      await tellOwners(deps, user, project, key, true);
     }
     return json(200, { key: publicKey(await db.getAccessKey(id)) });
   }
@@ -332,6 +334,21 @@ async function projectApi(request, deps, user, project, member, route) {
     return removeMember(deps, user, project, id);
   }
   return fail(404, `no endpoint POST /api${route}`);
+}
+
+/**
+ * Email the project's other owners that `actor` made or revoked `key`, so a second owner learns of a key they did not
+ * make; never the actor, never plain members. The message names the key, never its secret. All at once, so a project
+ * with many owners does not make a slow request, and at most one sender's daily allowance of them: messages sent
+ * together all pass the cap's count, so without this a project with many owners would go past it. notify() never
+ * throws and has its own 5 s limit: the key is made or revoked whatever happens to the messages.
+ */
+async function tellOwners(deps, actor, project, key, revoked) {
+  const owners = (await deps.db.listMembers(project.id)).filter((m) => m.role === "owner" && m.userId !== actor.id).slice(0, CAPS.accessKey.perSender);
+  if (!owners.length) return;
+  const url = `${deps.publicUrl}/login?next=${encodeURIComponent(`/p/${project.slug}/settings#access-keys`)}`;
+  const kind = revoked ? "key-revoke" : "key-create";
+  await Promise.all(owners.map((m) => notify(deps, "accessKey", { to: m.email, project, actor, keyName: key.name, revoked, url, key: `${kind}/${key.id}/${m.userId}` })));
 }
 
 // ---------- members ----------

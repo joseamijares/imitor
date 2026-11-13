@@ -5,7 +5,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import test from "node:test";
 import { handle, KEEP_DAYS } from "../src/api.mjs";
-import { MAX_PER_ADDRESS_PER_DAY, MAX_SENDS_PER_DAY, noMail } from "../src/mail/index.mjs";
+import { CAPS, noMail } from "../src/mail/index.mjs";
 import { admit, HOME, safeNext } from "../src/web.mjs";
 import { browser, cloud, HTML, PUBLIC_URL } from "./helpers.mjs";
 
@@ -163,6 +163,8 @@ test("members: an owner adds people by address (as member or owner), lists and r
 });
 
 const DAY = 24 * 60 * 60 * 1000;
+const MAX_SENDS_PER_DAY = CAPS.invitation.perSender;
+const MAX_PER_ADDRESS_PER_DAY = CAPS.invitation.perAddress;
 const mailRows = async (s) => (await s.db.listAudit()).filter((a) => a.action.startsWith("mail."));
 
 test("members: someone newly added is emailed a link to the project; whether they ever signed in decides the wording", async () => {
@@ -257,7 +259,7 @@ test("members: past an owner's daily cap people are still added, unmailed, until
   assert.equal(s.mail.transport.sent.length, MAX_SENDS_PER_DAY + 1);
 });
 
-test("members: one address gets at most MAX_PER_ADDRESS_PER_DAY invitations, whoever sends them", async () => {
+test("members: one address gets at most perAddress invitations, whoever sends them", async () => {
   const s = await setup();
   for (const name of ["one", "two"]) await s.ada.call("POST", "/projects", { body: { name } });
   for (const name of ["three", "four"]) await s.bob.call("POST", "/projects", { body: { name } });
@@ -281,6 +283,113 @@ test("members: with mail off nobody is emailed, and nothing about mail is audite
   assert.equal(res.status, 201);
   assert.equal(res.json.notified, false);
   assert.deepEqual(await mailRows(s), []);
+});
+
+/** Fernwood with Ada and Bob as owners and Cy as a member; the invitations this sends are cleared. */
+async function twoOwners(opts) {
+  const s = await setup(opts);
+  const { json: { project } } = await s.ada.call("POST", "/projects", { body: { name: "Fernwood" } });
+  await s.ada.call("POST", "/p/fernwood/api/members", { body: { email: "bob@example.com", role: "owner" } });
+  await s.ada.call("POST", "/p/fernwood/api/members", { body: { email: "cy@example.com" } });
+  s.mail.transport.sent.length = 0;
+  return { ...s, project, mailCount: (await mailRows(s)).length };
+}
+const KEYS_URL = `${PUBLIC_URL}/login?next=%2Fp%2Ffernwood%2Fsettings%23access-keys`;
+
+test("access keys: making one emails the project's other owners (not its maker, not members), never the secret", async () => {
+  const s = await twoOwners();
+  assert.equal(safeNext("/p/fernwood/settings#access-keys"), "/p/fernwood/settings#access-keys", "the link survives signing in");
+  const made = await s.ada.call("POST", "/p/fernwood/api/keys", { body: { name: "ci" } });
+  assert.equal(made.status, 201);
+  assert.deepEqual(Object.keys(made.json).sort(), ["key", "secret"], "the answer is as before");
+  const [m, ...more] = s.mail.transport.sent;
+  assert.deepEqual(more, []);
+  assert.equal(m.to, "bob@example.com");
+  assert.equal(m.idempotencyKey, `key-create/${made.json.key.id}/${s.bobUser.id}`);
+  assert.equal(m.subject, 'New access key "ci" for "Fernwood" on Imitor Cloud');
+  assert.match(m.text, /^Admin made the access key "ci" for the project "Fernwood"/);
+  assert.deepEqual([...m.html.matchAll(/href="([^"]*)"/g)].map((x) => x[1]), [KEYS_URL]);
+  const stored = await s.db.getAccessKey(made.json.key.id);
+  for (const part of [m.subject, m.text, m.html]) {
+    assert.ok(!part.includes(made.json.secret) && !part.includes(sha(made.json.secret)) && !part.includes(made.json.key.prefix), "no secret, hash or prefix");
+    for (const v of Object.values(stored)) if (typeof v === "string" && v.length >= 32) assert.ok(!part.includes(v));
+  }
+  const adaId = (await s.db.findUserByEmail("admin")).id;
+  assert.deepEqual((await mailRows(s)).slice(s.mailCount).map((a) => [a.action, a.userId, a.projectId, a.detail]), [["mail.send", adaId, s.project.id, { kind: "accessKey", to: "bob@example.com", id: "msg_1" }]]);
+
+  // Bob makes one: Ada is the other owner, but "admin" is not an address, so nobody is emailed.
+  assert.equal((await s.bob.call("POST", "/p/fernwood/api/keys", { body: { name: "bob's" } })).status, 201);
+  assert.equal(s.mail.transport.sent.length, 1);
+});
+
+test("access keys: revoking emails the other owners once; revoking it again sends nothing", async () => {
+  const s = await twoOwners();
+  const made = await s.ada.call("POST", "/p/fernwood/api/keys", { body: { name: "ci" } });
+  const id = made.json.key.id;
+  const revoked = await s.ada.call("POST", `/p/fernwood/api/keys/${id}/revoke`, { body: {} });
+  assert.equal(revoked.status, 200);
+  assert.deepEqual(Object.keys(revoked.json), ["key"]);
+  assert.equal(s.mail.transport.sent.length, 2);
+  const m = s.mail.transport.sent[1];
+  assert.equal(m.to, "bob@example.com");
+  assert.equal(m.idempotencyKey, `key-revoke/${id}/${s.bobUser.id}`);
+  assert.equal(m.subject, 'Access key "ci" of "Fernwood" revoked on Imitor Cloud');
+  assert.match(m.text, /It can no longer upload runs to the project\./);
+  assert.ok(m.text.includes(KEYS_URL));
+  for (const part of [m.subject, m.text, m.html]) assert.ok(!part.includes(made.json.secret));
+  assert.equal((await s.ada.call("POST", `/p/fernwood/api/keys/${id}/revoke`, { body: {} })).status, 200);
+  assert.equal(s.mail.transport.sent.length, 2, "already revoked: no second message");
+  assert.deepEqual((await mailRows(s)).slice(s.mailCount).map((a) => a.detail.kind), ["accessKey", "accessKey"]);
+});
+
+test("access keys: a sole owner, or a refused attempt, emails nobody", async () => {
+  const s = await setup();
+  await s.ada.call("POST", "/projects", { body: { name: "fernwood" } });
+  await s.ada.call("POST", "/p/fernwood/api/members", { body: { email: "bob@example.com" } });
+  const before = s.mail.transport.sent.length;
+  const made = await s.ada.call("POST", "/p/fernwood/api/keys", { body: { name: "ci" } });
+  assert.equal(made.status, 201);
+  assert.equal((await s.ada.call("POST", `/p/fernwood/api/keys/${made.json.key.id}/revoke`, { body: {} })).status, 200);
+  assert.equal(s.mail.transport.sent.length, before, "the only owner is the one acting; Bob is a member");
+
+  // Two owners, but the member trying is refused, and so is a bad name: nothing sent.
+  const t = await twoOwners();
+  const key = await t.ada.call("POST", "/p/fernwood/api/keys", { body: { name: "ci" } });
+  t.mail.transport.sent.length = 0;
+  const cy = await t.db.findUserByEmail("cy@example.com");
+  const secret = crypto.randomBytes(32).toString("base64url");
+  await t.db.createSession({ idHash: sha(secret), userId: cy.id, expiresAt: new Date(t.now().getTime() + 86400e3).toISOString() });
+  const cyBrowser = browser(t.deps);
+  cyBrowser.jar.set("__Host-imitor_session", secret);
+  assert.equal((await cyBrowser.call("POST", "/p/fernwood/api/keys", { body: { name: "mine" } })).status, 403);
+  assert.equal((await cyBrowser.call("POST", `/p/fernwood/api/keys/${key.json.key.id}/revoke`, { body: {} })).status, 403);
+  assert.equal((await t.ada.call("POST", "/p/fernwood/api/keys", { body: { name: "" } })).status, 400);
+  assert.equal((await t.ada.call("POST", "/p/fernwood/api/keys/key_nope/revoke", { body: {} })).status, 404);
+  assert.deepEqual(t.mail.transport.sent, []);
+});
+
+test("access keys: when the message cannot be sent the key is still made and revoked, and mail.fail is audited", async () => {
+  const s = await twoOwners();
+  s.mail.transport.fail = "the provider is down";
+  const made = await s.ada.call("POST", "/p/fernwood/api/keys", { body: { name: "ci" } });
+  assert.equal(made.status, 201);
+  assert.match(made.json.secret, /^imk_/);
+  const revoked = await s.ada.call("POST", `/p/fernwood/api/keys/${made.json.key.id}/revoke`, { body: {} });
+  assert.equal(revoked.status, 200);
+  assert.ok(revoked.json.key.revokedAt);
+  assert.deepEqual((await mailRows(s)).slice(s.mailCount).map((a) => [a.action, a.detail]), [["mail.fail", { kind: "accessKey", to: "bob@example.com", status: 500 }], ["mail.fail", { kind: "accessKey", to: "bob@example.com", status: 500 }]]);
+  assert.equal(s.logged.length, 2);
+});
+
+test("access keys: with mail off nobody is emailed, and nothing about mail is audited", async () => {
+  const s = await twoOwners();
+  s.deps.mail = { transport: noMail(), from: null, replyTo: null };
+  const before = (await mailRows(s)).length;
+  const made = await s.ada.call("POST", "/p/fernwood/api/keys", { body: { name: "ci" } });
+  assert.equal(made.status, 201);
+  assert.equal((await s.ada.call("POST", `/p/fernwood/api/keys/${made.json.key.id}/revoke`, { body: {} })).status, 200);
+  assert.deepEqual(s.mail.transport.sent, []);
+  assert.equal((await mailRows(s)).length, before);
 });
 
 test("someone an owner added signs in with Google without being in IMITOR_ALLOWED_EMAILS; a stranger still cannot", async () => {

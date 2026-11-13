@@ -1,11 +1,12 @@
 // The mail module without the network: Resend's API through a recording fetch (what is sent, what comes back, what
-// happens when it fails or hangs), the invitation template (escaping, a one-line subject, one link), and notify()
-// (off, no address, sent and audited, failed and audited without throwing, the daily caps per sender and per address).
+// happens when it fails or hangs), the templates (escaping, a one-line subject, one link, no key secrets), and notify()
+// (off, no address, sent and audited, failed and audited without throwing, the daily caps per sender and per address,
+// each kind on its own).
 import assert from "node:assert/strict";
 import test from "node:test";
 import { memoryDb } from "../src/db/memory.mjs";
-import { mailFromEnv, MAX_PER_ADDRESS_PER_DAY, MAX_SENDS_PER_DAY, notify } from "../src/mail/index.mjs";
-import { invitation } from "../src/mail/templates.mjs";
+import { CAPS, mailFromEnv, notify } from "../src/mail/index.mjs";
+import { accessKey, invitation } from "../src/mail/templates.mjs";
 import { noMail, recordingMail, RESEND_URL, resendTransport } from "../src/mail/transport.mjs";
 import { cloud, clock, PUBLIC_URL } from "./helpers.mjs";
 
@@ -151,6 +152,55 @@ test("invitation: someone who has never signed in is told they can ignore it", (
   assert.match(pending.html, /Nothing happens unless you sign in/);
 });
 
+const SETTINGS_URL = `${PUBLIC_URL}/login?next=%2Fp%2Ffernwood%2Fsettings%23access-keys`;
+const keyNotice = (over = {}) => accessKey({ project: { id: "prj1", name: "Fernwood" }, actor: { id: "u1", name: "Ada Lovelace", email: "ada@example.com" }, keyName: "ci", revoked: false, url: SETTINGS_URL, ...over });
+
+test("accessKey: who, which key, which project, what it means, and one link to Settings", () => {
+  const made = keyNotice();
+  assert.equal(made.subject, 'New access key "ci" for "Fernwood" on Imitor Cloud');
+  assert.match(made.text, /^Ada Lovelace made the access key "ci" for the project "Fernwood" on Imitor Cloud\. Agents and CI can upload runs to the project with it\./);
+  assert.match(made.text, /If you did not expect this, revoke the key in Settings:/);
+  assert.match(made.text, /You are told because you are an owner of this project\./);
+  assert.ok(made.text.includes(SETTINGS_URL));
+  assert.deepEqual([...made.html.matchAll(/href="([^"]*)"/g)].map((x) => x[1]), [SETTINGS_URL]);
+  assert.doesNotMatch(made.html, /<img|<script|src=|url\(/i, "no images or remote assets");
+  assert.deepEqual(made.tags, [{ name: "kind", value: "accessKey" }]);
+
+  const gone = keyNotice({ revoked: true });
+  assert.equal(gone.subject, 'Access key "ci" of "Fernwood" revoked on Imitor Cloud');
+  assert.match(gone.text, /^Ada Lovelace revoked the access key "ci" of the project "Fernwood" on Imitor Cloud\. It can no longer upload runs to the project\./);
+  assert.doesNotMatch(gone.text, /did not expect|can upload/);
+  assert.match(gone.html, /can no longer upload runs/);
+  assert.deepEqual([...gone.html.matchAll(/href="([^"]*)"/g)].map((x) => x[1]), [SETTINGS_URL]);
+  // No name: the address stands in for it.
+  assert.match(keyNotice({ actor: { id: "u1", name: null, email: "ada@example.com" } }).text, /^ada@example\.com made the access key/);
+});
+
+test("accessKey: names are escaped in the HTML and kept to one short line in the subject; nothing but the name of the key", () => {
+  const evil = "<img src=x onerror=alert(1)>";
+  const m = keyNotice({ project: { id: "prj1", name: evil }, keyName: `ci "<b>"`, actor: { id: "u1", name: "Mallory <i>", email: "m@example.com" } });
+  assert.ok(!m.html.includes(evil) && !m.html.includes("<b>") && !m.html.includes("<i>"));
+  assert.ok(m.html.includes("&lt;img src=x onerror=alert(1)&gt;"));
+  assert.ok(m.html.includes("ci &quot;&lt;b&gt;&quot;"));
+  assert.ok(m.text.includes(evil));
+  assert.equal([...m.html.matchAll(/href=/g)].length, 1);
+
+  for (const revoked of [false, true]) {
+    const header = keyNotice({ revoked, project: { id: "prj1", name: "Fernwood\r\nBcc: x@evil.example" }, keyName: "ci\u2028Cc: y@evil.example", actor: { id: "u1", name: "Ada\nLovelace", email: "a@example.com" } });
+    assert.doesNotMatch(header.subject, /[\r\n\u0000-\u001f\u2028\u2029]/);
+    assert.match(header.subject, /"ci Cc: y@evil\.example" (for|of) "Fernwood Bcc: x@evil\.example"/);
+    const long = keyNotice({ revoked, project: { id: "prj1", name: "p".repeat(300) }, keyName: "k".repeat(300) });
+    const [, key, name] = /"(k+…)" (?:for|of) "(p+…)"/.exec(long.subject);
+    assert.equal(key.length, 80);
+    assert.equal(name.length, 80);
+  }
+
+  // Given a whole key (as a careless caller might), only its name could get in: the template takes keyName alone.
+  const secret = "imk_" + "S".repeat(43);
+  const careless = keyNotice({ key: { name: "ci", secret, prefix: secret.slice(0, 12), hash: "h".repeat(64) }, secret });
+  for (const part of [careless.subject, careless.text, careless.html]) assert.ok(!part.includes("imk_") && !part.includes("h".repeat(64)), part);
+});
+
 const args = (over = {}) => ({ to: "grace@example.com", key: "invite/prj1/u2", project: { id: "prj1", name: "Fernwood" }, actor: { id: "u1", name: "Ada Lovelace", email: "ada@example.com" }, role: "member", url: URL_, pending: true, ...over });
 
 test("notify: off without a transport or with noMail, no-address for anything but an address", async () => {
@@ -198,7 +248,10 @@ test("notify: a failure is audited as mail.fail and logged, and nothing throws",
   assert.deepEqual(await notify(c.deps, "no-such-kind", args()), { sent: false, reason: "failed" });
 });
 
-test("notify: at most MAX_SENDS_PER_DAY per sender in a rolling day; over it nothing is sent and mail.limit is audited", async () => {
+const MAX_SENDS_PER_DAY = CAPS.invitation.perSender;
+const MAX_PER_ADDRESS_PER_DAY = CAPS.invitation.perAddress;
+
+test("notify: at most perSender invitations per sender in a rolling day; over it nothing is sent and mail.limit is audited", async () => {
   const c = cloud();
   assert.equal(MAX_SENDS_PER_DAY, 20);
   for (let i = 0; i < MAX_SENDS_PER_DAY; i++) {
@@ -217,7 +270,7 @@ test("notify: at most MAX_SENDS_PER_DAY per sender in a rolling day; over it not
   assert.deepEqual(await notify(c.deps, "invitation", args({ to: "next2@example.com" })), { sent: false, reason: "limit" }, "only one slot opened");
 });
 
-test("notify: at most MAX_PER_ADDRESS_PER_DAY to one address from everyone, and without a sender only that cap applies", async () => {
+test("notify: at most perAddress invitations to one address from everyone, and without a sender only that cap applies", async () => {
   const c = cloud();
   assert.equal(MAX_PER_ADDRESS_PER_DAY, 3);
   for (const id of ["u1", "u2", "u3"]) assert.equal((await notify(c.deps, "invitation", args({ actor: { id, name: id } }))).sent, true);
@@ -234,6 +287,30 @@ test("notify: at most MAX_PER_ADDRESS_PER_DAY to one address from everyone, and 
   const before = c.mail.transport.sent.length;
   assert.deepEqual(await notify(broken, "invitation", args({ to: "new@example.com" })), { sent: false, reason: "failed" });
   assert.equal(c.mail.transport.sent.length, before);
+});
+
+test("notify: each kind has its own caps; a day of invitations does not hold back key notices, nor the reverse", async () => {
+  const c = cloud();
+  assert.deepEqual(CAPS.accessKey, { perSender: 30, perAddress: 10 });
+  const notice = (over = {}) => ({ to: "grace@example.com", key: "key-create/key1/u2", project: { id: "prj1", name: "Fernwood" }, actor: { id: "u1", name: "Ada" }, keyName: "ci", url: SETTINGS_URL, ...over });
+  // Ada uses up her invitations, three of them to Grace.
+  for (let i = 0; i < CAPS.invitation.perSender; i++) assert.equal((await notify(c.deps, "invitation", args({ to: i < 3 ? "grace@example.com" : `p${i}@example.com`, key: `i${i}` }))).sent, true);
+  assert.equal((await notify(c.deps, "invitation", args({ to: "late@example.com" }))).reason, "limit");
+  assert.equal((await notify(c.deps, "invitation", args({ actor: { id: "u9" } }))).reason, "limit", "Grace has had her three");
+  // Key notices from Ada, to Grace too, still go.
+  for (let i = 0; i < CAPS.accessKey.perAddress; i++) assert.equal((await notify(c.deps, "accessKey", notice({ key: `n${i}` }))).sent, true, `notice ${i + 1}`);
+  assert.deepEqual(await notify(c.deps, "accessKey", notice({ actor: { id: "u9" } })), { sent: false, reason: "limit" }, "ten to one address");
+  for (let i = CAPS.accessKey.perAddress; i < CAPS.accessKey.perSender; i++) assert.equal((await notify(c.deps, "accessKey", notice({ to: `o${i}@example.com`, key: `n${i}` }))).sent, true);
+  assert.deepEqual(await notify(c.deps, "accessKey", notice({ to: "fresh@example.com" })), { sent: false, reason: "limit" }, "thirty by one sender");
+  const limits = (await c.db.listAudit()).filter((a) => a.action === "mail.limit").map((a) => [a.userId, a.detail.kind, a.detail.to]);
+  assert.deepEqual(limits, [["u1", "invitation", "late@example.com"], ["u9", "invitation", "grace@example.com"], ["u9", "accessKey", "grace@example.com"], ["u1", "accessKey", "fresh@example.com"]]);
+
+  // And the reverse: Bob, at his key notice caps, still invites; Grace, at hers for notices, is still invited (by u8).
+  const d = cloud();
+  for (let i = 0; i < CAPS.accessKey.perSender; i++) assert.equal((await notify(d.deps, "accessKey", notice({ to: i < 10 ? "grace@example.com" : `o${i}@example.com`, key: `n${i}` }))).sent, true);
+  assert.equal((await notify(d.deps, "accessKey", notice({ to: "fresh@example.com" }))).reason, "limit");
+  assert.equal((await notify(d.deps, "invitation", args({ actor: { id: "u1" }, to: "fresh@example.com" }))).sent, true);
+  assert.equal((await notify(d.deps, "invitation", args({ actor: { id: "u8" } }))).sent, true);
 });
 
 test("mailFromEnv: off without RESEND_API_KEY; with it, the fetch given sends, end to end", async () => {

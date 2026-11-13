@@ -9,7 +9,7 @@
 //
 // deps: { db, storage, publicUrl, minCliVersion, allowUnverified, now, log, oidc, allowedEmails, adminToken,
 //   adminEmail, cronSecret, mail }; mail is { transport, from, replyTo } from mail/index.mjs (off without RESEND_API_KEY;
-//   web.mjs sends one message, when an owner adds someone to a project)
+//   web.mjs emails someone an owner adds to a project, and a project's other owners when an owner makes or revokes a key)
 import { redact } from "../../src/redact.mjs";
 import { checkUpload, MAX_BODY_BYTES } from "../../src/upload.mjs";
 import { fail, json, readText, safeEqual, secure } from "./http.mjs";

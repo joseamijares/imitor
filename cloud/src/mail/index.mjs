@@ -2,18 +2,26 @@
 // RESEND_API_KEY is set, and a message that cannot be sent never fails the request that asked for it: notify() logs
 // and audits the failure and answers { sent: false }, it does not throw.
 import { EMAIL } from "../email.mjs";
-import { invitation } from "./templates.mjs";
+import { accessKey, invitation } from "./templates.mjs";
 import { noMail, resendTransport } from "./transport.mjs";
 
 export { noMail, recordingMail, resendTransport } from "./transport.mjs";
 
-const TEMPLATES = { invitation };
+const TEMPLATES = { invitation, accessKey };
 
-// Mail is sent on people's behalf, to addresses they type, so it is capped in rolling 24 hours: MAX_SENDS_PER_DAY
-// messages per sender, and MAX_PER_ADDRESS_PER_DAY to one address from everyone together (so many projects cannot
-// flood one inbox). Counted from the mail.send rows of audit_log, not in memory: on Vercel every instance has its own.
-export const MAX_SENDS_PER_DAY = 20;
-export const MAX_PER_ADDRESS_PER_DAY = 3;
+// Mail is sent on people's behalf, so it is capped in rolling 24 hours, for each kind of message on its own (so a day
+// of invitations cannot hold back a security notice, nor notices the invitations): `perSender` messages by one sender,
+// and `perAddress` to one address from everyone together (so many projects cannot flood one inbox). Counted from the
+// mail.send rows of audit_log, not in memory: on Vercel every instance has its own.
+// - invitation: to addresses owners type, which may be anyone's, so the tightest.
+// - accessKey: only to a project's other owners, who chose to share it. Ordinary rotation is a make and a revoke, two
+//   messages to each co-owner, so 10 to one address is five rotations a day across all their projects, and 30 by one
+//   sender covers that for three co-owners. Past it, one busy owner (or a stolen session) cannot bury a co-owner in
+//   mail; and the notices that did go out already told them something is happening.
+export const CAPS = {
+  invitation: { perSender: 20, perAddress: 3 },
+  accessKey: { perSender: 30, perAddress: 10 },
+};
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** deps.mail from the environment: { transport, from, replyTo }. opts: { fetch } (tests). See cloud/README.md. */
@@ -27,8 +35,8 @@ export function mailFromEnv(env = process.env, { fetch } = {}) {
 /**
  * Send the `kind` message (a template's name) to args.to, built from args (see templates.mjs), with args.key as its
  * idempotency key so a retried request does not send twice. args.actor is who sends it (their id counts toward their
- * cap; without one, only the address's cap applies). Returns { sent: true, id } or { sent: false, reason: "off" |
- * "no-address" | "limit" | "failed" }; never throws.
+ * cap for this kind; without one, only the address's cap applies; see CAPS). Returns { sent: true, id } or
+ * { sent: false, reason: "off" | "no-address" | "limit" | "failed" }; never throws.
  */
 export async function notify(deps, kind, args = {}) {
   const { to } = args;
@@ -43,7 +51,8 @@ export async function notify(deps, kind, args = {}) {
     // The admin token's user is "admin" by default: not an address, so there is no one to write to.
     if (typeof to !== "string" || to.length > 254 || !EMAIL.test(to)) return { sent: false, reason: "no-address" };
     const template = TEMPLATES[kind];
-    if (!template) throw new Error(`there is no mail template "${kind}"`);
+    const cap = CAPS[kind];
+    if (!template || !cap) throw new Error(`there is no mail template "${kind}"`);
     const who = { projectId: args.project?.id ?? null, userId: args.actor?.id ?? null };
     // A message that went out is reported as sent even when its audit row cannot be written.
     const audit = async (action, detail) => {
@@ -53,11 +62,11 @@ export async function notify(deps, kind, args = {}) {
         log(error);
       }
     };
-    // The caps, before anything is sent. A count that fails throws to the catch below: nothing is sent unchecked.
-    // Two sends at the same moment can both pass; the caps bound a flood, not a single message.
+    // The caps, before anything is sent, counting this kind only. A count that fails throws to the catch below: nothing
+    // is sent unchecked. Two sends at the same moment can both pass; the caps bound a flood, not a single message.
     const since = new Date((deps.now?.() || new Date()).getTime() - DAY_MS).toISOString();
-    const count = (filter) => deps.db.countAudit({ action: "mail.send", since, ...filter });
-    if ((who.userId != null && (await count({ userId: who.userId })) >= MAX_SENDS_PER_DAY) || (await count({ detail: { to } })) >= MAX_PER_ADDRESS_PER_DAY) {
+    const count = ({ userId = null, to = null }) => deps.db.countAudit({ action: "mail.send", since, userId, detail: to ? { to, kind } : { kind } });
+    if ((who.userId != null && (await count({ userId: who.userId })) >= cap.perSender) || (await count({ to })) >= cap.perAddress) {
       await audit("mail.limit", { kind, to });
       return { sent: false, reason: "limit" };
     }

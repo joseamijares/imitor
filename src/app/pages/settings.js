@@ -146,7 +146,7 @@ export async function mount(ctx) {
 function cloudSections() {
   return html`<section id="access-keys" class="set-section" aria-labelledby="access-keys-h">
         <h2 id="access-keys-h">Access keys</h2>
-        <p class="set-note">Agents and CI push runs to this project with a key. A key can only upload runs here: it cannot read, list or delete anything. Only a hash of it is kept, so it is shown once, when it is made.</p>
+        <p class="set-note">Agents and CI push runs to this project with a key. A key can only upload runs here: it cannot read, list or delete anything. Only a hash of it is kept, so it is shown once, when it is made. When this server sends email, the other owners are emailed when a key is made or revoked.</p>
         <div data-keys>${skeletonRows(2)}</div>
       </section>
 

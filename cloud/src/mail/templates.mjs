@@ -53,3 +53,33 @@ ${pending ? `<p style="${STYLE.small}">${esc(ignore)}</p>\n` : ""}</body></html>
 `;
   return { subject, text, html, tags: [{ name: "kind", value: "invitation" }] };
 }
+
+/**
+ * An owner made or revoked one of the project's access keys; the recipient is another owner, who may not know. args:
+ * { project: { name }, actor: { name, email }, keyName, revoked, url (Settings, at its access keys) }. Only the key's
+ * name is ever given here: never its secret, its hash or its prefix, so a message read by the wrong person (or kept by
+ * the provider) cannot help anyone upload.
+ */
+export function accessKey({ project, actor, keyName, revoked = false, url }) {
+  const who = oneLine(actor?.name) || oneLine(actor?.email) || "Someone";
+  const name = oneLine(project?.name) || "a project";
+  const key = oneLine(keyName) || "unnamed";
+  const subject = revoked
+    ? `Access key "${short(key)}" of "${short(name)}" revoked on Imitor Cloud`
+    : `New access key "${short(key)}" for "${short(name)}" on Imitor Cloud`;
+  const what = revoked
+    ? `${who} revoked the access key "${key}" of the project "${name}" on Imitor Cloud. It can no longer upload runs to the project.`
+    : `${who} made the access key "${key}" for the project "${name}" on Imitor Cloud. Agents and CI can upload runs to the project with it.`;
+  const next = revoked ? "To see the project's keys, open Settings:" : "If you did not expect this, revoke the key in Settings:";
+  const why = "You are told because you are an owner of this project.";
+  const text = `${[what, next, url].join("\n\n")}\n\n${why}\n`;
+  const html = `<!doctype html>
+<html><body style="${STYLE.body}">
+<p style="${STYLE.p}">${esc(what)}</p>
+<p style="${STYLE.p}">${esc(next)}</p>
+<p style="${STYLE.p}"><a href="${esc(url)}" style="${STYLE.link}">${esc(url)}</a></p>
+<p style="${STYLE.small}">${esc(why)}</p>
+</body></html>
+`;
+  return { subject, text, html, tags: [{ name: "kind", value: "accessKey" }] };
+}
