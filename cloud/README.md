@@ -137,7 +137,7 @@ The cloud runs in the same Vercel project as the public site, on a host of its o
   root `vercel.json` (`has.host`) and in `PUBLIC_URL`.
 - **Functions.** `api/cloud.mjs` and `api/cron-retention.mjs` at the repository root are shims for
   [`src/vercel.mjs`](src/vercel.mjs). The root `vercel.json` rewrites the app host's `/p/*`, `/v1/*`, `/login`,
-  `/logout`, `/auth/*`, `/projects` and `/static/*` to `/api/cloud` (with the original path in `?__imitor_path=`),
+  `/logout`, `/auth/*`, `/projects` and `/static/*` to `/api/cloud/` (the trailing slash matters under `trailingSlash: true`; with the original path in `?__imitor_path=`),
   redirects the app host's `/` to `/projects/` and its other paths to the site, includes in the functions exactly what
   they load or read (`src/app/**`, the pure modules of `src/` listed below, `cloud/src/**` and `design/tokens.css`;
   never the CLI), installs only `cloud/`'s locked dependencies (`npm ci --prefix cloud`), and runs retention daily at
