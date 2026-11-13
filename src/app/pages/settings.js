@@ -170,10 +170,12 @@ function keyRow(k, canManage) {
   return html`<div class="set-row" data-key="${k.id}"><div class="set-label"><span>${k.name}</span><span class="set-sub">${sub}</span></div><div class="set-value">${value}</div></div>`;
 }
 
-function memberRow(m, canManage) {
+/** One person; the button is Leave on your own row, Remove on others' (owners only), and absent for a project's only
+ * owner, whom the server would refuse to remove (a project always keeps an owner). */
+function memberRow(m, canManage, onlyOwner) {
   const who = m.name && m.name !== m.email ? m.name : m.email;
   const sub = html`${who !== m.email ? html`<span class="mono">${m.email}</span> · ` : ""}${m.you ? "you · " : ""}added ${ago(m.since) === "now" ? "just now" : `${ago(m.since)} ago`}`;
-  const value = html`${pill(m.role === "owner" ? "Owner" : "Member", m.role === "owner" ? "ok" : "neutral")}${canManage || m.you ? button(m.you ? "Leave" : "Remove", "secondary", { attrs: String(html`data-remove-member="${m.userId}" data-email="${m.email}" data-you="${m.you ? "1" : ""}"`) }) : ""}`;
+  const value = html`${pill(m.role === "owner" ? "Owner" : "Member", m.role === "owner" ? "ok" : "neutral")}${(canManage || m.you) && !(onlyOwner && m.role === "owner") ? button(m.you ? "Leave" : "Remove", "secondary", { attrs: String(html`data-remove-member="${m.userId}" data-email="${m.email}" data-you="${m.you ? "1" : ""}"`) }) : ""}`;
   return html`<div class="set-row" data-member="${m.userId}"><div class="set-label"><span>${who}</span><span class="set-sub">${sub}</span></div><div class="set-value">${value}</div></div>`;
 }
 
@@ -193,7 +195,8 @@ async function mountMembers(ctx, main) {
         <select class="field" id="member-role" name="role"><option value="member">Member</option><option value="owner">Owner</option></select>
         <button type="submit" class="btn btn-primary">Add</button></form>`
       : html`<p class="set-empty">Only an owner of this project can add or remove people. You can leave it.</p>`;
-    box.innerHTML = String(html`${form}${data.members.map((m) => memberRow(m, data.canManage))}`);
+    const onlyOwner = data.members.filter((m) => m.role === "owner").length === 1;
+    box.innerHTML = String(html`${form}${data.members.map((m) => memberRow(m, data.canManage, onlyOwner))}`);
   }
   box.addEventListener("submit", async (e) => {
     const form = e.target.closest("[data-member-add]");

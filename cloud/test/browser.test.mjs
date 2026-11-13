@@ -100,13 +100,16 @@ test("the interface in cloud mode, end to end in Chromium", { skip: !playwright 
   await Promise.all([page.waitForURL(/\/projects$/), page.click(".set-value a:has-text('All projects')")]);
   assert.equal(await page.textContent("main h1"), "Projects");
 
-  // Members: add someone by address, see them listed, remove them.
+  // Members: add someone by address, see them listed, remove them. The only owner gets no Leave button.
   await page.goto(`${server.url}/p/fernwood/settings#members`);
+  await page.waitForSelector("[data-member]");
+  assert.equal(await page.locator("[data-member] [data-remove-member]").count(), 0, "the only owner cannot leave, so no button");
   await page.fill("#member-email", "cy@example.com");
   await page.selectOption("#member-role", "member");
   await page.click("[data-member-add] button[type=submit]");
   await page.waitForSelector("[data-member] >> text=cy@example.com");
   assert.equal(await page.locator("[data-member]").count(), 2, "admin and Cy");
+  assert.equal(await page.locator("[data-member] [data-remove-member]").count(), 1, "Remove on Cy's row only; still none on the only owner's");
   if (process.env.IMITOR_SHOT_DIR) await page.locator("#members").screenshot({ path: `${process.env.IMITOR_SHOT_DIR}/members.png` });
   page.once("dialog", (d) => d.accept());
   await page.click('[data-remove-member][data-email="cy@example.com"]');
