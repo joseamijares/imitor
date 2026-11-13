@@ -105,10 +105,15 @@ const toSite = (v) => {
   const r = v.redirects.find((x) => x.destination.startsWith("https://imitor.dev/"));
   return new RegExp(`^${r.source.replace("/(", "/(?:")}$`);
 };
-/** The rewrite of the app host's paths to /api/cloud ("/:first(a|b)/:rest*"), as a RegExp. */
+/**
+ * The rewrite of the app host's paths to /api/cloud, as a RegExp. Its source is written as plain regex groups, with no
+ * ":name" parameters, so this RegExp matches exactly what Vercel's path-to-regexp does. A "/:first(a|b)/:rest*" source
+ * did not: Vercel matched it only without a trailing slash, so under trailingSlash every cloud page got the site's 404.
+ */
 const toCloud = (v) => {
   const r = v.rewrites.find((x) => x.destination.startsWith("/api/cloud"));
-  return new RegExp(`^${r.source.replace(":first(", "(").replace("/:rest*", "(?:/.*)?")}$`);
+  assert.doesNotMatch(r.source, /:[a-z]/i, "no named parameters: their matching differs from a plain RegExp");
+  return new RegExp(`^${r.source}$`);
 };
 
 test("the root shims and vercel.json: two functions, the cloud's rewrites only on its host, a daily cron", async () => {
@@ -127,6 +132,11 @@ test("the root shims and vercel.json: two functions, the cloud's rewrites only o
   const rewrite = toCloud(v);
   for (const p of ["/login/", "/login/token/", "/logout/everywhere/", "/auth/google/callback/", `${HOME}/`, "/p/fernwood/runs/", "/v1/runs/", "/static/cloud.css"]) assert.ok(rewrite.test(p), `${p} reaches the cloud`);
   assert.ok(!rewrite.test("/"), "/ is the site's index.html, which a rewrite cannot reach");
+  for (const p of ["/pp/", "/loginx/", "/how-to-use/"]) assert.ok(!rewrite.test(p), `${p} is not a cloud route`);
+  // The destination carries the whole original path, trailing slash included; the function drops the slash.
+  const cloud = v.rewrites.find((x) => x.destination.startsWith("/api/cloud"));
+  assert.equal(cloud.destination, "/api/cloud/?__imitor_path=/$1$2");
+  assert.deepEqual("/p/fernwood/runs/".match(rewrite).slice(1), ["p", "/fernwood/runs/"]);
 });
 
 test("no path the cloud answers on its host is a file of the site, and / on the app host goes to the projects page", () => {
