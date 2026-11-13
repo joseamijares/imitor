@@ -3,10 +3,12 @@
 // without running anything, and every module of src/ it reaches must be in vercel.json's includeFiles.
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { SOURCES } from "../src/assets.mjs";
+import { PACK, readAssets, readPack, SOURCES } from "../src/assets.mjs";
+import { packAssets } from "../scripts/pack-assets.mjs";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const ENTRIES = ["api/cloud.mjs", "api/cron-retention.mjs"];
@@ -82,10 +84,27 @@ test("every module of src/ the functions reach, and every file they read, is in 
   const shared = [...files].filter((f) => f.startsWith("src/")).sort();
   assert.deepEqual(shared, ["src/app-index.mjs", "src/config.mjs", "src/derive.mjs", "src/redact.mjs", "src/secrets.mjs", "src/state.mjs", "src/tools.mjs", "src/upload.mjs"]);
   for (const f of files) if (!f.startsWith("api/")) assert.ok(included(f), `${f} is loaded by the functions but not in includeFiles`);
-  // Read from disk at run time (assets.mjs): the interface and the design tokens.
+  // The interface and the design tokens come from the pack the build writes, never as .js files in the bundle: Vercel
+  // compiles bundled .js to CommonJS, and browsers given that render nothing.
+  assert.ok(included(path.relative(ROOT, PACK).split(path.sep).join("/")), "the asset pack is bundled");
   for (const f of fs.readdirSync(SOURCES.app, { recursive: true })) {
     const rel = path.relative(ROOT, path.join(SOURCES.app, f)).split(path.sep).join("/");
-    if (fs.statSync(path.join(ROOT, rel)).isFile()) assert.ok(included(rel), rel);
+    if (fs.statSync(path.join(ROOT, rel)).isFile()) assert.ok(!included(rel), `${rel} must reach the function through the pack, not as a file`);
   }
-  assert.ok(included(path.relative(ROOT, SOURCES.tokens).split(path.sep).join("/")));
+  assert.match(v.buildCommand, /node cloud\/scripts\/pack-assets\.mjs/, "the build writes the pack");
+  // File tracing would still pull src/app/ in (assets.mjs reads that folder outside Vercel), compiled; excluding it
+  // means a missing pack fails loudly instead of serving compiled files.
+  assert.equal(v.functions["api/*.mjs"].excludeFiles, "src/app/**");
+});
+
+test("the asset pack holds exactly the interface's files and the tokens, byte for byte", () => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "imitor-pack-")), "assets.json");
+  const n = packAssets(file);
+  const packed = readPack(file);
+  const direct = readAssets();
+  assert.equal(n, direct.app.size);
+  assert.deepEqual([...packed.app.keys()].sort(), [...direct.app.keys()].sort());
+  for (const [rel, bytes] of direct.app) assert.ok(bytes.equals(packed.app.get(rel)), rel);
+  assert.equal(packed.tokens, direct.tokens);
+  assert.match(packed.app.get("router.js").toString("utf8"), /^\s*(\/\/.*\n)*\s*import |export function createRouter/m, "still ESM");
 });

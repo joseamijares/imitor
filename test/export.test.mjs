@@ -170,7 +170,7 @@ test("vercel.json deploys the site, with the demo under /demo/ on the same singl
   // One Vercel project: the root vercel.json builds the site, and site/build.mjs exports the demo into /demo/.
   const v = readJson(path.join(REPO, "vercel.json"));
   // The site build, then the cloud's migrations (which do nothing outside a production build with a database).
-  assert.equal(v.buildCommand, "node site/build.mjs && node cloud/scripts/deploy-migrate.mjs");
+  assert.equal(v.buildCommand, "node site/build.mjs && node cloud/scripts/pack-assets.mjs && node cloud/scripts/deploy-migrate.mjs");
   assert.equal(v.outputDirectory, "site/dist");
   assert.equal(v.framework, null);
   assert.deepEqual(v.rewrites.filter((r) => !r.has), [spaRewrite("/demo")]);
