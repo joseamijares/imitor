@@ -37,6 +37,18 @@
   ],
   "rewrites": [
     {
+      "source": "/zz-probe-c/(.*)",
+      "destination": "/api/cloud?__imitor_path=/projects"
+    },
+    {
+      "source": "/zz-probe-d/(.*)",
+      "destination": "/api/cloud/?__imitor_path=/projects"
+    },
+    {
+      "source": "/zz-probe-e/:rest*/",
+      "destination": "/api/cloud/?__imitor_path=/projects"
+    },
+    {
       "source": "/zz-probe-a/:rest*",
       "destination": "/api/cloud?__imitor_path=/projects"
     },
