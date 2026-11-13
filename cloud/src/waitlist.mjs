@@ -26,11 +26,8 @@ function crossSite(request) {
   if (site && site !== "same-origin") return true;
   const origin = request.headers.get("origin");
   if (!origin) return false;
-  try {
-    return new URL(origin).host !== host;
-  } catch {
-    return true;
-  }
+  // The whole origin, scheme included: the function only answers in production, which is https.
+  return origin !== `https://${host}`;
 }
 
 const finish = (response) => {
@@ -54,7 +51,7 @@ export function waitlistFunction(env = process.env, { db = null, limiter = throt
       if (error) return answer(400, error);
       const address = clientAddress(request);
       const wait = limiter.blocked(address);
-      if (wait) return finish(fail(429, "too many tries from this address: try again in a few minutes", {}, { "retry-after": String(Math.ceil(wait / 1000)) }));
+      if (wait) return form ? answer(429) : finish(fail(429, "too many tries from this address: try again in a few minutes", {}, { "retry-after": String(Math.ceil(wait / 1000)) }));
       limiter.fail(address);
       // A field people never see: only a script filling every field writes in it. It is told it worked.
       if (fields.website) return answer(200);

@@ -48,6 +48,7 @@ test("only production, only POST, only from the site itself", async () => {
   assert.equal((await fn.fetch(post({ email: "ada@example.com" }, { headers: { origin: "https://elsewhere.example" } }))).status, 403);
   assert.equal((await fn.fetch(post({ email: "ada@example.com" }, { headers: { "sec-fetch-site": "cross-site" } }))).status, 403);
   assert.equal((await fn.fetch(post({ email: "ada@example.com" }, { headers: { origin: "null" } }))).status, 403);
+  assert.equal((await fn.fetch(post({ email: "ada@example.com" }, { headers: { origin: "http://imitor.dev" } }))).status, 403, "the same host over http is another origin");
   assert.deepEqual(await db.listWaitlist(), []);
   assert.equal((await fn.fetch(post({ email: "ada@example.com" }, { headers: { "sec-fetch-site": "same-origin" } }))).status, 200);
 });
@@ -90,6 +91,11 @@ test("five tries per client address in ten minutes; a database that fails is a 5
   assert.equal(sixth.status, 429);
   assert.ok(Number(sixth.headers.get("retry-after")) > 0);
   assert.equal((await fn.fetch(post({ email: "other@example.com" }, { address: "203.0.113.8" }))).status, 200, "another address is not held back");
+  assert.equal((await db.listWaitlist()).length, 6);
+  // Without script the form is still sent back to the pricing page, not shown JSON.
+  const held = await fn.fetch(post("email=p6%40example.com", { headers: { "content-type": "application/x-www-form-urlencoded" } }));
+  assert.equal(held.status, 303);
+  assert.equal(held.headers.get("location"), NOT_JOINED);
   assert.equal((await db.listWaitlist()).length, 6);
 
   const quiet = console.error;
