@@ -110,6 +110,14 @@ test("the interface in cloud mode, end to end in Chromium", { skip: !playwright 
   await page.waitForSelector("[data-member] >> text=cy@example.com");
   assert.equal(await page.locator("[data-member]").count(), 2, "admin and Cy");
   assert.equal(await page.locator("[data-member] [data-remove-member]").count(), 1, "Remove on Cy's row only; still none on the only owner's");
+  // Adding Cy again as an owner is a role change: with two owners, each may leave or be removed.
+  await page.fill("#member-email", "cy@example.com");
+  await page.selectOption("#member-role", "owner");
+  await page.click("[data-member-add] button[type=submit]");
+  await page.waitForSelector(".toast >> text=cy@example.com is now an owner");
+  await page.waitForFunction(() => document.querySelectorAll("[data-member] [data-remove-member]").length === 2);
+  assert.equal(await page.locator("[data-member]").count(), 2, "a role change adds no one");
+  assert.equal(await page.locator('[data-remove-member][data-you="1"]').count(), 1, "with a second owner, Leave is back on your own row");
   if (process.env.IMITOR_SHOT_DIR) await page.locator("#members").screenshot({ path: `${process.env.IMITOR_SHOT_DIR}/members.png` });
   page.once("dialog", (d) => d.accept());
   await page.click('[data-remove-member][data-email="cy@example.com"]');
