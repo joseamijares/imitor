@@ -70,7 +70,8 @@ test("the functions never load the CLI: no child_process, Playwright, build, sho
   assert.ok(files.has("cloud/src/vercel.mjs") && files.has("cloud/src/web.mjs") && files.has("src/derive.mjs"), "the walk follows the shims into the cloud");
   for (const spec of FORBIDDEN_SPECIFIERS) assert.ok(!bare.has(spec), `${trail(spec)}`);
   for (const f of FORBIDDEN_FILES) assert.ok(!files.has(f), `${trail(f)}`);
-  for (const spec of bare) assert.ok(spec.startsWith("node:") || spec === "pg", `an unexpected package: ${trail(spec)}`);
+  // pg, and @vercel/blob for a deployment that keeps its files in Vercel Blob (storage/blob.mjs loads it on first use).
+  for (const spec of bare) assert.ok(spec.startsWith("node:") || spec === "pg" || spec === "@vercel/blob", `an unexpected package: ${trail(spec)}`);
 });
 
 test("every module of src/ the functions reach, and every file they read, is in includeFiles", () => {

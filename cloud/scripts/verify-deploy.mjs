@@ -66,7 +66,7 @@ await check("app host: / redirects to /projects/", async () => {
 
 await check("app host: /projects/ sends a stranger to sign in (rewrite, path recovery and bundle work)", async () => {
   const res = await follow(`${app}/projects/`, { headers: { accept: "text/html" } });
-  const why = { 404: " (the function refuses to run without DATABASE_URL and S3_BUCKET, or outside production)", 503: " (the database or storage cannot be reached)" };
+  const why = { 404: " (the function refuses to run without DATABASE_URL and a store (S3_BUCKET or BLOB_READ_WRITE_TOKEN), or outside production)", 503: " (the database or storage cannot be reached)" };
   expect([302, 303].includes(res.status), `got ${res.status}${why[res.status] || ""}`);
   expect(/\/login/.test(where(res)), `to ${where(res)}`);
   expect(/private/.test(res.headers.get("cache-control") || ""), `cache-control is ${res.headers.get("cache-control")}`);
