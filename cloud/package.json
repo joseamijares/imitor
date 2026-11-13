@@ -2,7 +2,7 @@
   "name": "imitor-cloud",
   "version": "0.0.1",
   "private": true,
-  "description": "Imitor Cloud: a receive-only host for finished Imitor runs, with Google sign-in and the review interface. In development; not hosted yet.",
+  "description": "Imitor Cloud: a receive-only host for finished Imitor runs, with Google sign-in and the review interface. In development; hosted invite-only at app.imitor.dev.",
   "license": "AGPL-3.0-only",
   "type": "module",
   "engines": {
