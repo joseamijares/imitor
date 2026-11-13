@@ -98,7 +98,8 @@ database. A method that would break a unique rule throws an error with `code: "c
 
 | Method | Arguments | Returns |
 | --- | --- | --- |
-| `addAudit` | `{ projectId = null, userId = null, keyId = null, action, detail = {} }` | nothing; `at` is now. `detail` shapes are listed above `audit_log` in the schema and in the migrations that add actions; the mail module (`src/mail/`) adds `mail.send { kind, to, id }` and `mail.fail { kind, to, status }`. |
+| `addAudit` | `{ projectId = null, userId = null, keyId = null, action, detail = {} }` | nothing; `at` is now. `detail` shapes are listed above `audit_log` in the schema and in the migrations that add actions (the mail module's in `005_mail.sql`). |
 | `listAudit` | none | entries `{ id, at, projectId, userId, keyId, action, detail }`, oldest first |
+| `countAudit` | `{ action, since, userId = null, detail = {} }` | how many entries of that action have `at >= since` (ISO time), by that user when `userId` is given (any user, or none, when it is null), and whose `detail` has each given field equal to the given value as a string (`{ to: "a@example.com" }`). Field names are letters only; another name throws. |
 
 `close()` releases the connection pool (nothing for memory).

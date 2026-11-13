@@ -85,10 +85,10 @@ For people (a session cookie):
 | `S3_CHECKSUMS` | `off` to stop signing `x-amz-checksum-sha256` into uploads, for a store that does not support it. Then storage keeps no SHA-256 to check, so the server refuses to start unless `IMITOR_ALLOW_UNVERIFIED_UPLOADS` is also set. |
 | `IMITOR_ALLOW_UNVERIFIED_UPLOADS` | `1` to let `complete` accept a file whose stored object has no SHA-256 (size and content type are still checked). **Unsafe**: the bytes are then whatever was uploaded to the URL, not necessarily what the run declared. Only for a store without checksum support. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | A Google OAuth client of type "Web application" whose authorized redirect URI is `PUBLIC_URL/auth/google/callback`. Scopes: `openid email profile`. Both or neither. |
-| `IMITOR_ALLOWED_EMAILS` | Comma-separated addresses that may sign in the first time (compared lowercased). An address an owner adds to a project (Settings, Members) before its person ever signed in may sign in too (`users.invited_at`): the owner's invitation stands in for this list, so any owner can admit people, with no cap. Removing someone from a project does not stop them signing in; an account turned off (`users.allowed = false`) cannot be added back by an owner. After someone's first sign-in their Google account decides, so removing an address does not lock its person out; to do that, set `users.allowed` to false (their sessions end at their next request). |
+| `IMITOR_ALLOWED_EMAILS` | Comma-separated addresses that may sign in the first time (compared lowercased). An address an owner adds to a project (Settings, Members) before its person ever signed in may sign in too (`users.invited_at`): the owner's invitation stands in for this list, so any owner can admit people, with no cap. Removing someone from a project does not stop them signing in; an account turned off (`users.allowed = false`) cannot be added back by an owner. When mail is on (`RESEND_API_KEY`), the added address is emailed a link to the project. After someone's first sign-in their Google account decides, so removing an address does not lock its person out; to do that, set `users.allowed` to false (their sessions end at their next request). |
 | `IMITOR_ADMIN_TOKEN` | For a private instance without Google: at least 32 characters (`openssl rand -base64 32`). Turns on `/login/token`, which signs in an admin user (`IMITOR_ADMIN_EMAIL`, default `admin`). Anyone with the token is that admin; leave it unset where Google sign-in is configured. |
 | `CRON_SECRET` | At least 32 characters. Turns on the retention call and is its bearer token (Vercel Cron sends it). |
-| `RESEND_API_KEY` | Turns on transactional email, sent through [Resend](https://resend.com)'s HTTP API (no SDK). Without it, mail is off and nothing is sent. Needs `MAIL_FROM` (both or neither) and `PUBLIC_URL`, since every message links to it. Nothing sends mail yet: the module is in place (`src/mail/`), and no route calls it. |
+| `RESEND_API_KEY` | Turns on transactional email, sent through [Resend](https://resend.com)'s HTTP API (no SDK). Without it, mail is off and nothing is sent. Needs `MAIL_FROM` (both or neither) and `PUBLIC_URL`, since every message links to it. One message is sent: when an owner adds someone to a project (not when they change a role), that person gets a link to sign in with and land on the project. At most 20 messages per sender and 3 to one address (from everyone together) in any 24 hours; past either cap the person is still added, just not emailed. A message that cannot be sent never fails the add. Every message sent, failed or held back is audited (`mail.send`, `mail.fail`, `mail.limit`; see `migrations/005_mail.sql`). |
 | `MAIL_FROM` | The sender, e.g. `Imitor Cloud <hello@jamaklab.com>`. Its domain must be verified in Resend, or Resend refuses every message. |
 | `MAIL_REPLY_TO` | Optional: where replies go, when not to `MAIL_FROM`. |
 | `MIN_CLI_VERSION` | Oldest `imitor` accepted, e.g. `0.1.0`. |
@@ -200,7 +200,9 @@ Everything but Google lives in the Vercel project. In this order; nothing here n
    imitor.dev: `imitor-cloud-runs`, in iad1.) An S3-compatible bucket works instead: set `S3_*`.
 3. **Google Cloud**: an OAuth client of type "Web application" with the redirect URI
    `https://app.imitor.dev/auth/google/callback`. Consent screen: External, scopes `openid email profile`, publishing
-   status **Testing**, with each allowlisted address as a test user. Testing needs no verification. Publishing later
+   status **Testing**, with each allowlisted address as a test user. Testing needs no verification. While the screen
+   is in Testing, Google refuses anyone who is not a test user, so someone an owner adds to a project must also be
+   added there as a test user before they can sign in. Publishing later
    needs `imitor.dev` as an authorized domain, the live `https://imitor.dev/privacy/` and `/terms/`, and the domain
    verified in Search Console.
 4. **Vercel** environment, Production only, Sensitive: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `CRON_SECRET`
@@ -212,7 +214,12 @@ Everything but Google lives in the Vercel project. In this order; nothing here n
 6. **Sign in** at `https://app.imitor.dev`, make a project, make an access key, and push a run:
    `IMITOR_CLOUD_URL=https://app.imitor.dev IMITOR_TOKEN=imk_... npx imitor push`. Open the run; its screenshots load
    through the five-minute storage links, which shows the presigned uploads and the checksum check worked.
-7. **The next morning**, open the project's Cron Jobs logs and confirm the retention job answered 200.
+7. **Mail** (optional; without it people are added but not emailed): in Resend, add and verify the sending domain
+   (the DNS records it lists), and make an API key that can only send. In Vercel, Production only, Sensitive:
+   `RESEND_API_KEY`, and `MAIL_FROM` with an address on that domain (e.g. `Imitor Cloud <hello@imitor.dev>`); then
+   redeploy. To test, add an address of your own to a project in Settings, Members: the toast says it was emailed,
+   the message arrives with a link to the project, and the audit log has a `mail.send` row.
+8. **The next morning**, open the project's Cron Jobs logs and confirm the retention job answered 200.
 
 ### Not verified yet
 
@@ -254,6 +261,13 @@ does not hash it again).
   limit is, once per window (`user.signin-throttled` with the address). Use a long random value, and only on a
   private instance.
 - Not a member of a project reads exactly as no such project (404), so project names cannot be probed.
+- Mail goes to addresses owners type, so it is capped: 20 messages per sender and 3 to one address from everyone
+  together in any 24 hours (`MAX_SENDS_PER_DAY`, `MAX_PER_ADDRESS_PER_DAY` in `src/mail/index.mjs`), so an owner
+  cannot use the service to send much mail, and many projects cannot flood one inbox. The caps are counted from the
+  `mail.send` rows of the audit log, in the database, because a count in memory (like the admin token's) would be per
+  instance on a serverless platform. Two adds at the same moment can both pass a cap by one. Messages carry no
+  images or remote content, names in them are escaped and kept to one line in the subject, and each message has an
+  idempotency key per membership, so a retried add does not send twice.
 
 ## Layout
 
@@ -309,6 +323,6 @@ contract again against a `postgres:16` service (the Postgres suite works in a sc
 
 ## Next
 
-- Inviting members to a project, and an owner's view of the audit log.
+- An owner's view of the audit log.
 - `imitor push` after every run (automatic) and uploading captures and agent activity with a run; the API already
   accepts `captures` and `activity` lines.

@@ -9,6 +9,13 @@ export { noMail, recordingMail, resendTransport } from "./transport.mjs";
 
 const TEMPLATES = { invitation };
 
+// Mail is sent on people's behalf, to addresses they type, so it is capped in rolling 24 hours: MAX_SENDS_PER_DAY
+// messages per sender, and MAX_PER_ADDRESS_PER_DAY to one address from everyone together (so many projects cannot
+// flood one inbox). Counted from the mail.send rows of audit_log, not in memory: on Vercel every instance has its own.
+export const MAX_SENDS_PER_DAY = 20;
+export const MAX_PER_ADDRESS_PER_DAY = 3;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 /** deps.mail from the environment: { transport, from, replyTo }. opts: { fetch } (tests). See cloud/README.md. */
 export function mailFromEnv(env = process.env, { fetch } = {}) {
   if (!env.RESEND_API_KEY && !env.MAIL_FROM) return { transport: noMail(), from: null, replyTo: null };
@@ -19,8 +26,9 @@ export function mailFromEnv(env = process.env, { fetch } = {}) {
 
 /**
  * Send the `kind` message (a template's name) to args.to, built from args (see templates.mjs), with args.key as its
- * idempotency key so a retried request does not send twice. Returns { sent: true, id } or { sent: false, reason:
- * "off" | "no-address" | "failed" }; never throws.
+ * idempotency key so a retried request does not send twice. args.actor is who sends it (their id counts toward their
+ * cap; without one, only the address's cap applies). Returns { sent: true, id } or { sent: false, reason: "off" |
+ * "no-address" | "limit" | "failed" }; never throws.
  */
 export async function notify(deps, kind, args = {}) {
   const { to } = args;
@@ -36,8 +44,6 @@ export async function notify(deps, kind, args = {}) {
     if (typeof to !== "string" || to.length > 254 || !EMAIL.test(to)) return { sent: false, reason: "no-address" };
     const template = TEMPLATES[kind];
     if (!template) throw new Error(`there is no mail template "${kind}"`);
-    // PR 2: the per-day send cap is checked here, before anything is sent.
-    const res = await mail.transport.send({ from: mail.from, to, replyTo: mail.replyTo, idempotencyKey: args.key, ...template(args) });
     const who = { projectId: args.project?.id ?? null, userId: args.actor?.id ?? null };
     // A message that went out is reported as sent even when its audit row cannot be written.
     const audit = async (action, detail) => {
@@ -47,6 +53,15 @@ export async function notify(deps, kind, args = {}) {
         log(error);
       }
     };
+    // The caps, before anything is sent. A count that fails throws to the catch below: nothing is sent unchecked.
+    // Two sends at the same moment can both pass; the caps bound a flood, not a single message.
+    const since = new Date((deps.now?.() || new Date()).getTime() - DAY_MS).toISOString();
+    const count = (filter) => deps.db.countAudit({ action: "mail.send", since, ...filter });
+    if ((who.userId != null && (await count({ userId: who.userId })) >= MAX_SENDS_PER_DAY) || (await count({ detail: { to } })) >= MAX_PER_ADDRESS_PER_DAY) {
+      await audit("mail.limit", { kind, to });
+      return { sent: false, reason: "limit" };
+    }
+    const res = await mail.transport.send({ from: mail.from, to, replyTo: mail.replyTo, idempotencyKey: args.key, ...template(args) });
     if (res.ok) {
       await audit("mail.send", { kind, to, id: res.id ?? null });
       return { sent: true, id: res.id ?? null };

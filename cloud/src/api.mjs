@@ -8,8 +8,8 @@
 //   GET|POST /v1/cron/retention   (Authorization: Bearer <CRON_SECRET>) prune every project, drop expired sessions
 //
 // deps: { db, storage, publicUrl, minCliVersion, allowUnverified, now, log, oidc, allowedEmails, adminToken,
-//   adminEmail, cronSecret, mail }; mail is { transport, from, replyTo } from mail/index.mjs (off without RESEND_API_KEY,
-//   and nothing sends mail yet)
+//   adminEmail, cronSecret, mail }; mail is { transport, from, replyTo } from mail/index.mjs (off without RESEND_API_KEY;
+//   web.mjs sends one message, when an owner adds someone to a project)
 import { redact } from "../../src/redact.mjs";
 import { checkUpload, MAX_BODY_BYTES } from "../../src/upload.mjs";
 import { fail, json, readText, safeEqual, secure } from "./http.mjs";

@@ -5,6 +5,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import test from "node:test";
 import { handle, KEEP_DAYS } from "../src/api.mjs";
+import { MAX_PER_ADDRESS_PER_DAY, MAX_SENDS_PER_DAY, noMail } from "../src/mail/index.mjs";
 import { admit, HOME, safeNext } from "../src/web.mjs";
 import { browser, cloud, HTML, PUBLIC_URL } from "./helpers.mjs";
 
@@ -159,6 +160,127 @@ test("members: an owner adds people by address (as member or owner), lists and r
   await s.ada.call("POST", "/p/fernwood/api/members", { body: { email: "bob@example.com", role: "owner" } });
   assert.equal((await s.ada.call("POST", `/p/fernwood/api/members/${adaId}/remove`, { body: {} })).status, 200, "with two owners one can go");
   assert.equal((await s.bob.call("POST", "/p/fernwood/api/members", { body: { email: "bob@example.com", role: "member" } })).status, 409, "the last owner cannot step down");
+});
+
+const DAY = 24 * 60 * 60 * 1000;
+const mailRows = async (s) => (await s.db.listAudit()).filter((a) => a.action.startsWith("mail."));
+
+test("members: someone newly added is emailed a link to the project; whether they ever signed in decides the wording", async () => {
+  const s = await setup();
+  const { json: { project } } = await s.ada.call("POST", "/projects", { body: { name: "Fernwood" } });
+  const cy = await s.ada.call("POST", "/p/fernwood/api/members", { body: { email: "Cy@Example.com" } });
+  assert.equal(cy.status, 201);
+  assert.equal(cy.json.notified, true);
+  const [m] = s.mail.transport.sent;
+  const cyUser = await s.db.findUserByEmail("cy@example.com");
+  const url = `${PUBLIC_URL}/login?next=%2Fp%2Ffernwood%2F`;
+  assert.equal(m.to, "cy@example.com");
+  assert.equal(m.idempotencyKey, `member-add/${project.id}/${cyUser.id}/${cy.json.member.since}`);
+  assert.ok(m.idempotencyKey.length <= 256);
+  assert.equal(m.subject, 'Admin added you to "Fernwood" on Imitor Cloud');
+  assert.match(m.text, /as a member/);
+  assert.ok(m.text.includes(url));
+  assert.deepEqual([...m.html.matchAll(/href="([^"]*)"/g)].map((x) => x[1]), [url]);
+  assert.match(m.text, /Nothing happens unless you sign in/, "never signed in: they may not expect it");
+  assert.deepEqual((await mailRows(s)).map((a) => [a.action, a.userId, a.projectId, a.detail]), [["mail.send", (await s.db.findUserByEmail("admin")).id, project.id, { kind: "invitation", to: "cy@example.com", id: "msg_1" }]]);
+
+  // The link lands on the project: signed out, the sign-in page passes it on (through Google too, see auth.test.mjs);
+  // signed in, straight there.
+  const fresh = await browser(s.deps).call("GET", "/login?next=%2Fp%2Ffernwood%2F");
+  assert.match(fresh.text, /href="\/login\/token\?next=%2Fp%2Ffernwood%2F"/);
+  assert.equal((await s.ada.call("GET", "/login?next=%2Fp%2Ffernwood%2F")).location, "/p/fernwood/");
+
+  // Someone who has signed in before is told without the "ignore this" line, as an owner when made one.
+  await s.db.addIdentity("google", "google-bob", s.bobUser.id);
+  const bob = await s.ada.call("POST", "/p/fernwood/api/members", { body: { email: "bob@example.com", role: "owner" } });
+  assert.equal(bob.json.notified, true);
+  assert.equal(s.mail.transport.sent[1].to, "bob@example.com");
+  assert.match(s.mail.transport.sent[1].text, /as an owner/);
+  assert.doesNotMatch(s.mail.transport.sent[1].text, /ignore/);
+
+  // An address invited by an earlier project but never signed in is still pending in the next one.
+  await s.ada.call("POST", "/projects", { body: { name: "Oak" } });
+  assert.equal((await s.ada.call("POST", "/p/oak/api/members", { body: { email: "cy@example.com" } })).json.notified, true);
+  assert.match(s.mail.transport.sent[2].text, /Nothing happens unless you sign in/);
+  assert.ok(s.mail.transport.sent[2].text.includes(`${PUBLIC_URL}/login?next=%2Fp%2Foak%2F`));
+
+  // A role change sends nothing; a remove and re-add is a new membership, with a new key.
+  const role = await s.ada.call("POST", "/p/fernwood/api/members", { body: { email: "cy@example.com", role: "owner" } });
+  assert.equal(role.status, 200);
+  assert.equal(role.json.notified, false);
+  assert.equal(s.mail.transport.sent.length, 3);
+  await s.ada.call("POST", `/p/fernwood/api/members/${s.bobUser.id}/remove`, { body: {} });
+  s.now.advance(1000);
+  assert.equal((await s.ada.call("POST", "/p/fernwood/api/members", { body: { email: "bob@example.com" } })).json.notified, true);
+  assert.notEqual(s.mail.transport.sent[3].idempotencyKey, s.mail.transport.sent[1].idempotencyKey);
+});
+
+test("members: a refused add sends nothing (not an owner, a turned-off account, not an address)", async () => {
+  const s = await setup();
+  await s.ada.call("POST", "/projects", { body: { name: "fernwood" } });
+  await s.ada.call("POST", "/p/fernwood/api/members", { body: { email: "bob@example.com" } });
+  const sent = s.mail.transport.sent.length;
+  assert.equal((await s.bob.call("POST", "/p/fernwood/api/members", { body: { email: "eve@example.com" } })).status, 403);
+  await s.db.createUser({ email: "off@example.com", allowed: false });
+  assert.equal((await s.ada.call("POST", "/p/fernwood/api/members", { body: { email: "off@example.com" } })).status, 409);
+  assert.equal((await s.ada.call("POST", "/p/fernwood/api/members", { body: { email: "not an address" } })).status, 400);
+  assert.equal(s.mail.transport.sent.length, sent);
+  assert.equal((await mailRows(s)).length, sent);
+});
+
+test("members: when the message cannot be sent the person is still added, and the failure is audited and logged", async () => {
+  const s = await setup();
+  await s.ada.call("POST", "/projects", { body: { name: "fernwood" } });
+  s.mail.transport.fail = "the provider is down";
+  const res = await s.ada.call("POST", "/p/fernwood/api/members", { body: { email: "cy@example.com" } });
+  assert.equal(res.status, 201);
+  assert.equal(res.json.notified, false);
+  assert.equal(res.json.member.email, "cy@example.com");
+  assert.deepEqual((await mailRows(s)).map((a) => [a.action, a.detail]), [["mail.fail", { kind: "invitation", to: "cy@example.com", status: 500 }]]);
+  assert.equal(s.logged.length, 1);
+  assert.match(String(s.logged[0].message), /not sent: the provider is down/);
+});
+
+test("members: past an owner's daily cap people are still added, unmailed, until the day moves on", async () => {
+  const s = await setup();
+  await s.ada.call("POST", "/projects", { body: { name: "fernwood" } });
+  for (let i = 0; i < MAX_SENDS_PER_DAY; i++) {
+    assert.equal((await s.ada.call("POST", "/p/fernwood/api/members", { body: { email: `p${i}@example.com` } })).json.notified, true);
+  }
+  const over = await s.ada.call("POST", "/p/fernwood/api/members", { body: { email: "late@example.com" } });
+  assert.equal(over.status, 201);
+  assert.equal(over.json.notified, false);
+  assert.equal(s.mail.transport.sent.length, MAX_SENDS_PER_DAY);
+  assert.deepEqual((await mailRows(s)).filter((a) => a.action === "mail.limit").map((a) => a.detail), [{ kind: "invitation", to: "late@example.com" }]);
+  s.now.advance(DAY + 1);
+  assert.equal((await s.ada.call("POST", "/p/fernwood/api/members", { body: { email: "later@example.com" } })).json.notified, true);
+  assert.equal(s.mail.transport.sent.length, MAX_SENDS_PER_DAY + 1);
+});
+
+test("members: one address gets at most MAX_PER_ADDRESS_PER_DAY invitations, whoever sends them", async () => {
+  const s = await setup();
+  for (const name of ["one", "two"]) await s.ada.call("POST", "/projects", { body: { name } });
+  for (const name of ["three", "four"]) await s.bob.call("POST", "/projects", { body: { name } });
+  const add = (b, slug) => b.call("POST", `/p/${slug}/api/members`, { body: { email: "cy@example.com" } });
+  assert.equal(MAX_PER_ADDRESS_PER_DAY, 3);
+  assert.equal((await add(s.ada, "one")).json.notified, true);
+  assert.equal((await add(s.ada, "two")).json.notified, true);
+  assert.equal((await add(s.bob, "three")).json.notified, true);
+  const fourth = await add(s.bob, "four");
+  assert.equal(fourth.status, 201);
+  assert.equal(fourth.json.notified, false);
+  assert.equal(s.mail.transport.sent.length, 3);
+  assert.deepEqual((await mailRows(s)).filter((a) => a.action === "mail.limit").map((a) => [a.userId, a.detail.to]), [[s.bobUser.id, "cy@example.com"]]);
+});
+
+test("members: with mail off nobody is emailed, and nothing about mail is audited", async () => {
+  const s = await setup();
+  s.deps.mail = { transport: noMail(), from: null, replyTo: null };
+  await s.ada.call("POST", "/projects", { body: { name: "fernwood" } });
+  const res = await s.ada.call("POST", "/p/fernwood/api/members", { body: { email: "cy@example.com" } });
+  assert.equal(res.status, 201);
+  assert.equal(res.json.notified, false);
+  assert.deepEqual(await mailRows(s), []);
 });
 
 test("someone an owner added signs in with Google without being in IMITOR_ALLOWED_EMAILS; a stranger still cannot", async () => {

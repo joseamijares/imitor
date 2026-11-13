@@ -152,7 +152,7 @@ function cloudSections() {
 
       <section id="members" class="set-section" aria-labelledby="members-h">
         <h2 id="members-h">Members</h2>
-        <p class="set-note">Everyone here sees this project’s runs. Owners also make keys and add or remove people. Add someone by the address of their Google account: they sign in with it, even if they have never signed in before.</p>
+        <p class="set-note">Everyone here sees this project’s runs. Owners also make keys and add or remove people. Add someone by the address of their Google account: they sign in with it, even if they have never signed in before. When this server sends email, they are also emailed a link to the project.</p>
         <div data-members>${skeletonRows(2)}</div>
       </section>
 
@@ -179,6 +179,7 @@ function memberRow(m, canManage) {
 
 async function mountMembers(ctx, main) {
   const box = main.querySelector("[data-members]");
+  let present = new Set(); // members' addresses, lowercased: adding one of them again only changes their role
   async function load() {
     let data;
     try { data = await cloud.members(); } catch (e) {
@@ -186,6 +187,7 @@ async function mountMembers(ctx, main) {
       return;
     }
     if (!ctx.isCurrent()) return;
+    present = new Set(data.members.map((m) => m.email.toLowerCase()));
     const form = data.canManage ? html`<form class="key-create" data-member-add>
         <label class="sr-only" for="member-email">Google account address</label>
         <input class="field" id="member-email" name="email" type="email" maxlength="254" placeholder="name@example.com" autocomplete="off" required>
@@ -203,9 +205,13 @@ async function mountMembers(ctx, main) {
     submit.disabled = true;
     const email = form.elements.email.value.trim();
     try {
-      await cloud.addMember(email, form.elements.role.value);
+      const res = await cloud.addMember(email, form.elements.role.value);
       if (!ctx.isCurrent()) return;
-      ctx.toast(`Added ${email}`);
+      // notified: the server emailed them a link. It may send no mail at all, or have reached its daily limit. Someone
+      // already here is not added again: their role changes, and they are not emailed.
+      if (res?.notified) ctx.toast(`Added ${email} and emailed them a link`);
+      else if (!present.has(email.toLowerCase())) ctx.toast(`Added ${email}. No email was sent: tell them to sign in at ${location.origin}`);
+      else ctx.toast(`Saved ${email}’s role`);
       await load();
     } catch (err) {
       ctx.toast(`Couldn’t add ${email}: ${err.message}`);

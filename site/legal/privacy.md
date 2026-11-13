@@ -20,11 +20,11 @@ imitor.dev is a static site. It has no analytics, no advertising and no cookies.
 - **Sessions:** a random sign-in token in a cookie on app.imitor.dev. The service keeps only a hash of it.
 - **Projects and access keys:** project names, who belongs to them (including the addresses owners add, before those people first sign in), and a hash of each key. The key itself is shown once and not stored.
 - **Runs you upload:** each run's data (flows, steps, shots, problems, the commit and branch), its screenshots and videos, and, if the uploader sends them, the agent activity and captures that go with it. Values a flow types into a field, such as passwords, are replaced with dots before upload and again on arrival. The service never stores or runs your app's code.
-- **An audit log:** sign-ups, sign-ins, project creation, who was added to or removed from a project, access-key creation and revocation, and run uploads and removals. Repeated failed admin sign-ins record the address they came from.
+- **An audit log:** sign-ups, sign-ins, project creation, who was added to or removed from a project, access-key creation and revocation, run uploads and removals, and the emails the service sent, could not send or held back under its daily limits, with the address each was for. Repeated failed admin sign-ins record the address they came from.
 
 ### Why
 
-Only to run the service: to sign you in, to keep your projects separate from everyone else's, and to show you your runs. Nothing is sold, used for advertising or used to train models.
+Only to run the service: to sign you in, to keep your projects separate from everyone else's, to show you your runs, and to email you when a project owner adds you to a project. Nothing is sold, used for advertising or used to train models.
 
 ### Where
 
@@ -32,6 +32,7 @@ Only to run the service: to sign you in, to keep your projects separate from eve
 - Neon (PostgreSQL) holds accounts, projects and run data.
 - Vercel Blob, in a private store, holds screenshots and videos. They are reached only through links that expire after five minutes.
 - Google handles sign-in.
+- Resend sends the service's email. When an owner adds someone to a project, Resend receives the message: that person's address, the project's name and a link to it, and the name of the owner who added them (or their address, when they have no name).
 
 These providers may process data outside your country.
 
@@ -49,4 +50,4 @@ You can ask to see, export or delete your account, a project or a run by writing
 
 If this page changes, the new version is published here with a new date. Changes that affect data you have already uploaded are also announced in the repository on GitHub before they take effect, and may be emailed to the address on your account.
 
-Last updated: 12 November 2026.
+Last updated: 13 November 2026.

@@ -1,10 +1,10 @@
 // The mail module without the network: Resend's API through a recording fetch (what is sent, what comes back, what
 // happens when it fails or hangs), the invitation template (escaping, a one-line subject, one link), and notify()
-// (off, no address, sent and audited, failed and audited without throwing).
+// (off, no address, sent and audited, failed and audited without throwing, the daily caps per sender and per address).
 import assert from "node:assert/strict";
 import test from "node:test";
 import { memoryDb } from "../src/db/memory.mjs";
-import { mailFromEnv, notify } from "../src/mail/index.mjs";
+import { mailFromEnv, MAX_PER_ADDRESS_PER_DAY, MAX_SENDS_PER_DAY, notify } from "../src/mail/index.mjs";
 import { invitation } from "../src/mail/templates.mjs";
 import { noMail, recordingMail, RESEND_URL, resendTransport } from "../src/mail/transport.mjs";
 import { cloud, clock, PUBLIC_URL } from "./helpers.mjs";
@@ -192,10 +192,48 @@ test("notify: a failure is audited as mail.fail and logged, and nothing throws",
   // A transport, an audit or a logger that throws, or an unknown kind: still an answer, never an exception.
   const throwing = { ...c.deps, mail: { ...c.mail, transport: { async send() { throw new Error("bug"); } } } };
   assert.deepEqual(await notify(throwing, "invitation", args()), { sent: false, reason: "failed" });
-  const noAudit = { ...c.deps, db: { addAudit: () => { throw new Error("db down"); } }, mail: { ...c.mail, transport: recordingMail() } };
+  const noAudit = { ...c.deps, db: { countAudit: async () => 0, addAudit: () => { throw new Error("db down"); } }, mail: { ...c.mail, transport: recordingMail() } };
   assert.deepEqual(await notify(noAudit, "invitation", args()), { sent: true, id: "msg_1" }, "a sent message stays sent");
   assert.deepEqual(await notify({ ...c.deps, log: () => { throw new Error("log down"); } }, "invitation", args()), { sent: false, reason: "failed" });
   assert.deepEqual(await notify(c.deps, "no-such-kind", args()), { sent: false, reason: "failed" });
+});
+
+test("notify: at most MAX_SENDS_PER_DAY per sender in a rolling day; over it nothing is sent and mail.limit is audited", async () => {
+  const c = cloud();
+  assert.equal(MAX_SENDS_PER_DAY, 20);
+  for (let i = 0; i < MAX_SENDS_PER_DAY; i++) {
+    assert.equal((await notify(c.deps, "invitation", args({ to: `p${i}@example.com`, key: `k${i}` }))).sent, true, `message ${i + 1}`);
+    c.now.advance(60 * 1000);
+  }
+  assert.deepEqual(await notify(c.deps, "invitation", args({ to: "late@example.com" })), { sent: false, reason: "limit" });
+  assert.equal(c.mail.transport.sent.length, MAX_SENDS_PER_DAY);
+  const limit = (await c.db.listAudit()).filter((a) => a.action === "mail.limit");
+  assert.deepEqual(limit.map((a) => [a.userId, a.projectId, a.detail]), [["u1", "prj1", { kind: "invitation", to: "late@example.com" }]]);
+  // Another sender is not held back by Ada's count.
+  assert.equal((await notify(c.deps, "invitation", args({ to: "late@example.com", actor: { id: "u9", name: "Bob" } }))).sent, true);
+  // A day after her first message (10:00), that one no longer counts; the refusal never counted.
+  c.now.set("2026-11-13T10:00:30.000Z");
+  assert.equal((await notify(c.deps, "invitation", args({ to: "next@example.com" }))).sent, true);
+  assert.deepEqual(await notify(c.deps, "invitation", args({ to: "next2@example.com" })), { sent: false, reason: "limit" }, "only one slot opened");
+});
+
+test("notify: at most MAX_PER_ADDRESS_PER_DAY to one address from everyone, and without a sender only that cap applies", async () => {
+  const c = cloud();
+  assert.equal(MAX_PER_ADDRESS_PER_DAY, 3);
+  for (const id of ["u1", "u2", "u3"]) assert.equal((await notify(c.deps, "invitation", args({ actor: { id, name: id } }))).sent, true);
+  assert.deepEqual(await notify(c.deps, "invitation", args({ actor: { id: "u4", name: "u4" } })), { sent: false, reason: "limit" });
+  assert.deepEqual(await notify(c.deps, "invitation", args({ actor: null })), { sent: false, reason: "limit" });
+  assert.equal((await notify(c.deps, "invitation", args({ to: "other@example.com", actor: null }))).sent, true, "another address is fine");
+  assert.equal(c.mail.transport.sent.length, 4);
+  assert.deepEqual((await c.db.listAudit()).filter((a) => a.action === "mail.limit").map((a) => [a.userId, a.detail.to]), [["u4", "grace@example.com"], [null, "grace@example.com"]]);
+  c.now.advance(24 * 60 * 60 * 1000 + 1); // they were all sent at one instant; exactly a day later they still count
+  assert.equal((await notify(c.deps, "invitation", args({ actor: { id: "u4", name: "u4" } }))).sent, true, "the window moved on");
+
+  // A count the database cannot make sends nothing: the cap is never skipped.
+  const broken = { ...c.deps, db: { ...c.db, countAudit: async () => { throw new Error("db down"); } } };
+  const before = c.mail.transport.sent.length;
+  assert.deepEqual(await notify(broken, "invitation", args({ to: "new@example.com" })), { sent: false, reason: "failed" });
+  assert.equal(c.mail.transport.sent.length, before);
 });
 
 test("mailFromEnv: off without RESEND_API_KEY; with it, the fetch given sends, end to end", async () => {

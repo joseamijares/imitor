@@ -109,4 +109,5 @@ test("the privacy and terms pages are built, linked from every page, and match w
   const privacy = decode(fs.readFileSync(path.join(out, "privacy", "index.html"), "utf8"));
   assert.match(privacy, new RegExp(`newest ${KEEP_RUNS} per project`), "the retention stated matches KEEP_RUNS");
   assert.match(privacy, /openid.*email.*profile/s, "the Google scopes stated match the sign-in");
+  assert.match(privacy, /Resend sends the service's email/, "the mail provider the cloud uses is named");
 });

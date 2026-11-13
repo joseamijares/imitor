@@ -341,6 +341,17 @@ export function pgDb({ connectionString, pool = null, schema = null, now = () =>
       const rows = await q("select * from audit_log order by id");
       return rows.map((r) => ({ id: Number(r.id), at: iso(r.at), projectId: r.project_id, userId: r.user_id, keyId: r.key_id, action: r.action, detail: r.detail }));
     },
+    async countAudit({ action, since, userId = null, detail = {} }) {
+      const where = ["action = $1", "at >= $2"];
+      const values = [action, since];
+      if (userId != null) where.push(`user_id = $${values.push(userId)}`);
+      for (const [field, value] of Object.entries(detail)) {
+        // The field name is written into the query (detail->>'to' is the expression 005_mail.sql indexes), so only plain names.
+        if (!/^[A-Za-z]+$/.test(field)) throw new Error(`countAudit cannot match the detail field ${JSON.stringify(field)}`);
+        where.push(`detail->>'${field}' = $${values.push(String(value))}`);
+      }
+      return Number((await one(`select count(*) as n from audit_log where ${where.join(" and ")}`, values)).n);
+    },
   };
   return db;
 }

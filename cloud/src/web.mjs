@@ -20,6 +20,7 @@ import { OidcError } from "./auth/oidc.mjs";
 import { cookieNames, currentUser, endSession, sameOrigin, startSession, clearSessionCookie } from "./auth/session.mjs";
 import { EMAIL } from "./email.mjs";
 import { cookie, cookies, fail, json, page, randomToken, readFields, redirect, safeEqual } from "./http.mjs";
+import { notify } from "./mail/index.mjs";
 import { HOME, inviteOnlyPage, loginPage, noticePage, PAGE_CSS, projectsPage, tokenPage } from "./pages.mjs";
 import { problemRun, readRoute } from "./read.mjs";
 import { clientAddress, throttle } from "./throttle.mjs";
@@ -340,7 +341,8 @@ const publicMember = (m, me) => ({ userId: m.userId, email: m.email, name: m.nam
 /**
  * Add someone to the project by address, as "member" (the default) or "owner"; adding someone again changes their role.
  * Someone who has never signed in gets an account row kept allowed, so their first Google sign-in with that address
- * is admitted (see admit): an owner's invitation stands in for IMITOR_ALLOWED_EMAILS.
+ * is admitted (see admit): an owner's invitation stands in for IMITOR_ALLOWED_EMAILS. Someone newly added is emailed a
+ * link to the project when mail is on; the answer's `notified` says whether a message went.
  */
 async function addMember(deps, actor, project, fields) {
   const { db } = deps;
@@ -370,7 +372,19 @@ async function addMember(deps, actor, project, fields) {
   }
   await db.addAudit({ projectId: project.id, userId: actor.id, action: before ? "member.role" : "member.add", detail: { email: target.email, role, ...(before ? { from: before.role } : {}) } });
   const added = (await db.listMembers(project.id)).find((m) => m.userId === target.id);
-  return json(before ? 200 : 201, { member: publicMember(added, actor) });
+  // Only someone newly added is told (a role change is not), and never someone who added themselves. The key is the
+  // membership's, so two adds racing to the same membership send once, and a remove and re-add sends again. notify()
+  // never throws and has its own 5 s limit: whatever happens to the message, the person stays added.
+  let notified = false;
+  if (!before && target.id !== actor.id) {
+    // Never signed in (an invited address, from this project or an earlier one): they may not expect this message.
+    const pending = !!target.invitedAt && (await db.listIdentities(target.id)).length === 0;
+    // Signing in lands on the project: /login passes `next` through Google and back (and straight on when signed in).
+    const url = `${deps.publicUrl}/login?next=${encodeURIComponent(`/p/${project.slug}/`)}`;
+    const key = `member-add/${project.id}/${target.id}/${added.createdAt}`;
+    notified = (await notify(deps, "invitation", { to: target.email, project, actor, role, pending, url, key })).sent;
+  }
+  return json(before ? 200 : 201, { member: publicMember(added, actor), notified });
 }
 
 /** Remove someone from the project (their account stays). The last owner cannot be removed. */

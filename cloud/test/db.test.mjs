@@ -275,5 +275,33 @@ for (const [name, factory] of IMPLEMENTATIONS) {
       assert.ok(entries[0].id < entries[1].id && entries[1].id < entries[2].id);
       assert.ok(entries.every((e) => typeof e.id === "number" && !Number.isNaN(Date.parse(e.at))));
     });
+
+    test("audit: counted by action since a time, by one user or any, and by fields of detail", async () => {
+      await fresh();
+      const ada = await db.createUser({ email: "ada@example.com" });
+      const bob = await db.createUser({ email: "bob@example.com" });
+      now.set("2026-11-12T10:00:00.000Z"); // the clock moves a second per call: this row is at 10:00:01
+      await db.addAudit({ userId: ada.id, action: "mail.send", detail: { kind: "invitation", to: "cy@example.com", id: "m1" } });
+      now.set("2026-11-13T10:00:00.000Z");
+      await db.addAudit({ userId: ada.id, action: "mail.send", detail: { kind: "invitation", to: "cy@example.com", id: "m2" } });
+      await db.addAudit({ userId: ada.id, action: "mail.send", detail: { kind: "invitation", to: "dee@example.com", id: "m3" } });
+      await db.addAudit({ userId: bob.id, action: "mail.send", detail: { kind: "invitation", to: "cy@example.com", id: "m4" } });
+      await db.addAudit({ action: "mail.send", detail: { kind: "invitation", to: "cy@example.com", id: "m5" } });
+      await db.addAudit({ userId: ada.id, action: "mail.fail", detail: { kind: "invitation", to: "cy@example.com", status: 500 } });
+      await db.addAudit({ userId: ada.id, action: "member.add", detail: { email: "cy@example.com", role: "member" } });
+
+      const day = "2026-11-12T10:00:01.000Z"; // inclusive: the first row is at exactly this time
+      assert.equal(await db.countAudit({ action: "mail.send", since: day }), 5);
+      assert.equal(await db.countAudit({ action: "mail.send", since: "2026-11-12T10:00:01.001Z" }), 4, "older rows are not counted");
+      assert.equal(await db.countAudit({ action: "mail.send", since: day, userId: ada.id }), 3);
+      assert.equal(await db.countAudit({ action: "mail.send", since: day, userId: bob.id }), 1);
+      assert.equal(await db.countAudit({ action: "mail.send", since: day, detail: { to: "cy@example.com" } }), 4, "any user, or none");
+      assert.equal(await db.countAudit({ action: "mail.send", since: day, userId: ada.id, detail: { to: "cy@example.com" } }), 2);
+      assert.equal(await db.countAudit({ action: "mail.send", since: day, detail: { to: "cy@example.com", kind: "invitation" } }), 4);
+      assert.equal(await db.countAudit({ action: "mail.send", since: day, detail: { to: "nobody@example.com" } }), 0);
+      assert.equal(await db.countAudit({ action: "mail.fail", since: day, detail: { status: 500 } }), 1, "compared as text");
+      assert.equal(await db.countAudit({ action: "mail.limit", since: day }), 0);
+      await assert.rejects(db.countAudit({ action: "mail.send", since: day, detail: { "to' or '1": "x" } }), /cannot match the detail field/);
+    });
   });
 }
