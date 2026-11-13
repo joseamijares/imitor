@@ -220,6 +220,7 @@ async function mountMembers(ctx, main) {
     b.disabled = true;
     try {
       await cloud.removeMember(b.dataset.removeMember);
+      if (!ctx.isCurrent()) return;
       if (you) { location.assign(CLOUD_PAGES.projects); return; }
       ctx.toast(`Removed ${b.dataset.email}`);
       await load();

@@ -363,10 +363,12 @@ async function addMember(deps, actor, project, fields) {
     return fail(409, "this account has been turned off on this server, so it cannot be added");
   }
   const before = await db.getMember(project.id, target.id);
-  if (before?.role === "owner" && role !== "owner" && (await db.listMembers(project.id)).filter((m) => m.role === "owner").length === 1) {
-    return fail(409, "a project needs an owner: make someone else an owner first");
+  try {
+    await db.addMember(project.id, target.id, role);
+  } catch (error) {
+    if (error.code === "last-owner") return fail(409, error.message);
+    throw error;
   }
-  await db.addMember(project.id, target.id, role);
   await db.addAudit({ projectId: project.id, userId: actor.id, action: before ? "member.role" : "member.add", detail: { email: target.email, role, ...(before ? { from: before.role } : {}) } });
   const added = (await db.listMembers(project.id)).find((m) => m.userId === target.id);
   return json(before ? 200 : 201, { member: publicMember(added, actor) });
@@ -378,8 +380,12 @@ async function removeMember(deps, actor, project, userId) {
   const members = await db.listMembers(project.id);
   const target = members.find((m) => m.userId === userId);
   if (!target) return fail(404, `no member ${userId} in this project`);
-  if (target.role === "owner" && members.filter((m) => m.role === "owner").length === 1) return fail(409, "a project needs an owner: make someone else an owner first");
-  await db.removeMember(project.id, userId);
+  try {
+    await db.removeMember(project.id, userId);
+  } catch (error) {
+    if (error.code === "last-owner") return fail(409, error.message);
+    throw error;
+  }
   await db.addAudit({ projectId: project.id, userId: actor.id, action: "member.remove", detail: { email: target.email, self: target.userId === actor.id } });
   return json(200, { removed: userId });
 }

@@ -147,6 +147,19 @@ for (const [name, factory] of IMPLEMENTATIONS) {
       assert.equal(await db.removeMember(p1.id, bob.id), false);
       assert.equal(await db.getMember(p1.id, bob.id), null);
       assert.deepEqual(await db.listMembers("prj_none"), []);
+
+      // A project keeps an owner, even when its two owners leave at the same moment.
+      const p4 = await db.createProject({ name: "Kept", ownerId: ada.id });
+      await assert.rejects(db.removeMember(p4.id, ada.id), (e) => e.code === "last-owner");
+      await assert.rejects(db.addMember(p4.id, ada.id, "member"), (e) => e.code === "last-owner");
+      await db.addMember(p4.id, bob.id, "owner");
+      const both = await Promise.allSettled([db.removeMember(p4.id, ada.id), db.removeMember(p4.id, bob.id)]);
+      assert.deepEqual(both.map((r) => r.status).sort(), ["fulfilled", "rejected"], "one goes, the other is refused");
+      assert.equal(both.find((r) => r.status === "rejected").reason.code, "last-owner");
+      assert.equal((await db.listMembers(p4.id)).filter((m) => m.role === "owner").length, 1);
+      await db.addMember(p4.id, cy.id, "owner");
+      const demotions = await Promise.allSettled((await db.listMembers(p4.id)).filter((m) => m.role === "owner").map((m) => db.addMember(p4.id, m.userId, "member")));
+      assert.equal(demotions.filter((r) => r.status === "fulfilled").length, 1, "two owners stepping down at once: one stays");
     });
 
     test("access keys: the secret once, only its SHA-256 kept, found while live, listed, revoked", async () => {

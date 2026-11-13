@@ -69,6 +69,8 @@ const unavailable = (error) => (isUnavailable(error) ? Object.assign(new Error(`
  * (over TIMEOUTS), log (for errors of idle connections) }. Returns the repository plus `close()` and `pool()`. The pool
  * is made on first use, so this is synchronous.
  */
+const lastOwner = () => Object.assign(new Error("a project needs an owner: make someone else an owner first"), { code: "last-owner" });
+
 export function pgDb({ connectionString, pool = null, schema = null, now = () => new Date(), max = 5, timeouts = {}, log = (error) => console.error(error) } = {}) {
   const t = { ...TIMEOUTS, ...timeouts };
   let ready = pool ? Promise.resolve(pool) : null;
@@ -96,6 +98,16 @@ export function pgDb({ connectionString, pool = null, schema = null, now = () =>
     }
   };
   const one = async (text, values) => (await q(text, values))[0] ?? null;
+  /**
+   * Inside a transaction: refuse (code "last-owner") to take the owner role from userId when they are the project's
+   * only owner. The project row is locked first, so changes to one project's members run one after another and two
+   * owners removing each other at once cannot leave none.
+   */
+  async function keepsOwner(query, projectId, userId) {
+    await query("select id from projects where id = $1 for update", [projectId]);
+    const [row] = await query("select (select role from project_members where project_id = $1 and user_id = $2) as role, (select count(*)::int from project_members where project_id = $1 and role = 'owner') as owners", [projectId, userId]);
+    if (row?.role === "owner" && row.owners === 1) throw lastOwner();
+  }
   /** fn(query) inside one transaction, rolled back if it throws. */
   async function transaction(fn) {
     let client;
@@ -210,7 +222,10 @@ export function pgDb({ connectionString, pool = null, schema = null, now = () =>
       return (await q("select * from projects order by created_at, id")).map(project);
     },
     async addMember(projectId, userId, role = "member") {
-      return member(await one("insert into project_members (project_id, user_id, role, created_at) values ($1, $2, $3, $4) on conflict (project_id, user_id) do update set role = excluded.role returning *", [projectId, userId, role, stamp()]));
+      return transaction(async (query) => {
+        if (role !== "owner") await keepsOwner(query, projectId, userId);
+        return member((await query("insert into project_members (project_id, user_id, role, created_at) values ($1, $2, $3, $4) on conflict (project_id, user_id) do update set role = excluded.role returning *", [projectId, userId, role, stamp()]))[0]);
+      });
     },
     async getMember(projectId, userId) {
       return member(await one("select * from project_members where project_id = $1 and user_id = $2", [projectId, userId]));
@@ -220,7 +235,10 @@ export function pgDb({ connectionString, pool = null, schema = null, now = () =>
       return rows.map((r) => ({ ...member(r), email: r.email, name: r.name }));
     },
     async removeMember(projectId, userId) {
-      return (await q("delete from project_members where project_id = $1 and user_id = $2 returning user_id", [projectId, userId])).length > 0;
+      return transaction(async (query) => {
+        await keepsOwner(query, projectId, userId);
+        return (await query("delete from project_members where project_id = $1 and user_id = $2 returning user_id", [projectId, userId])).length > 0;
+      });
     },
     async listUserProjects(userId) {
       const rows = await q("select p.*, m.role from projects p join project_members m on m.project_id = p.id where m.user_id = $1 order by p.name, p.slug", [userId]);
