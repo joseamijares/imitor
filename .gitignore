@@ -9,3 +9,4 @@ preview/
 demo/site/
 site/dist/
 .claude/worktrees/
+cloud/.build/

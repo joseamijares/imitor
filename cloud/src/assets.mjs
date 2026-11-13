@@ -1,12 +1,15 @@
 // The files the cloud serves from this repository rather than from storage: the review interface (src/app/) and the
-// design tokens, read from the repository once. On Vercel the function bundle carries them (includeFiles in the root
-// vercel.json).
+// design tokens, read once. On Vercel they come from cloud/.build/assets.json, which the build writes
+// (scripts/pack-assets.mjs) and the function bundle carries (includeFiles in the root vercel.json): Vercel compiles
+// bundled .js files to CommonJS, which browsers cannot run, so src/app/ itself is not shipped. Elsewhere they are read
+// from the repository.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 export const SOURCES = { app: path.join(ROOT, "src", "app"), tokens: path.join(ROOT, "design", "tokens.css") };
+export const PACK = path.join(ROOT, "cloud", ".build", "assets.json");
 
 export const TYPES = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
@@ -25,7 +28,14 @@ export function readAssets() {
   return { app, tokens: fs.readFileSync(SOURCES.tokens, "utf8") };
 }
 
+/** The same, from a pack written by scripts/pack-assets.mjs. */
+export function readPack(file = PACK) {
+  const pack = JSON.parse(fs.readFileSync(file, "utf8"));
+  return { app: new Map(Object.entries(pack.app).map(([rel, b64]) => [rel, Buffer.from(b64, "base64")])), tokens: pack.tokens };
+}
+
 let cached = null;
+/** On Vercel the pack (its bundle has no src/app/); anywhere else the repository's files, so a stale pack never hides an edit. */
 export async function loadAssets() {
-  return (cached ||= readAssets());
+  return (cached ||= process.env.VERCEL && fs.existsSync(PACK) ? readPack() : readAssets());
 }
