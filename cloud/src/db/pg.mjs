@@ -341,6 +341,15 @@ export function pgDb({ connectionString, pool = null, schema = null, now = () =>
       const rows = await q("select * from audit_log order by id");
       return rows.map((r) => ({ id: Number(r.id), at: iso(r.at), projectId: r.project_id, userId: r.user_id, keyId: r.key_id, action: r.action, detail: r.detail }));
     },
+
+    // ---------- waitlist ----------
+    async addWaitlist(email) {
+      const rows = await q("insert into waitlist (email, created_at) values ($1, $2) on conflict (email) do nothing returning email", [email.toLowerCase(), stamp()]);
+      return { added: rows.length > 0 };
+    },
+    async listWaitlist() {
+      return (await q("select email, created_at from waitlist order by created_at, email")).map((r) => ({ email: r.email, createdAt: iso(r.created_at) }));
+    },
   };
   return db;
 }
