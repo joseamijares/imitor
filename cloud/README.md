@@ -88,6 +88,9 @@ For people (a session cookie):
 | `IMITOR_ALLOWED_EMAILS` | Comma-separated addresses that may sign in the first time (compared lowercased). An address an owner adds to a project (Settings, Members) before its person ever signed in may sign in too (`users.invited_at`): the owner's invitation stands in for this list, so any owner can admit people, with no cap. Removing someone from a project does not stop them signing in; an account turned off (`users.allowed = false`) cannot be added back by an owner. After someone's first sign-in their Google account decides, so removing an address does not lock its person out; to do that, set `users.allowed` to false (their sessions end at their next request). |
 | `IMITOR_ADMIN_TOKEN` | For a private instance without Google: at least 32 characters (`openssl rand -base64 32`). Turns on `/login/token`, which signs in an admin user (`IMITOR_ADMIN_EMAIL`, default `admin`). Anyone with the token is that admin; leave it unset where Google sign-in is configured. |
 | `CRON_SECRET` | At least 32 characters. Turns on the retention call and is its bearer token (Vercel Cron sends it). |
+| `RESEND_API_KEY` | Turns on transactional email, sent through [Resend](https://resend.com)'s HTTP API (no SDK). Without it, mail is off and nothing is sent. Needs `MAIL_FROM` (both or neither) and `PUBLIC_URL`, since every message links to it. Nothing sends mail yet: the module is in place (`src/mail/`), and no route calls it. |
+| `MAIL_FROM` | The sender, e.g. `Imitor Cloud <hello@jamaklab.com>`. Its domain must be verified in Resend, or Resend refuses every message. |
+| `MAIL_REPLY_TO` | Optional: where replies go, when not to `MAIL_FROM`. |
 | `MIN_CLI_VERSION` | Oldest `imitor` accepted, e.g. `0.1.0`. |
 | `PORT`, `HOST` | For `server.mjs`: `8787` and `127.0.0.1` by default. |
 
@@ -265,6 +268,8 @@ cloud/
   src/auth/session.mjs    session cookies and the Origin check
   src/pages.mjs           sign-in, projects and notice pages (no script)
   src/http.mjs            responses, bounded bodies, cookies, security headers
+  src/email.mjs           what counts as an email address (the members form and mail agree on it)
+  src/mail/               transactional email: Resend on fetch (no SDK), the message templates, notify(); off without RESEND_API_KEY
   src/assets.mjs          the interface (../src/app) and design tokens, read from the repository
   src/server.mjs          node:http adapter and the environment; memory adapters unless the environment says otherwise
   src/vercel.mjs          the Vercel functions (root api/ shims), with their production and host guards

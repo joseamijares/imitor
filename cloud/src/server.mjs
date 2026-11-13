@@ -10,6 +10,7 @@ import { isLocalHttp } from "./auth/session.mjs";
 import { memoryDb } from "./db/memory.mjs";
 import { pgDb } from "./db/pg.mjs";
 import { fail, randomToken, secure } from "./http.mjs";
+import { mailFromEnv } from "./mail/index.mjs";
 import { memoryStorage, STORAGE_PATH } from "./storage/memory.mjs";
 import { blobFromEnv } from "./storage/blob.mjs";
 import { s3FromEnv } from "./storage/s3.mjs";
@@ -110,6 +111,7 @@ export function depsFromEnv(env = process.env, { poolMax = 5 } = {}) {
     if (!publicUrl) throw new Error("Google sign-in needs PUBLIC_URL: the redirect URI registered with Google is PUBLIC_URL/auth/google/callback.");
     oidc = oidcClient({ clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET, redirectUri: `${publicUrl}/auth/google/callback` });
   }
+  const mail = mailFromEnv(env);
   for (const name of ["IMITOR_ADMIN_TOKEN", "CRON_SECRET"]) {
     if (env[name] && env[name].length < MIN_SECRET_LENGTH) throw new Error(`${name} must be at least ${MIN_SECRET_LENGTH} characters (for example: openssl rand -base64 32).`);
   }
@@ -124,6 +126,7 @@ export function depsFromEnv(env = process.env, { poolMax = 5 } = {}) {
     adminToken: env.IMITOR_ADMIN_TOKEN || null,
     adminEmail: env.IMITOR_ADMIN_EMAIL || null,
     cronSecret: env.CRON_SECRET || null,
+    mail,
     log: (error) => console.error(error),
   };
 }

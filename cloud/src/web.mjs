@@ -18,6 +18,7 @@ import { markIndex } from "../../src/app-index.mjs";
 import { loadAssets, typeOf } from "./assets.mjs";
 import { OidcError } from "./auth/oidc.mjs";
 import { cookieNames, currentUser, endSession, sameOrigin, startSession, clearSessionCookie } from "./auth/session.mjs";
+import { EMAIL } from "./email.mjs";
 import { cookie, cookies, fail, json, page, randomToken, readFields, redirect, safeEqual } from "./http.mjs";
 import { HOME, inviteOnlyPage, loginPage, noticePage, PAGE_CSS, projectsPage, tokenPage } from "./pages.mjs";
 import { problemRun, readRoute } from "./read.mjs";
@@ -334,8 +335,6 @@ async function projectApi(request, deps, user, project, member, route) {
 
 // ---------- members ----------
 
-// ASCII only, so lowercasing here and lower() in Postgres agree on what one address is.
-const EMAIL = /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/;
 const publicMember = (m, me) => ({ userId: m.userId, email: m.email, name: m.name, role: m.role, since: m.createdAt, you: m.userId === me.id });
 
 /**

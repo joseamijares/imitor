@@ -5,6 +5,7 @@ import http from "node:http";
 import { handle } from "../src/api.mjs";
 import { oidcClient } from "../src/auth/oidc.mjs";
 import { memoryDb } from "../src/db/memory.mjs";
+import { recordingMail } from "../src/mail/transport.mjs";
 import { memoryStorage } from "../src/storage/memory.mjs";
 
 export const PUBLIC_URL = "https://cloud.example";
@@ -90,7 +91,7 @@ export function clock(start = "2026-11-12T10:00:00.000Z") {
   return now;
 }
 
-/** The cloud with memory adapters. opts: { provider, allowed, adminToken, cronSecret }. */
+/** The cloud with memory adapters and recorded mail. opts: { provider, allowed, adminToken, cronSecret }. */
 export function cloud({ provider = null, allowed = ["ada@example.com"], adminToken = null, cronSecret = null, now = clock() } = {}) {
   const db = memoryDb({ now });
   const storage = memoryStorage({ baseUrl: "https://storage.example", now: () => now().getTime() });
@@ -99,8 +100,10 @@ export function cloud({ provider = null, allowed = ["ada@example.com"], adminTok
     discoveryUrl: `${provider.issuer}/.well-known/openid-configuration`, issuers: [provider.issuer], now,
   });
   const logged = [];
-  const deps = { db, storage, publicUrl: PUBLIC_URL, oidc, allowedEmails: new Set(allowed), adminToken, cronSecret, now, log: (e) => logged.push(e) };
-  return { db, storage, deps, now, logged };
+  // Mail is on and recorded (mail.transport.sent), so a test can see what would have been sent.
+  const mail = { transport: recordingMail(), from: "Imitor Cloud <cloud@example.com>", replyTo: null };
+  const deps = { db, storage, publicUrl: PUBLIC_URL, oidc, allowedEmails: new Set(allowed), adminToken, cronSecret, now, mail, log: (e) => logged.push(e) };
+  return { db, storage, deps, now, logged, mail };
 }
 
 /**
