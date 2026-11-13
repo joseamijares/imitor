@@ -37,5 +37,11 @@ export function readPack(file = PACK) {
 let cached = null;
 /** On Vercel the pack (its bundle has no src/app/); anywhere else the repository's files, so a stale pack never hides an edit. */
 export async function loadAssets() {
-  return (cached ||= process.env.VERCEL && fs.existsSync(PACK) ? readPack() : readAssets());
+  if (cached) return cached;
+  if (process.env.VERCEL) {
+    // The bundle has no src/app/ (excludeFiles); without the pack there is nothing right to serve.
+    if (!fs.existsSync(PACK)) throw new Error(`the interface pack ${PACK} is missing: the build must run cloud/scripts/pack-assets.mjs`);
+    return (cached = readPack());
+  }
+  return (cached = readAssets());
 }

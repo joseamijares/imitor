@@ -92,6 +92,9 @@ test("every module of src/ the functions reach, and every file they read, is in 
     if (fs.statSync(path.join(ROOT, rel)).isFile()) assert.ok(!included(rel), `${rel} must reach the function through the pack, not as a file`);
   }
   assert.match(v.buildCommand, /node cloud\/scripts\/pack-assets\.mjs/, "the build writes the pack");
+  // File tracing would still pull src/app/ in (assets.mjs reads that folder outside Vercel), compiled; excluding it
+  // means a missing pack fails loudly instead of serving compiled files.
+  assert.equal(v.functions["api/*.mjs"].excludeFiles, "src/app/**");
 });
 
 test("the asset pack holds exactly the interface's files and the tokens, byte for byte", () => {
