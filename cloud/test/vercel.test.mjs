@@ -20,7 +20,7 @@ const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 /** A request as Vercel hands it to /api/cloud after the root vercel.json's rewrite. */
 const rewritten = (path, { host = "app.imitor.dev", method = "GET", headers = {}, body } = {}) => {
   const [p, q = ""] = path.split("?");
-  return new Request(`https://${host}/api/cloud?__imitor_path=${encodeURIComponent(p)}${q ? `&${q}` : ""}`, { method, headers: { "x-forwarded-host": host, ...headers }, body });
+  return new Request(`https://${host}/api/cloud/?__imitor_path=${encodeURIComponent(p)}${q ? `&${q}` : ""}`, { method, headers: { "x-forwarded-host": host, ...headers }, body });
 };
 
 function setup(env = ENV) {

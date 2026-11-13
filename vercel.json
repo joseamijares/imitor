@@ -23,7 +23,7 @@
     }
   ],
   "rewrites": [
-    { "source": "/:first(p|v1|login|logout|auth|projects|static)/:rest*", "has": [{ "type": "host", "value": "app.imitor.dev" }], "destination": "/api/cloud?__imitor_path=/:first/:rest*" },
+    { "source": "/:first(p|v1|login|logout|auth|projects|static)/:rest*", "has": [{ "type": "host", "value": "app.imitor.dev" }], "destination": "/api/cloud/?__imitor_path=/:first/:rest*" },
     { "source": "/demo/((?!api/|files/|assets/)[^.]*)", "destination": "/demo/index.html" }
   ],
   "crons": [{ "path": "/api/cron-retention/", "schedule": "17 4 * * *" }]
