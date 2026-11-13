@@ -4,10 +4,11 @@ A place for finished Imitor runs, so a team can look at the screens an agent or 
 made them. Agents and CI upload a run with `npx imitor push`; people sign in with Google and read it in the same
 interface `imitor app` shows locally.
 
-**Status: in development, not hosted anywhere yet.** What exists: the upload API, Google sign-in with an allowlist,
-projects and upload keys for people, the review interface in cloud mode, Postgres and S3-compatible storage, a Node
-server for self-hosting and a Vercel adapter. None of it has run against a real Google client, bucket or Vercel
-deployment yet (see [Not verified yet](#not-verified-yet)).
+**Status: in development, hosted at [app.imitor.dev](https://app.imitor.dev), invite-only.** Only addresses on its
+allowlist can sign in. What exists: the upload API, Google sign-in with an allowlist, projects and upload keys for
+people, the review interface in cloud mode, Postgres and S3-compatible storage, a Node server for self-hosting and a
+Vercel adapter. The Vercel deployment with Neon Postgres, Vercel Blob and a real Google client has signed people in and
+received a pushed run; what has not been seen yet is listed under [Not verified yet](#not-verified-yet).
 
 ## What it is, and what it will not do
 
@@ -222,21 +223,31 @@ Everything but Google lives in the Vercel project. In this order; nothing here n
    the message arrives with a link to the project, and the audit log has a `mail.send` row.
 8. **The next morning**, open the project's Cron Jobs logs and confirm the retention job answered 200.
 
+### Seen in production
+
+On app.imitor.dev (Vercel, Neon Postgres, Vercel Blob, a Google client in Testing):
+
+- The production build applies the migrations and sets the role's statement timeout.
+- `verify-deploy` passes without `CRON_SECRET`: the site, the host-scoped redirects and rewrites, path recovery,
+  `/projects/` sending a stranger to sign in, the sign-in page's CSP, `POST /v1/runs` without a key answered with a
+  JSON 401 after the trailing-slash redirect, and the retention route refusing a call without the secret.
+- Google sign-in completes, and a signed-in owner can make a project and an access key; the interface loads from the
+  packed assets.
+- `imitor push` uploaded a run: Blob accepted the presigned uploads, `complete` passed the checksum check, and the run
+  opens with its screenshots loading through the five-minute storage links.
+
 ### Not verified yet
 
-Nothing here has run on Vercel, against a real Google client or real storage (the Blob store exists but is empty). Before relying on it, check on a
-first deployment: that the rewrites reach `/api/cloud` with `?__imitor_path=` (the function also accepts the original
-URL if the runtime shows that instead), that `trailingSlash` answers `POST /v1/runs` with a 308 that `imitor push`
-follows (or no redirect at all), that `/` on the app host redirects to `/projects/` and `/projects/` shows the projects
-page, that `includeFiles` bundles the interface, that Vercel Cron's call carries `Authorization: Bearer <CRON_SECRET>`,
-and that sign-in completes against Google. After the first night, open the project's Cron Jobs logs and confirm the
-04:17 UTC call to `/api/cron-retention/` answered 200 (not 308 or 401).
-
-The Vercel Blob adapter is tested against a fake of the SDK only. On the first push, check that Blob accepts the
-presigned PUT with the headers the adapter hands out (they copy what Vercel's own client sends), that it stores the
-declared content type, and how long `complete` takes: it reads every file of the run once to hash it, so a run near
-the 300 MB limit may need more than the 60 s `maxDuration` in `vercel.json` (then: record each verified file, so a retry
-does not hash it again).
+- The retention job on Vercel Cron: that its call carries `Authorization: Bearer <CRON_SECRET>`, and that the 04:17 UTC
+  call to `/api/cron-retention/` answers 200 (not 308 or 401). Check the project's Cron Jobs logs after the first night,
+  or run `verify-deploy` once with `CRON_SECRET` set.
+- That Blob stores the declared content type: the screenshots load, but a browser shows an image whatever its type
+  says. A video in a run is the better test.
+- How long `complete` takes on a large run: it reads every file of the run once to hash it, so a run near the 300 MB
+  limit may need more than the 60 s `maxDuration` in `vercel.json` (then: record each verified file, so a retry does not
+  hash it again).
+- A pull request from a fork, or a CI job, pushing to the hosted instance (the first push came from a person's machine).
+- Publishing the Google consent screen. It stays in Testing, so every allowlisted address must also be a test user.
 
 ## Security notes
 

@@ -19,7 +19,7 @@ const SHOTS = ["welcome", "your-space", "add-plant", "plant-details", "schedule"
 // The README sections each documentation page is made of, in order.
 export const PAGES = {
   "how-to-use": { title: "How to use", description: "Set up Imitor in a React Native / Expo app: install, wrap Metro, describe flows, start them from a state or a test account, choose stand-ins, review and publish a run, and gate native builds.",
-    sections: ["What you get", "Set up", "Flow steps", "Start a flow from a state", "Sign in with a test account", "Stand-ins", "The app", "Publish a run", "Gate your native builds", "Use Imitor Cloud (in development, not hosted yet)", "What it does not show"] },
+    sections: ["What you get", "Set up", "Flow steps", "Start a flow from a state", "Sign in with a test account", "Stand-ins", "The app", "Publish a run", "Gate your native builds", "Use Imitor Cloud (in development, invite-only)", "What it does not show"] },
   agents: { title: "For agents", description: "Connect Imitor to Claude Code, Cursor, Codex or any MCP client: the command, the eight tools, and the same operations as JSON commands for CI.",
     sections: ["For agents"] },
 };
