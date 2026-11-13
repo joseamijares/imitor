@@ -1,7 +1,8 @@
-// The messages the cloud sends, as pure functions of what they say: { subject, text, html, tags }. Names come from
-// people (project names, Google profile names), so the subject is kept to one line (a CR or LF there would let a name
-// add headers) and every value in the HTML goes through esc(). The HTML is small, inline-styled, with no images or
-// remote assets and exactly one link; the text part says the same and is always sent.
+// The messages the cloud sends, as pure functions of what they say: { subject, text, html, tags, headers? }. Names come
+// from people (project names, Google profile names, run titles, flow names), so the subject is kept to one line (a CR
+// or LF there would let a name add headers) and every value in the HTML goes through esc(). The HTML is small,
+// inline-styled, with no images or remote assets and exactly one link (run emails: the run, and the unsubscribe link);
+// the text part says the same and is always sent.
 import { esc } from "../http.mjs";
 
 const NAME_MAX = 80;
@@ -82,4 +83,42 @@ export function accessKey({ project, actor, keyName, revoked = false, url }) {
 </body></html>
 `;
   return { subject, text, html, tags: [{ name: "kind", value: "accessKey" }] };
+}
+
+/** At most this many problem titles are named in a run email; the rest are counted. */
+export const RUN_TITLES = 3;
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+/**
+ * A run uploaded to the project has problems; the recipient is a member who has not turned these emails off. args:
+ * { project: { name }, run: { title, branch, commit } (run.json's), count (its problems, as the run's Problems tab
+ * counts them), titles (their titles, as the interface shows them; at most RUN_TITLES are named), url (the run),
+ * unsubscribeUrl (turns these emails off for this membership, with no sign-in) }. Only what a member sees in the
+ * interface is named: never a problem's message, which is the page's own text.
+ */
+export function runProblems({ project, run = {}, count, titles = [], url, unsubscribeUrl }) {
+  const name = oneLine(project?.name) || "a project";
+  const title = oneLine(run?.title);
+  const branch = oneLine(run?.branch);
+  const commit = oneLine(run?.commit).slice(0, 12);
+  const which = title || branch;
+  const n = Math.max(1, Number(count) || 0);
+  const subject = `${plural(n, "problem")} in ${which ? `"${short(which)}"` : "a run"} of "${short(name)}" on Imitor Cloud`;
+  const what = `A run of the project "${name}" on Imitor Cloud has ${plural(n, "problem")}.`;
+  const about = [title && `Run: ${title}`, branch && `Branch: ${branch}`, commit && `Commit: ${commit}`].filter(Boolean);
+  const named = [...new Set(titles.map(short).filter(Boolean))].slice(0, RUN_TITLES);
+  const list = named.length ? [...named, ...(n > named.length ? [`and ${n - named.length} more`] : [])] : [];
+  const next = "See the run:";
+  const why = "You get this because you are a member of this project. Stop these emails:";
+  const text = `${[what, about.join("\n"), list.map((t) => `- ${t}`).join("\n"), next].filter(Boolean).join("\n\n")}\n${url}\n\n${why} ${unsubscribeUrl}\n`;
+  const html = `<!doctype html>
+<html><body style="${STYLE.body}">
+<p style="${STYLE.p}">${esc(what)}</p>
+${about.length ? `<p style="${STYLE.p}">${about.map(esc).join("<br>")}</p>\n` : ""}${list.length ? `<p style="${STYLE.p}">${list.map((t) => `• ${esc(t)}`).join("<br>")}</p>\n` : ""}<p style="${STYLE.p}">${esc(next)}<br><a href="${esc(url)}" style="${STYLE.link}">${esc(url)}</a></p>
+<p style="${STYLE.small}">${esc(why)} <a href="${esc(unsubscribeUrl)}" style="color:#666666">${esc(unsubscribeUrl)}</a></p>
+</body></html>
+`;
+  // RFC 8058 one-click: a mail client offers "Unsubscribe" and POSTs List-Unsubscribe=One-Click to the URL itself.
+  const headers = { "List-Unsubscribe": `<${unsubscribeUrl}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" };
+  return { subject, text, html, tags: [{ name: "kind", value: "runProblems" }], headers };
 }

@@ -82,9 +82,13 @@ export const api = {
   agents: () => request("GET", "/api/agents").then((d) => (isStatic ? { ...d, connections: (d.connections || []).map((c) => ({ ...c, active: false })) } : d)),
 };
 
-/** Imitor Cloud only: the signed-in person and the project's upload keys. */
+/** Imitor Cloud only: the signed-in person, the project's upload keys and members, and the person's email settings. */
 export const cloud = {
   me: () => request("GET", "/api/me"),
+  // { runProblems, available }: whether you are emailed when a run of this project has problems, and whether this
+  // server could email you at all (it sends mail, and you have signed in with Google).
+  notifications: () => request("GET", "/api/notifications"),
+  setRunMail: (on) => request("POST", "/api/notifications", { runProblems: on }),
   keys: () => request("GET", "/api/keys"),
   createKey: (name) => request("POST", "/api/keys", { name }),
   revokeKey: (id) => request("POST", `/api/keys/${encodeURIComponent(id)}/revoke`, {}),

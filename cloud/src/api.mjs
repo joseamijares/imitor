@@ -9,13 +9,17 @@
 //
 // deps: { db, storage, publicUrl, minCliVersion, allowUnverified, now, log, oidc, allowedEmails, adminToken,
 //   adminEmail, cronSecret, mail }; mail is { transport, from, replyTo } from mail/index.mjs (off without RESEND_API_KEY;
-//   web.mjs emails someone an owner adds to a project, and a project's other owners when an owner makes or revokes a key)
+//   web.mjs emails someone an owner adds to a project, and a project's other owners when an owner makes or revokes a key;
+//   completing a run with problems here emails the project's members who signed in and did not turn it off, runMail)
 import { redact } from "../../src/redact.mjs";
 import { checkUpload, MAX_BODY_BYTES } from "../../src/upload.mjs";
+import { EMAIL } from "./email.mjs";
 import { fail, json, readText, safeEqual, secure } from "./http.mjs";
 import { newId } from "./ids.mjs";
 import { mapLimit } from "./limit.mjs";
+import { notify } from "./mail/index.mjs";
 import { noticePage } from "./pages.mjs";
+import { runFailures } from "./read.mjs";
 import { handleWeb } from "./web.mjs";
 
 export { MAX_BODY_BYTES };
@@ -217,9 +221,58 @@ async function completeRun(deps, key, id) {
     }
     await db.updateRun(run.id, { status: "ready", completedAt: nowOf(deps).toISOString() });
     await db.addAudit({ projectId: key.projectId, keyId: key.id, action: "run.complete", detail: { runId: run.id } });
+    await runMail(deps, run); // only here, where the run became ready: completing it again tells nobody twice
   }
   await prune(deps, key.projectId, key.id);
   return json(200, { id: run.id, status: "ready", url: await runUrl(deps, run) });
+}
+
+/**
+ * At most this many members are emailed about one run, owners first, then by address (listMembers' order). They are
+ * sent all at once, so the push waits for one message, not one after another, and Resend's default rate limit is 10
+ * requests a second for the whole account.
+ */
+export const RUN_MAIL_MAX = 10;
+
+/**
+ * Email the project's members that `run`, just completed, has problems: only when it has any (as its Problems tab
+ * counts them), only members who have signed in at least once (an address an owner added but whose person never came
+ * is not written to again and again), and only those who did not turn these emails off for this project. A key
+ * completed it, so no person sends them: notify() caps them per address (CAPS.runProblems). Each message carries the
+ * member's unsubscribe link, in the text and as List-Unsubscribe. Never throws and never changes the push's answer;
+ * the push waits at most for the slowest message (the transport gives up after 5 s), and with mail off for nothing.
+ */
+async function runMail(deps, run) {
+  const log = (error) => {
+    try {
+      deps.log?.(error);
+    } catch {}
+  };
+  try {
+    if (!deps.mail?.transport || deps.mail.transport.off) return;
+    const problems = runFailures(run);
+    if (!problems.length) return;
+    const project = await deps.db.getProject(run.projectId);
+    const members = (await deps.db.listMembers(project.id)).filter((m) => m.signedIn && m.notifyRuns && m.email.length <= 254 && EMAIL.test(m.email));
+    if (!members.length) return;
+    const base = String(deps.publicUrl || "").replace(/\/+$/, "");
+    // Signing in lands on the run: /login passes `next` through Google and back (and straight on when signed in).
+    const url = `${base}/login?next=${encodeURIComponent(`/p/${project.slug}/runs/${run.id}`)}`;
+    const titles = problems.map((p) => p.title);
+    await Promise.all(members.slice(0, RUN_MAIL_MAX).map(async (m) => {
+      try {
+        const token = await deps.db.runMailToken(project.id, m.userId);
+        if (!token) return; // left the project a moment ago
+        // The trailing slash is the path as Vercel serves it (trailingSlash), so a mail client's POST is not redirected.
+        const unsubscribeUrl = `${base}/unsubscribe/?t=${token}`;
+        await notify(deps, "runProblems", { to: m.email, project, run: run.run, count: problems.length, titles, url, unsubscribeUrl, key: `run-problems/${run.id}/${m.userId}` });
+      } catch (error) {
+        log(error);
+      }
+    }));
+  } catch (error) {
+    log(error);
+  }
 }
 
 /**

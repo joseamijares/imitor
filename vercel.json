@@ -16,14 +16,14 @@
       "permanent": false
     },
     {
-      "source": "/((?!p/|v1/|login|logout|auth/|projects|static/|api/).+)",
+      "source": "/((?!p/|v1/|login|logout|auth/|projects|static/|unsubscribe|api/).+)",
       "has": [{ "type": "host", "value": "app.imitor.dev" }],
       "destination": "https://imitor.dev/$1",
       "permanent": false
     }
   ],
   "rewrites": [
-    { "source": "/(p|v1|login|logout|auth|projects|static)(/.*)?", "has": [{ "type": "host", "value": "app.imitor.dev" }], "destination": "/api/cloud/?__imitor_path=/$1$2" },
+    { "source": "/(p|v1|login|logout|auth|projects|static|unsubscribe)(/.*)?", "has": [{ "type": "host", "value": "app.imitor.dev" }], "destination": "/api/cloud/?__imitor_path=/$1$2" },
     { "source": "/demo/((?!api/|files/|assets/)[^.]*)", "destination": "/demo/index.html" }
   ],
   "crons": [{ "path": "/api/cron-retention/", "schedule": "17 4 * * *" }]

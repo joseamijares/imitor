@@ -16,7 +16,10 @@ database. A method that would break a unique rule throws an error with `code: "c
 - **Session** `{ idHash, userId, createdAt, expiresAt }`. `idHash` is the SHA-256 of the cookie value; the value itself
   is never stored.
 - **Project** `{ id, name, slug, createdAt }`. `slug` is unique and addresses the project in URLs (`/p/<slug>/`).
-- **Member** `{ projectId, userId, role: "owner" | "member", createdAt }`
+- **Member** `{ projectId, userId, role: "owner" | "member", notifyRuns, createdAt }`. `notifyRuns` (true unless the
+  member turned it off) says whether they are emailed when a run of the project has problems. A membership also has an
+  unsubscribe token for those emails, which is never part of a Member (see `runMailToken`). Both belong to the
+  membership: removing someone and adding them again starts from `notifyRuns: true` and a new token.
 - **AccessKey** `{ id, projectId, name, prefix, secretSha256, createdAt, lastUsedAt, revokedAt, expiresAt }`.
   `expiresAt` null means it never expires. The secret itself is never stored.
 - **Run** `{ id, projectId, clientRunId, schemaVersion, status: "uploading" | "ready", run, manifest, files, keyId,
@@ -52,8 +55,11 @@ database. A method that would break a unique rule throws an error with `code: "c
 | `listProjects` | none | every Project, oldest first (for retention) |
 | `addMember` | `projectId, userId, role = "member"` | Member; a second call changes the role. Refuses (code `last-owner`) to make the project's only owner a member; checked and changed atomically. |
 | `getMember` | `projectId, userId` | Member, or null |
-| `listMembers` | `projectId` | the project's Members, each with the user's `email` and `name`; owners first, then by address (any case) |
+| `listMembers` | `projectId` | the project's Members, each with the user's `email` and `name`, and `signedIn`: whether the user has an Identity (has signed in with Google at least once); owners first, then by address (any case) |
 | `removeMember` | `projectId, userId` | true if there was such a member. Refuses (code `last-owner`) to remove the project's only owner; checked and changed atomically, so concurrent removals cannot leave a project without one. |
+| `setRunMail` | `projectId, userId, on` | the updated Member with `notifyRuns` set to `on`, or null for no such member |
+| `runMailToken` | `projectId, userId` | the membership's unsubscribe token (43 random base64url characters), made on the first call and the same on every later one, also when two calls race; null for no such member |
+| `findRunMailToken` | `token` | the Member whose unsubscribe token it is, or null |
 | `listUserProjects` | `userId` | the user's Projects, each with its `role`, by name, then slug |
 | `createAccessKey` | `projectId, { name = "default", expiresAt = null }` | AccessKey plus `secret` (`imk_...`), the only time it is returned. Throws for an unknown project. |
 | `findAccessKey` | `secret` | the AccessKey whose `secretSha256` is the secret's SHA-256, if it is not revoked and not expired, else null. Sets `lastUsedAt`. |
@@ -98,9 +104,9 @@ database. A method that would break a unique rule throws an error with `code: "c
 
 | Method | Arguments | Returns |
 | --- | --- | --- |
-| `addAudit` | `{ projectId = null, userId = null, keyId = null, action, detail = {} }` | nothing; `at` is now. `detail` shapes are listed above `audit_log` in the schema and in the migrations that add actions (the mail module's in `006_mail.sql`). |
+| `addAudit` | `{ projectId = null, userId = null, keyId = null, action, detail = {} }` | nothing; `at` is now. `detail` shapes are listed above `audit_log` in the schema and in the migrations that add actions (the mail module's in `006_mail.sql`, run emails' in `007_run_mail.sql`). |
 | `listAudit` | none | entries `{ id, at, projectId, userId, keyId, action, detail }`, oldest first |
-| `countAudit` | `{ action, since, userId = null, detail = {} }` | how many entries of that action have `at >= since` (ISO time), by that user when `userId` is given (any user, or none, when it is null), and whose `detail` has each given field equal to the given value as a string (`{ to: "a@example.com" }`). Field names are letters only; another name throws. |
+| `countAudit` | `{ action, since, userId = null, projectId = null, detail = {} }` | how many entries of that action have `at >= since` (ISO time), by that user when `userId` is given (any user, or none, when it is null), of that project when `projectId` is given (likewise), and whose `detail` has each given field equal to the given value as a string (`{ to: "a@example.com" }`). Field names are letters only; another name throws. |
 
 ## Waitlist
 

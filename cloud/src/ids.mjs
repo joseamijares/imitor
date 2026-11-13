@@ -9,6 +9,10 @@ export const newId = (kind) => `${kind}_${crypto.randomBytes(10).toString("hex")
 /** A new upload key secret. It is shown once; only hashSecret(secret) is stored. */
 export const newSecret = () => KEY_PREFIX + crypto.randomBytes(32).toString("base64url");
 
+/** A random secret for a link (an unsubscribe link): 32 random bytes, base64url, 43 characters. */
+export const newToken = () => crypto.randomBytes(32).toString("base64url");
+export const TOKEN = /^[A-Za-z0-9_-]{43}$/;
+
 export const hashSecret = (secret) => crypto.createHash("sha256").update(String(secret)).digest("hex");
 
 /** "Fernwood App!" -> "fernwood-app". At most 40 characters; "project" when nothing is left. */

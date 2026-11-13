@@ -2,9 +2,9 @@
 // appearance. There is no settings API: the preview configuration lives in imitor.config.json.
 // In Imitor Cloud the project is what its newest run says, and three more sections appear: the project's upload keys
 // (made, listed and revoked here; a new key is shown once), its members (added by address and removed by owners) and
-// the signed-in account.
+// the signed-in account, with whether they are emailed about runs with problems (when this server can email them).
 import { api, cloud, CLOUD_PAGES, isCloud, isStatic } from "../api.js";
-import { html, seg, pill, chip, button, codeBlock, skeletonRows, errorState } from "../components.js";
+import { html, seg, pill, chip, button, codeBlock, skeletonRows, errorState, switchEl } from "../components.js";
 import { ago, deviceName, schemeName, humanize, plural } from "../format.js";
 import { pageHeader } from "./common.js";
 
@@ -152,7 +152,7 @@ function cloudSections() {
 
       <section id="members" class="set-section" aria-labelledby="members-h">
         <h2 id="members-h">Members</h2>
-        <p class="set-note">Everyone here sees this project’s runs. Owners also make keys and add or remove people. Add someone by the address of their Google account: they sign in with it, even if they have never signed in before. When this server sends email, they are also emailed a link to the project. Adding someone already here changes their role. A project always keeps an owner, so its only owner cannot leave until they make someone else an owner.</p>
+        <p class="set-note">Everyone here sees this project’s runs. Owners also make keys and add or remove people. Add someone by the address of their Google account: they sign in with it, even if they have never signed in before. When this server sends email, they are also emailed a link to the project, and once they have signed in, an email each time a run with problems is uploaded; everyone can turn that off for themselves under Account. Adding someone already here changes their role. A project always keeps an owner, so its only owner cannot leave until they make someone else an owner.</p>
         <div data-members>${skeletonRows(2)}</div>
       </section>
 
@@ -248,14 +248,32 @@ async function mountCloud(ctx, main) {
   const box = main.querySelector("[data-keys]");
   const account = main.querySelector("[data-account]");
 
-  cloud.me().then((me) => {
+  // The email switch only when this server could email you; a server too old to answer just has no switch.
+  Promise.all([cloud.me(), cloud.notifications().catch(() => null)]).then(([me, mail]) => {
     if (!ctx.isCurrent()) return;
     account.innerHTML = String(html`<div class="set-row"><div class="set-label"><span>Signed in as</span>${me.user.name && me.user.name !== me.user.email ? html`<span class="set-sub">${me.user.name}</span>` : ""}</div><div class="set-value"><span class="mono t2">${me.user.email}</span></div></div>
       <div class="set-row"><div class="set-label"><span>Your role</span><span class="set-sub">Owners make keys and add people</span></div><div class="set-value">${pill(me.project.role === "owner" ? "Owner" : "Member")}</div></div>
+      ${mail?.available ? html`<div class="set-row"><div class="set-label"><span>Email me when a run has problems</span><span class="set-sub">As soon as a run with problems is uploaded to this project. Each project has its own setting.</span></div><div class="set-value">${switchEl(mail.runProblems, "Email me when a run has problems", "data-run-mail")}</div></div>` : ""}
       <div class="set-row"><div class="set-label"><span>Sign out</span><span class="set-sub">Everywhere ends your sessions in every browser</span></div>
         <div class="set-value"><form method="post" action="${CLOUD_PAGES.signOut}"><button type="submit" class="btn btn-secondary">Sign out</button></form><form method="post" action="${CLOUD_PAGES.signOutEverywhere}"><button type="submit" class="btn btn-secondary">Sign out everywhere</button></form></div></div>
       <div class="set-row"><div class="set-label"><span>Projects</span><span class="set-sub">Every project you are a member of</span></div><div class="set-value"><a class="btn btn-secondary" href="${CLOUD_PAGES.projects}">All projects</a></div></div>`);
   }, (e) => { if (ctx.isCurrent()) account.innerHTML = String(errorState("the account", e)); });
+  account.addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-run-mail]");
+    if (!b) return;
+    const on = b.getAttribute("aria-checked") !== "true";
+    b.disabled = true;
+    try {
+      const { runProblems } = await cloud.setRunMail(on);
+      if (!ctx.isCurrent()) return;
+      b.setAttribute("aria-checked", String(runProblems));
+      ctx.toast(runProblems ? "You’ll be emailed when a run has problems" : "No more run emails from this project");
+    } catch (err) {
+      ctx.toast(`Couldn’t change your email setting: ${err.message}`);
+    } finally {
+      b.disabled = false;
+    }
+  });
 
   async function load() {
     let data;

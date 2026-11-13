@@ -1,13 +1,14 @@
 // The mail module without the network: Resend's API through a recording fetch (what is sent, what comes back, what
-// happens when it fails or hangs), the templates (escaping, a one-line subject, one link, no key secrets), and notify()
-// (off, no address, sent and audited, failed and audited without throwing, the daily caps per sender and per address,
-// each kind on its own).
+// happens when it fails or hangs, a message's own headers), the templates (escaping, a one-line subject, one link, or
+// for run emails the run and the unsubscribe link, no key secrets), and notify() (off, no address, sent and audited,
+// failed and audited without throwing, the daily caps per sender, per address and per project and address, each kind
+// on its own).
 import assert from "node:assert/strict";
 import test from "node:test";
 import { memoryDb } from "../src/db/memory.mjs";
 import { CAPS, mailFromEnv, notify } from "../src/mail/index.mjs";
-import { accessKey, invitation } from "../src/mail/templates.mjs";
-import { noMail, recordingMail, RESEND_URL, resendTransport } from "../src/mail/transport.mjs";
+import { accessKey, invitation, RUN_TITLES, runProblems } from "../src/mail/templates.mjs";
+import { messageHeaders, noMail, recordingMail, RESEND_URL, resendTransport } from "../src/mail/transport.mjs";
 import { cloud, clock, PUBLIC_URL } from "./helpers.mjs";
 
 const KEY = "re_TestKey_0123456789abcdef";
@@ -329,4 +330,94 @@ test("mailFromEnv: off without RESEND_API_KEY; with it, the fetch given sends, e
   assert.deepEqual(calls[0].body.to, ["grace@example.com"]);
   assert.equal(calls[0].init.headers["Idempotency-Key"], "invite/prj1/u2");
   assert.equal((await db.listAudit())[0].action, "mail.send");
+});
+
+test("resend: a message's own headers go in the body's headers field; names and values that could add headers are left out", async () => {
+  const { fetch, calls } = fakeFetch();
+  const send = (headers) => resendTransport({ apiKey: KEY, fetch }).send({ ...message, headers });
+  await send({ "List-Unsubscribe": "<https://cloud.example/unsubscribe/?t=abc>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" });
+  assert.deepEqual(calls[0].body.headers, { "List-Unsubscribe": "<https://cloud.example/unsubscribe/?t=abc>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" });
+  assert.ok(!("List-Unsubscribe" in calls[0].init.headers), "message headers, not the request's");
+  await send({ "X-Ok": "1", "Bcc\r\nX": "y", "X-Evil": "a\r\nBcc: x@evil.example", "X-Null": null });
+  assert.deepEqual(calls[1].body.headers, { "X-Ok": "1" });
+  await send({ "X-Evil": "a\nb" });
+  await send(undefined);
+  assert.ok(!("headers" in calls[2].body) && !("headers" in calls[3].body), "no field at all when nothing is left");
+  assert.deepEqual(messageHeaders({ A: 1 }), { A: "1" });
+  assert.equal(messageHeaders("List-Unsubscribe: x"), null);
+});
+
+const RUN_URL = `${PUBLIC_URL}/login?next=%2Fp%2Ffernwood%2Fruns%2Frun_1`;
+const UNSUB = `${PUBLIC_URL}/unsubscribe/?t=${"T".repeat(43)}`;
+const problemsMail = (over = {}) => runProblems({ project: { id: "prj1", name: "Fernwood" }, run: { title: "Larger tap targets", branch: "main", commit: "abc1234" }, count: 2, titles: ["checkout failed at step 3", "Page error in checkout"], url: RUN_URL, unsubscribeUrl: UNSUB, ...over });
+
+test("runProblems: the count, the run, its problems' titles, the run link and the unsubscribe link, nothing else", () => {
+  const m = problemsMail();
+  assert.equal(m.subject, '2 problems in "Larger tap targets" of "Fernwood" on Imitor Cloud');
+  assert.match(m.text, /^A run of the project "Fernwood" on Imitor Cloud has 2 problems\.\n\nRun: Larger tap targets\nBranch: main\nCommit: abc1234\n\n- checkout failed at step 3\n- Page error in checkout\n\nSee the run:\n/);
+  assert.ok(m.text.endsWith(`\n\nYou get this because you are a member of this project. Stop these emails: ${UNSUB}\n`));
+  assert.ok(m.text.includes(RUN_URL));
+  assert.deepEqual([...m.html.matchAll(/href="([^"]*)"/g)].map((x) => x[1]), [RUN_URL, UNSUB], "exactly two links");
+  assert.doesNotMatch(m.html, /<img|<script|src=|url\(/i, "no images or remote assets");
+  assert.deepEqual(m.tags, [{ name: "kind", value: "runProblems" }]);
+  assert.deepEqual(m.headers, { "List-Unsubscribe": `<${UNSUB}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" });
+
+  // One problem; no title (the branch names it); nothing about the run at all.
+  assert.equal(problemsMail({ count: 1, titles: ["checkout failed at step 3"] }).subject, '1 problem in "Larger tap targets" of "Fernwood" on Imitor Cloud');
+  assert.equal(problemsMail({ run: { branch: "feature/tap", commit: null } }).subject, '2 problems in "feature/tap" of "Fernwood" on Imitor Cloud');
+  const bare = problemsMail({ run: {}, titles: [] });
+  assert.equal(bare.subject, '2 problems in a run of "Fernwood" on Imitor Cloud');
+  assert.doesNotMatch(bare.text, /Run:|Branch:|Commit:|^- /m);
+  // At most RUN_TITLES titles (the same title once), then how many more; a long commit is shortened.
+  const many = problemsMail({ count: 7, titles: ["a failed", "a failed", "b failed", "c failed", "d failed"], run: { title: "t", commit: "0123456789abcdef0123" } });
+  assert.match(many.text, /- a failed\n- b failed\n- c failed\n- and 4 more\n/);
+  assert.match(many.text, /Commit: 0123456789ab\n/);
+  assert.equal(RUN_TITLES, 3);
+});
+
+test("runProblems: run titles, flow names and the project's name are escaped, one line, and short; still two links", () => {
+  const evil = `<a href="https://evil.example">x</a><img src=x onerror=alert(1)>`;
+  const m = problemsMail({ project: { name: `Fern\r\nBcc: x@evil.example ${evil}` }, run: { title: `Fix\u2028Cc: y@evil.example ${evil}`, branch: evil, commit: `<b>` }, titles: [`${evil} failed at step 1`, `x\r\nBcc: z@evil.example`] });
+  assert.doesNotMatch(m.subject, /[\r\n\u0000-\u001f\u2028\u2029]/);
+  assert.match(m.subject, /^2 problems in "Fix Cc: y@evil\.example <a href=/);
+  assert.ok(!m.html.includes(evil) && !m.html.includes("<b>") && !m.html.includes("evil.example\""));
+  assert.ok(m.html.includes("&lt;a href=&quot;https://evil.example&quot;&gt;x&lt;/a&gt;"));
+  assert.equal([...m.html.matchAll(/<a\b/g)].length, 2, "a name cannot add a link");
+  assert.deepEqual([...m.html.matchAll(/href="([^"]*)"/g)].map((x) => x[1]), [RUN_URL, UNSUB]);
+  assert.doesNotMatch(m.text.split("\n").filter((l) => l.startsWith("- ")).join("\n"), /\r|Bcc: z@evil\.example\n/, "each title is one line");
+  assert.match(m.text, /- x Bcc: z@evil\.example\n/);
+  const long = problemsMail({ project: { name: "p".repeat(300) }, run: { title: "t".repeat(300) }, titles: ["f".repeat(300)] });
+  const [, run, name] = /in "(t+…)" of "(p+…)"/.exec(long.subject);
+  assert.equal(run.length, 80);
+  assert.equal(name.length, 80);
+  assert.match(long.text, new RegExp(`^- ${"f".repeat(79)}…$`, "m"));
+});
+
+test("notify: run emails have no sender; at most perProjectAddress to one address about one project, perAddress from all", async () => {
+  const c = cloud();
+  assert.deepEqual(CAPS.runProblems, { perAddress: 10, perProjectAddress: 5 });
+  const run = (project, i, over = {}) => ({ to: "grace@example.com", key: `run-problems/${project}-${i}/u2`, project: { id: project, name: project }, run: { title: "t" }, count: 1, titles: [], url: RUN_URL, unsubscribeUrl: UNSUB, ...over });
+  for (let i = 0; i < 5; i++) assert.equal((await notify(c.deps, "runProblems", run("prj1", i))).sent, true, `message ${i + 1}`);
+  assert.deepEqual(await notify(c.deps, "runProblems", run("prj1", 5)), { sent: false, reason: "limit" }, "five about one project");
+  assert.equal((await notify(c.deps, "runProblems", run("prj1", 6, { to: "hal@example.com" }))).sent, true, "another address is fine");
+  for (let i = 0; i < 5; i++) assert.equal((await notify(c.deps, "runProblems", run("prj2", i))).sent, true, `prj2 message ${i + 1}`);
+  assert.deepEqual(await notify(c.deps, "runProblems", run("prj3", 0)), { sent: false, reason: "limit" }, "ten from all projects");
+  const sent = c.mail.transport.sent;
+  assert.equal(sent.length, 11);
+  assert.deepEqual(sent[0].headers, { "List-Unsubscribe": `<${UNSUB}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" }, "the template's headers reach the transport");
+  const rows = await c.db.listAudit();
+  assert.ok(rows.every((a) => a.userId === null));
+  assert.deepEqual(rows.filter((a) => a.action === "mail.limit").map((a) => [a.projectId, a.detail]), [["prj1", { kind: "runProblems", to: "grace@example.com" }], ["prj3", { kind: "runProblems", to: "grace@example.com" }]]);
+  // Invitations to the same address are counted on their own.
+  assert.equal((await notify(c.deps, "invitation", args())).sent, true);
+});
+
+test("mailFromEnv: a run email's List-Unsubscribe headers reach Resend's body", async () => {
+  const { fetch, calls } = fakeFetch();
+  const mail = mailFromEnv({ RESEND_API_KEY: KEY, MAIL_FROM: FROM, PUBLIC_URL }, { fetch });
+  const db = memoryDb({ now: clock() });
+  assert.equal((await notify({ db, mail }, "runProblems", { to: "grace@example.com", key: "run-problems/run_1/u2", project: { id: "prj1", name: "Fernwood" }, run: { title: "t" }, count: 2, titles: [], url: RUN_URL, unsubscribeUrl: UNSUB })).sent, true);
+  assert.deepEqual(calls[0].body.headers, { "List-Unsubscribe": `<${UNSUB}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" });
+  assert.deepEqual(calls[0].body.tags, [{ name: "kind", value: "runProblems" }]);
+  assert.equal(calls[0].init.headers["Idempotency-Key"], "run-problems/run_1/u2");
 });

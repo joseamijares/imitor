@@ -4,19 +4,36 @@
 export const RESEND_URL = "https://api.resend.com/emails";
 
 /**
- * opts: { apiKey, fetch, timeoutMs }. send({ from, to, replyTo, subject, text, html, idempotencyKey, tags }) ->
- * { ok: true, id } or { ok: false, status?, error }. tags: [{ name, value }] or { name: value }.
+ * Extra message headers ({ name: value }) as Resend's `headers` field takes them, or null for none. Only plain names
+ * and one-line values: a CR or LF in either would let it write more headers than it names, so such a header is left
+ * out rather than sent.
+ */
+export function messageHeaders(headers) {
+  if (!headers || typeof headers !== "object") return null;
+  const out = {};
+  for (const [name, value] of Object.entries(headers)) {
+    if (/^[A-Za-z0-9-]+$/.test(name) && value != null && !/[\u0000-\u001f\u007f]/.test(String(value))) out[name] = String(value);
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+/**
+ * opts: { apiKey, fetch, timeoutMs }. send({ from, to, replyTo, subject, text, html, idempotencyKey, tags, headers }) ->
+ * { ok: true, id } or { ok: false, status?, error }. tags: [{ name, value }] or { name: value }. headers: { name:
+ * value }, extra headers of the message (List-Unsubscribe), not of the request.
  */
 export function resendTransport({ apiKey, fetch = globalThis.fetch, timeoutMs = 5000 }) {
   if (!apiKey) throw new Error("Resend needs an API key");
   // An error message is logged and audited; whatever it says, the key is never part of it.
   const clean = (message) => String(message).split(apiKey).join("[key]");
   return {
-    async send({ from, to, replyTo, subject, text, html, idempotencyKey, tags }) {
+    async send({ from, to, replyTo, subject, text, html, idempotencyKey, tags, headers: extra }) {
       try {
         const body = { from, to: [to], subject, text, html };
         if (replyTo) body.reply_to = replyTo;
         if (tags) body.tags = Array.isArray(tags) ? tags : Object.entries(tags).map(([name, value]) => ({ name, value: String(value) }));
+        const added = messageHeaders(extra);
+        if (added) body.headers = added;
         const headers = { authorization: `Bearer ${apiKey}`, "content-type": "application/json", "user-agent": "imitor-cloud" };
         if (idempotencyKey) headers["Idempotency-Key"] = idempotencyKey;
         let res;

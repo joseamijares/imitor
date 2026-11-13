@@ -85,6 +85,21 @@ test("a sign-in through the function: cookies and Origin checked against PUBLIC_
   assert.ok(await deps.db.findUserByEmail("admin"));
 });
 
+test("an email's one-click unsubscribe through the function: no cookies and no Origin, the token kept from the query", async () => {
+  const { fn, deps } = setup();
+  const ada = await deps.db.createUser({ email: "ada@example.com", allowed: true });
+  const project = await deps.db.createProject({ name: "Fernwood", ownerId: ada.id });
+  const token = await deps.db.runMailToken(project.id, ada.id);
+  const page = await fn.fetch(rewritten(`/unsubscribe/?t=${token}`));
+  assert.equal(page.status, 200);
+  assert.match(await page.text(), /Stop run emails\?/);
+  assert.equal((await deps.db.getMember(project.id, ada.id)).notifyRuns, true, "opening the link changes nothing");
+  const post = await fn.fetch(rewritten(`/unsubscribe/?t=${token}`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "List-Unsubscribe=One-Click" }));
+  assert.equal(post.status, 200);
+  assert.equal(post.headers.get("cache-control"), "private, no-store");
+  assert.equal((await deps.db.getMember(project.id, ada.id)).notifyRuns, false);
+});
+
 test("cron: production only, Authorization: Bearer <CRON_SECRET>, runs retention", async () => {
   const { deps } = setup();
   const cron = cronFunction(ENV, { deps });
@@ -129,12 +144,12 @@ test("the root shims and vercel.json: three functions, the cloud's rewrites only
   assert.deepEqual(v.crons, [{ path: "/api/cron-retention/", schedule: "17 4 * * *" }]);
   assert.ok(fs.existsSync(`${ROOT}cloud/package-lock.json`));
   const redirect = toSite(v);
-  for (const p of ["/", "/login", "/login/", "/logout/", "/p/fernwood/runs/", "/v1/runs/", "/auth/google/callback/", "/projects/", "/static/cloud.css", "/api/cloud"]) assert.ok(!redirect.test(p), `${p} stays on the app host`);
+  for (const p of ["/", "/login", "/login/", "/logout/", "/p/fernwood/runs/", "/v1/runs/", "/auth/google/callback/", "/projects/", "/static/cloud.css", "/unsubscribe/", "/api/cloud"]) assert.ok(!redirect.test(p), `${p} stays on the app host`);
   for (const p of ["/how-to-use/", "/demo/", "/robots.txt"]) assert.ok(redirect.test(p), `${p} goes to the site`);
   const rewrite = toCloud(v);
-  for (const p of ["/login/", "/login/token/", "/logout/everywhere/", "/auth/google/callback/", `${HOME}/`, "/p/fernwood/runs/", "/v1/runs/", "/static/cloud.css"]) assert.ok(rewrite.test(p), `${p} reaches the cloud`);
+  for (const p of ["/login/", "/login/token/", "/logout/everywhere/", "/auth/google/callback/", `${HOME}/`, "/p/fernwood/runs/", "/v1/runs/", "/static/cloud.css", "/unsubscribe/", "/unsubscribe"]) assert.ok(rewrite.test(p), `${p} reaches the cloud`);
   assert.ok(!rewrite.test("/"), "/ is the site's index.html, which a rewrite cannot reach");
-  for (const p of ["/pp/", "/loginx/", "/how-to-use/"]) assert.ok(!rewrite.test(p), `${p} is not a cloud route`);
+  for (const p of ["/pp/", "/loginx/", "/how-to-use/", "/unsubscribex/"]) assert.ok(!rewrite.test(p), `${p} is not a cloud route`);
   // The destination carries the whole original path, trailing slash included; the function drops the slash.
   const cloud = v.rewrites.find((x) => x.destination.startsWith("/api/cloud"));
   assert.equal(cloud.destination, "/api/cloud/?__imitor_path=/$1$2");
@@ -148,7 +163,7 @@ test("no path the cloud answers on its host is a file of the site, and / on the 
   const out = buildSite({ out: fs.mkdtempSync(path.join(os.tmpdir(), "imitor-site-")) });
   const top = fs.readdirSync(out);
   assert.ok(top.includes("index.html"), "the site has a / of its own");
-  const routes = [...new Set(["login", "logout", "auth", "projects", "p", "v1", "static", "api", HOME.slice(1), ...toCloud(v).source.match(/\(([a-z0-9|]+)\)/)[1].split("|")])];
+  const routes = [...new Set(["login", "logout", "auth", "projects", "p", "v1", "static", "unsubscribe", "api", HOME.slice(1), ...toCloud(v).source.match(/\(([a-z0-9|]+)\)/)[1].split("|")])];
   for (const r of routes) {
     for (const f of [r, `${r}.html`, `${r}/index.html`]) assert.ok(!fs.existsSync(path.join(out, f)), `site/dist/${f} would hide the cloud's /${r}`);
   }

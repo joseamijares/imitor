@@ -1,5 +1,5 @@
 // The few pages the cloud draws itself, outside the review interface: sign-in, the admin token form, the projects
-// list, and plain notices (invite-only, errors). Server-rendered, no script, in the Signal identity (design/tokens.css
+// list, a run email's unsubscribe page, and plain notices (invite-only, errors). Server-rendered, no script, in the Signal identity (design/tokens.css
 // served as /static/cloud.css with the styles below).
 import { esc, page } from "./http.mjs";
 
@@ -125,6 +125,27 @@ export function noticePage(status, title, text, { link = { href: "/login", label
   <p>${esc(text)}</p>
   ${link ? `<a class="btn btn-secondary" href="${esc(link.href)}">${esc(link.label)}</a>` : ""}
 </div></main>`, headers);
+}
+
+/**
+ * A run email's unsubscribe link, for someone who may not be signed in. off: run emails of this project are off for
+ * them (just now, or before). Otherwise a button that POSTs the same link, the only way they are turned off: opening the
+ * link changes nothing, since mail scanners open links too.
+ */
+export function unsubscribePage({ project, token, off }, status = 200) {
+  const settings = `/p/${encodeURIComponent(project.slug)}/settings#account`;
+  const body = off
+    ? `<h1>You will not get these emails</h1>
+  <p>Runs with problems in “${esc(project.name)}” are not emailed to you. To get them again, turn them on in the project’s Settings.</p>
+  <a class="btn btn-secondary" href="${esc(settings)}">Open Settings</a>`
+    : `<h1>Stop run emails?</h1>
+  <p>You are emailed when a run uploaded to “${esc(project.name)}” has problems, because you are a member of the project. Your other projects do not change.</p>
+  <form method="post" action="/unsubscribe/?t=${esc(encodeURIComponent(token))}"><button class="btn btn-primary" type="submit">Stop these emails</button></form>
+  <a class="foot" href="${esc(settings)}">Or choose in the project’s Settings</a>`;
+  return html(status, off ? "Unsubscribed" : "Unsubscribe", `<main class="center"><div class="card">
+  ${brand()}
+  ${body}
+</div></main>`);
 }
 
 export const inviteOnlyPage = (headers = {}) =>
