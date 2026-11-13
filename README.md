@@ -414,7 +414,7 @@ Turn it off with `comment: "false"`. To delete what was stored, delete the `imit
 
 The same comment is available locally. `imitor comment` prints it for the last run, with file paths in a table; `--image-base <url>` makes it use images at that address instead (the shot's path is added to the end, or before a `?query`). `--max-shots`, `--device`, `--scheme` and `--fail-on` change what it shows, `--report-url <url>` adds a link to the full report (the action passes the workflow run, whose artifact holds it), `--sha` names the commit it reports (the action passes the pull request's head, since the checkout of a pull request is GitHub's merge commit), and `--json` prints the data instead. `imitor publish-shots` is the push the action does; it refuses to run outside GitHub Actions unless given `--force`.
 
-Nobody has seen this comment on a real pull request yet: the Markdown is tested, and publishing is tested against local Git repositories, but the action's publish and comment steps have not run on GitHub.
+The publish and comment steps have run on real pull requests in a private repository: the action pushed the shots to `imitor-shots`, and posted one comment with the verdict, the counts, the pull request's head commit and every flow's shots. Not yet seen on GitHub: a later push updating that comment in place (tested only against local Git repositories and a stand-in `gh`), and a pull request from a fork.
 
 ### EAS Workflows
 

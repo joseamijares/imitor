@@ -159,7 +159,8 @@ The cloud runs in the same Vercel project as the public site, on a host of its o
 - **Environment.** Add, for Production only and as Sensitive: `PUBLIC_URL` (`https://app.imitor.dev`),
   `DATABASE_URL` (a pooled connection string; each function instance holds one connection), a store for files
   (`BLOB_READ_WRITE_TOKEN` from a connected private Blob store, or `S3_*`), `GOOGLE_CLIENT_ID`,
-  `GOOGLE_CLIENT_SECRET`, `IMITOR_ALLOWED_EMAILS`, `CRON_SECRET`, and `IMITOR_ADMIN_TOKEN` only if you need it.
+  `GOOGLE_CLIENT_SECRET`, `IMITOR_ALLOWED_EMAILS`, `CRON_SECRET`, and `IMITOR_ADMIN_TOKEN` only if you need it. To send email, also
+  `RESEND_API_KEY` and `MAIL_FROM`, both together: the function refuses to start with only one of them.
   Without a database and a store the function refuses to run rather than keep anything in memory.
 - **Database timeouts.** Each connection gives up connecting after 5 s, is closed after 10 s idle, and asks the server
   to cancel any statement after 10 s (`statement_timeout`, sent as a startup parameter; the client also stops waiting
@@ -216,7 +217,7 @@ Everything but Google lives in the Vercel project. In this order; nothing here n
    through the five-minute storage links, which shows the presigned uploads and the checksum check worked.
 7. **Mail** (optional; without it people are added but not emailed): in Resend, add and verify the sending domain
    (the DNS records it lists), and make an API key that can only send. In Vercel, Production only, Sensitive:
-   `RESEND_API_KEY`, and `MAIL_FROM` with an address on that domain (e.g. `Imitor Cloud <hello@imitor.dev>`); then
+   `RESEND_API_KEY`, and `MAIL_FROM` with an address on that domain (e.g. `Imitor Cloud <hello@jamaklab.com>`); then
    redeploy. To test, add an address of your own to a project in Settings, Members: the toast says it was emailed,
    the message arrives with a link to the project, and the audit log has a `mail.send` row.
 8. **The next morning**, open the project's Cron Jobs logs and confirm the retention job answered 200.
