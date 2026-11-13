@@ -260,6 +260,12 @@ export function memoryDb({ now = () => new Date() } = {}) {
     async listAudit() {
       return audit.map(copy);
     },
+    async countAudit({ action, since, userId = null, detail = {} }) {
+      const from = Date.parse(since);
+      for (const field of Object.keys(detail)) if (!/^[A-Za-z]+$/.test(field)) throw new Error(`countAudit cannot match the detail field ${JSON.stringify(field)}`); // as pg.mjs
+      const matches = (e) => Object.entries(detail).every(([k, v]) => e.detail?.[k] != null && String(e.detail[k]) === String(v));
+      return audit.filter((e) => e.action === action && Date.parse(e.at) >= from && (userId == null || e.userId === userId) && matches(e)).length;
+    },
 
     // ---------- waitlist ----------
     async addWaitlist(email) {

@@ -111,6 +111,7 @@ test("the privacy and terms pages are built, linked from every page, and match w
   const privacy = decode(fs.readFileSync(path.join(out, "privacy", "index.html"), "utf8"));
   assert.match(privacy, new RegExp(`newest ${KEEP_RUNS} per project`), "the retention stated matches KEEP_RUNS");
   assert.match(privacy, /openid.*email.*profile/s, "the Google scopes stated match the sign-in");
+  assert.match(privacy, /Resend sends the service's email/, "the mail provider the cloud uses is named");
 });
 
 test("the pricing page offers a waitlist, not a price: the form posts to the function, and the privacy page covers it", async () => {

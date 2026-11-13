@@ -396,6 +396,20 @@ test("a store without checksums is refused unless unverified uploads are allowed
   assert.equal(depsFromEnv({ ...env, S3_CHECKSUMS: "off", IMITOR_ALLOW_UNVERIFIED_UPLOADS: "1" }).allowUnverified, true);
 });
 
+test("mail from the environment: off unless RESEND_API_KEY is set; the key and MAIL_FROM both or neither; PUBLIC_URL needed", () => {
+  const key = "re_TestKey_0123456789abcdef";
+  const from = "Imitor Cloud <hello@jamaklab.com>";
+  const publicUrl = "https://cloud.example";
+  assert.equal(depsFromEnv({}).mail.transport.off, true);
+  assert.equal(depsFromEnv({ PUBLIC_URL: publicUrl, MAIL_REPLY_TO: "help@example.com" }).mail.transport.off, true);
+  assert.throws(() => depsFromEnv({ RESEND_API_KEY: key, PUBLIC_URL: publicUrl }), /^Error: Email needs both RESEND_API_KEY and MAIL_FROM\.$/);
+  assert.throws(() => depsFromEnv({ MAIL_FROM: from, PUBLIC_URL: publicUrl }), /^Error: Email needs both RESEND_API_KEY and MAIL_FROM\.$/);
+  assert.throws(() => depsFromEnv({ RESEND_API_KEY: key, MAIL_FROM: from }), /Email needs PUBLIC_URL: the links in every message point at it\./);
+  const mail = depsFromEnv({ RESEND_API_KEY: key, MAIL_FROM: from, MAIL_REPLY_TO: "help@example.com", PUBLIC_URL: publicUrl }).mail;
+  assert.equal(mail.transport.off, undefined);
+  assert.deepEqual({ from: mail.from, replyTo: mail.replyTo }, { from, replyTo: "help@example.com" });
+});
+
 test("a storage delete that fails during pruning is logged, complete still answers 200, and a later call retries it", async () => {
   const s = await setup();
   const logged = [];

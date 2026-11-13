@@ -146,13 +146,13 @@ export async function mount(ctx) {
 function cloudSections() {
   return html`<section id="access-keys" class="set-section" aria-labelledby="access-keys-h">
         <h2 id="access-keys-h">Access keys</h2>
-        <p class="set-note">Agents and CI push runs to this project with a key. A key can only upload runs here: it cannot read, list or delete anything. Only a hash of it is kept, so it is shown once, when it is made.</p>
+        <p class="set-note">Agents and CI push runs to this project with a key. A key can only upload runs here: it cannot read, list or delete anything. Only a hash of it is kept, so it is shown once, when it is made. When this server sends email, the other owners are emailed when a key is made or revoked.</p>
         <div data-keys>${skeletonRows(2)}</div>
       </section>
 
       <section id="members" class="set-section" aria-labelledby="members-h">
         <h2 id="members-h">Members</h2>
-        <p class="set-note">Everyone here sees this project’s runs. Owners also make keys and add or remove people. Add someone by the address of their Google account: they sign in with it, even if they have never signed in before. Adding someone already here changes their role. A project always keeps an owner, so its only owner cannot leave until they make someone else an owner.</p>
+        <p class="set-note">Everyone here sees this project’s runs. Owners also make keys and add or remove people. Add someone by the address of their Google account: they sign in with it, even if they have never signed in before. When this server sends email, they are also emailed a link to the project. Adding someone already here changes their role. A project always keeps an owner, so its only owner cannot leave until they make someone else an owner.</p>
         <div data-members>${skeletonRows(2)}</div>
       </section>
 
@@ -209,12 +209,14 @@ async function mountMembers(ctx, main) {
     const email = form.elements.email.value.trim();
     try {
       const before = members.find((m) => m.email.toLowerCase() === email.toLowerCase());
-      const { member } = await cloud.addMember(email, form.elements.role.value);
+      const { member, notified } = await cloud.addMember(email, form.elements.role.value);
       if (!ctx.isCurrent()) return;
       const role = member.role === "owner" ? "an owner" : "a member";
       // Your own role decides what the rest of this page offers (keys, the add form), so it is shown afresh.
       if (before?.you && before.role !== member.role) { location.reload(); return; }
-      ctx.toast(!before ? `Added ${email}` : before.role === member.role ? `${email} is already ${role}` : `${email} is now ${role}`);
+      // notified: the server emailed them a link. It may send no mail at all, or have reached its daily limit.
+      const added = notified ? `Added ${email} and emailed them a link` : `Added ${email}. No email was sent: tell them to sign in at ${location.origin}`;
+      ctx.toast(!before ? added : before.role === member.role ? `${email} is already ${role}` : `${email} is now ${role}`);
       await load();
     } catch (err) {
       ctx.toast(`Couldn’t ${members.some((m) => m.email.toLowerCase() === email.toLowerCase()) ? "change" : "add"} ${email}: ${err.message}`);

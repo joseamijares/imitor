@@ -8,7 +8,7 @@ These terms cover this website and Imitor Cloud, the hosted service at app.imito
 
 ## Imitor Cloud during development
 
-Imitor Cloud is in development and open only to people on its allowlist. It is free while it is in development. If paid plans are introduced, they will be announced on this site first, and nothing will be charged without your agreement.
+Imitor Cloud is in development and open only to people on its allowlist and people a project owner invited. It is free while it is in development. If paid plans are introduced, they will be announced on this site first, and nothing will be charged without your agreement.
 
 - **It is an imitation.** Imitor shows a web build of a React Native / Expo app with native-only parts replaced by stand-ins. It is not a simulator and does not replace a check on a real phone. Every result lists what was stood in and what it cannot show.
 - **Your content stays yours.** You keep every right to the runs, screenshots and videos you upload. You give Imitor permission only to store them and show them to the members of your project, so the service can work.

@@ -18,7 +18,9 @@ import { markIndex } from "../../src/app-index.mjs";
 import { loadAssets, typeOf } from "./assets.mjs";
 import { OidcError } from "./auth/oidc.mjs";
 import { cookieNames, currentUser, endSession, sameOrigin, startSession, clearSessionCookie } from "./auth/session.mjs";
+import { EMAIL } from "./email.mjs";
 import { cookie, cookies, fail, json, page, randomToken, readFields, redirect, safeEqual } from "./http.mjs";
+import { CAPS, notify } from "./mail/index.mjs";
 import { HOME, inviteOnlyPage, loginPage, noticePage, PAGE_CSS, projectsPage, tokenPage } from "./pages.mjs";
 import { problemRun, readRoute } from "./read.mjs";
 import { clientAddress, throttle } from "./throttle.mjs";
@@ -306,6 +308,7 @@ async function projectApi(request, deps, user, project, member, route) {
       if (!name || name.length > 60) return fail(400, "a key needs a name of 1 to 60 characters");
       const key = await db.createAccessKey(project.id, { name });
       await db.addAudit({ projectId: project.id, userId: user.id, action: "key.create", detail: { keyId: key.id, name } });
+      await tellOwners(deps, user, project, key, false);
       return json(201, { key: publicKey(key), secret: key.secret });
     }
     const id = decodeURIComponent(route.split("/")[2]);
@@ -314,6 +317,7 @@ async function projectApi(request, deps, user, project, member, route) {
     if (!key.revokedAt) {
       await db.revokeAccessKey(id);
       await db.addAudit({ projectId: project.id, userId: user.id, action: "key.revoke", detail: { keyId: id, name: key.name } });
+      await tellOwners(deps, user, project, key, true);
     }
     return json(200, { key: publicKey(await db.getAccessKey(id)) });
   }
@@ -332,16 +336,39 @@ async function projectApi(request, deps, user, project, member, route) {
   return fail(404, `no endpoint POST /api${route}`);
 }
 
+/**
+ * Email the project's other owners that `actor` made or revoked `key`, so a second owner learns of a key they did not
+ * make; never the actor, never plain members. The message names the key, never its secret. All at once, so a project
+ * with many owners does not make a slow request, and at most one sender's daily allowance of them: messages sent
+ * together all pass the cap's count, so without this a project with many owners would go past it. notify() never
+ * throws and has its own 5 s limit: the key is made or revoked whatever happens to the messages.
+ */
+async function tellOwners(deps, actor, project, key, revoked) {
+  if (!mailOn(deps)) return;
+  // The key is already made or revoked: a lookup that fails here must not cost the answer (a new key's secret is shown once).
+  try {
+    const owners = (await deps.db.listMembers(project.id)).filter((m) => m.role === "owner" && m.userId !== actor.id).slice(0, CAPS.accessKey.perSender);
+    if (!owners.length) return;
+    const url = `${deps.publicUrl}/login?next=${encodeURIComponent(`/p/${project.slug}/settings#access-keys`)}`;
+    const kind = revoked ? "key-revoke" : "key-create";
+    await Promise.all(owners.map((m) => notify(deps, "accessKey", { to: m.email, project, actor, keyName: key.name, revoked, url, key: `${kind}/${key.id}/${m.userId}` })));
+  } catch (error) {
+    deps.log?.(error);
+  }
+}
+
+/** Whether this server sends mail at all, so what a message needs is not looked up for nothing. */
+const mailOn = (deps) => !!deps.mail?.transport && !deps.mail.transport.off;
+
 // ---------- members ----------
 
-// ASCII only, so lowercasing here and lower() in Postgres agree on what one address is.
-const EMAIL = /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/;
 const publicMember = (m, me) => ({ userId: m.userId, email: m.email, name: m.name, role: m.role, since: m.createdAt, you: m.userId === me.id });
 
 /**
  * Add someone to the project by address, as "member" (the default) or "owner"; adding someone again changes their role.
  * Someone who has never signed in gets an account row kept allowed, so their first Google sign-in with that address
- * is admitted (see admit): an owner's invitation stands in for IMITOR_ALLOWED_EMAILS.
+ * is admitted (see admit): an owner's invitation stands in for IMITOR_ALLOWED_EMAILS. Someone newly added is emailed a
+ * link to the project when mail is on; the answer's `notified` says whether a message went.
  */
 async function addMember(deps, actor, project, fields) {
   const { db } = deps;
@@ -371,7 +398,24 @@ async function addMember(deps, actor, project, fields) {
   }
   await db.addAudit({ projectId: project.id, userId: actor.id, action: before ? "member.role" : "member.add", detail: { email: target.email, role, ...(before ? { from: before.role } : {}) } });
   const added = (await db.listMembers(project.id)).find((m) => m.userId === target.id);
-  return json(before ? 200 : 201, { member: publicMember(added, actor) });
+  // Only someone newly added is told (a role change is not), and never someone who added themselves. The key is the
+  // membership's, so two adds racing to the same membership send once, and a remove and re-add sends again. notify()
+  // never throws and has its own 5 s limit: whatever happens to the message, the person stays added.
+  let notified = false;
+  if (!before && target.id !== actor.id && mailOn(deps)) {
+    // The person is already added: a lookup that fails here leaves them added and unnotified, it does not fail the add.
+    try {
+      // Never signed in (an invited address, from this project or an earlier one): they may not expect this message.
+      const pending = !!target.invitedAt && (await db.listIdentities(target.id)).length === 0;
+      // Signing in lands on the project: /login passes `next` through Google and back (and straight on when signed in).
+      const url = `${deps.publicUrl}/login?next=${encodeURIComponent(`/p/${project.slug}/`)}`;
+      const key = `member-add/${project.id}/${target.id}/${added.createdAt}`;
+      notified = (await notify(deps, "invitation", { to: target.email, project, actor, role, pending, url, key })).sent;
+    } catch (error) {
+      deps.log?.(error);
+    }
+  }
+  return json(before ? 200 : 201, { member: publicMember(added, actor), notified });
 }
 
 /** Remove someone from the project (their account stays). The last owner cannot be removed. */
