@@ -2,12 +2,12 @@
 // RESEND_API_KEY is set, and a message that cannot be sent never fails the request that asked for it: notify() logs
 // and audits the failure and answers { sent: false }, it does not throw.
 import { EMAIL } from "../email.mjs";
-import { accessKey, invitation } from "./templates.mjs";
+import { accessKey, invitation, waitlist } from "./templates.mjs";
 import { noMail, resendTransport } from "./transport.mjs";
 
 export { noMail, recordingMail, resendTransport } from "./transport.mjs";
 
-const TEMPLATES = { invitation, accessKey };
+const TEMPLATES = { invitation, accessKey, waitlist };
 
 // Mail is sent on people's behalf, so it is capped in rolling 24 hours, for each kind of message on its own (so a day
 // of invitations cannot hold back a security notice, nor notices the invitations): `perSender` messages by one sender,
@@ -18,9 +18,13 @@ const TEMPLATES = { invitation, accessKey };
 //   messages to each co-owner, so 10 to one address is five rotations a day across all their projects, and 30 by one
 //   sender covers that for three co-owners. Past it, one busy owner (or a stolen session) cannot bury a co-owner in
 //   mail; and the notices that did go out already told them something is happening.
+// - waitlist: to the operator, one for each new address on the public form, which anyone can post to. It has no sender
+//   (nobody is signed in), so only the address's cap applies: past 20 in a day the list is clearly growing, and it is
+//   read from the database anyway.
 export const CAPS = {
   invitation: { perSender: 20, perAddress: 3 },
   accessKey: { perSender: 30, perAddress: 10 },
+  waitlist: { perSender: 20, perAddress: 20 },
 };
 const DAY_MS = 24 * 60 * 60 * 1000;
 

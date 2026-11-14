@@ -9,7 +9,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { TOOLS } from "../src/mcp.mjs";
 import { CONNECT_COMMANDS } from "../src/store.mjs";
-import { buildSite, markdown, PAGES, readmeSections } from "../site/build.mjs";
+import { buildSite, markdown, PAGES, readmeSections, SHARE_IMAGE, SITE, SITEMAP } from "../site/build.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const README = fs.readFileSync(path.join(ROOT, "README.md"), "utf8");
@@ -139,4 +139,30 @@ test("the pricing page offers a waitlist, not a price: the form posts to the fun
   // Every page's navigation and the landing page lead to it.
   for (const page of ["index.html", "how-to-use/index.html", "agents/index.html", "404.html"]) assert.match(fs.readFileSync(path.join(out, page), "utf8"), /href="\/pricing\/"/, page);
   assert.match(landing, /href="\/pricing\/#waitlist"/);
+});
+
+test("every page says what a shared link shows, and the sitemap lists every page", () => {
+  // The share image is a real PNG of the size the tags declare (width and height are bytes 16 to 24 of a PNG).
+  const png = fs.readFileSync(path.join(out, SHARE_IMAGE.path));
+  assert.equal(png.subarray(1, 4).toString(), "PNG");
+  assert.deepEqual([png.readUInt32BE(16), png.readUInt32BE(20)], [SHARE_IMAGE.width, SHARE_IMAGE.height]);
+  assert.ok(png.length < 300 * 1024, "small enough for every crawler");
+  for (const pathname of SITEMAP.filter((p) => p !== "/demo/")) {
+    const html = fs.readFileSync(path.join(out, pathname, "index.html"), "utf8");
+    const head = html.slice(0, html.indexOf("</head>"));
+    const url = SITE + pathname;
+    assert.ok(head.includes(`<link rel="canonical" href="${url}">`), pathname);
+    assert.ok(head.includes(`<meta property="og:url" content="${url}">`), pathname);
+    assert.ok(head.includes(`<meta property="og:image" content="${SITE}${SHARE_IMAGE.path}">`), `${pathname}: an absolute image address`);
+    assert.ok(head.includes('<meta name="twitter:card" content="summary_large_image">'), pathname);
+    for (const own of ["og:title", "og:description"]) assert.equal(head.split(`property="${own}"`).length, 2, `${pathname} has one ${own}`);
+  }
+  assert.doesNotMatch(fs.readFileSync(path.join(out, "404.html"), "utf8"), /rel="canonical"/, "the 404 page has no address of its own");
+  // The sitemap: every page that is built, by its absolute address, and robots.txt points at it.
+  const xml = fs.readFileSync(path.join(out, "sitemap.xml"), "utf8");
+  const listed = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map(([, loc]) => loc);
+  assert.deepEqual(listed, SITEMAP.map((p) => SITE + p));
+  for (const p of SITEMAP) assert.ok(fs.existsSync(path.join(out, p, "index.html")), `${p} is in the sitemap and is built`);
+  for (const key of [...Object.keys(PAGES), "pricing", "privacy", "terms"]) assert.ok(SITEMAP.includes(`/${key}/`), `/${key}/ is built and is in the sitemap`);
+  assert.match(fs.readFileSync(path.join(out, "robots.txt"), "utf8"), new RegExp(`^Sitemap: ${SITE}/sitemap\\.xml$`, "m"));
 });

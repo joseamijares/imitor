@@ -1,9 +1,11 @@
 // The waitlist for the hosted service, as a Vercel function of the site's project (root api/waitlist.mjs is a
 // one-line shim for it). The pricing page of the public site posts an address here, from the site's own host; the
-// address goes into the waitlist table and nowhere else. It sends no email, makes no user and admits nobody.
-// Production only, POST only, same origin only, and a few tries per client address in ten minutes.
+// address goes into the waitlist table and nowhere else. It sends the person no email, makes no user and admits
+// nobody. With mail on and WAITLIST_NOTIFY_TO set, the operator gets a notice that the list grew, without the address
+// in it. Production only, POST only, same origin only, and a few tries per client address in ten minutes.
 import { fail, json, readFields, redirect, secure } from "./http.mjs";
 import { pgDb } from "./db/pg.mjs";
+import { mailFromEnv, notify } from "./mail/index.mjs";
 import { clientAddress, throttle } from "./throttle.mjs";
 
 export const MAX_EMAIL_LENGTH = 254;
@@ -36,11 +38,25 @@ const finish = (response) => {
 };
 
 /**
- * The waitlist's function. opts: { db (instead of the environment's Postgres, for tests), limiter (a throttle) }.
+ * The waitlist's function. opts: { db (instead of the environment's Postgres, for tests), limiter (a throttle), mail
+ * (deps.mail instead of the environment's, for tests) }.
  * JSON in, JSON out: 200 { ok: true } whether the address is new or already listed, so it tells nobody who is on
  * the list. A plain form post is answered with a redirect back to the pricing page instead.
  */
-export function waitlistFunction(env = process.env, { db = null, limiter = throttle({ limit: 5, windowMs: 10 * 60 * 1000 }) } = {}) {
+export function waitlistFunction(env = process.env, { db = null, limiter = throttle({ limit: 5, windowMs: 10 * 60 * 1000 }), mail = null } = {}) {
+  // Tell the operator the list grew. Only for an address that is new (a repeat join, or a script posting one address
+  // again and again, sends nothing), and never in the way of the join: a mail setting that is wrong is logged, and
+  // notify() itself never throws. It is awaited because a function's work ends with its response.
+  const tellOperator = async () => {
+    const to = normalizeEmail(env.WAITLIST_NOTIFY_TO);
+    if (!to) return;
+    try {
+      mail ??= mailFromEnv(env);
+      await notify({ db, mail, log: (error) => console.error(error) }, "waitlist", { to });
+    } catch (cause) {
+      console.error(cause);
+    }
+  };
   return {
     async fetch(request) {
       if (env.VERCEL_ENV !== "production") return finish(fail(404, "not found"));
@@ -57,16 +73,18 @@ export function waitlistFunction(env = process.env, { db = null, limiter = throt
       if (fields.website) return answer(200);
       const email = normalizeEmail(fields.email);
       if (!email) return answer(400, "that does not look like an email address");
+      let added = false;
       try {
         if (!db) {
           if (!env.DATABASE_URL) throw new Error("the waitlist needs DATABASE_URL");
           db = pgDb({ connectionString: env.DATABASE_URL, max: 1 });
         }
-        await db.addWaitlist(email);
+        added = (await db.addWaitlist(email)).added;
       } catch (cause) {
         console.error(cause);
         return answer(503, "the waitlist cannot be reached right now");
       }
+      if (added) await tellOperator();
       return answer(200);
     },
   };

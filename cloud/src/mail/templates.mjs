@@ -83,3 +83,27 @@ export function accessKey({ project, actor, keyName, revoked = false, url }) {
 `;
   return { subject, text, html, tags: [{ name: "kind", value: "accessKey" }] };
 }
+
+/**
+ * Someone joined the waitlist on the site's pricing page; the recipient is the operator (WAITLIST_NOTIFY_TO). The
+ * address that joined is deliberately not an argument: the pricing page says it is kept for the waitlist and not
+ * shared, so it stays in the database and never passes through the mail provider. The message says only that the list
+ * grew, and how to read it. No link: there is no page that shows the list.
+ */
+export function waitlist() {
+  const subject = "Someone joined the Imitor Cloud waitlist";
+  const what = "A new address joined the Imitor Cloud waitlist from the pricing page.";
+  const where = "The address is not in this message: it is kept only in the database. To read the list:";
+  const query = "select email, created_at from waitlist order by created_at";
+  const why = "You are told because this address is the instance's WAITLIST_NOTIFY_TO.";
+  const text = `${[what, where, query].join("\n\n")}\n\n${why}\n`;
+  const html = `<!doctype html>
+<html><body style="${STYLE.body}">
+<p style="${STYLE.p}">${esc(what)}</p>
+<p style="${STYLE.p}">${esc(where)}</p>
+<p style="${STYLE.p}"><code>${esc(query)}</code></p>
+<p style="${STYLE.small}">${esc(why)}</p>
+</body></html>
+`;
+  return { subject, text, html, tags: [{ name: "kind", value: "waitlist" }] };
+}

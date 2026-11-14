@@ -4,6 +4,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { memoryDb } from "../src/db/memory.mjs";
+import { CAPS } from "../src/mail/index.mjs";
+import { recordingMail } from "../src/mail/transport.mjs";
 import { JOINED, normalizeEmail, NOT_JOINED, waitlistFunction } from "../src/waitlist.mjs";
 
 const SITE = "https://imitor.dev";
@@ -104,6 +106,61 @@ test("five tries per client address in ten minutes; a database that fails is a 5
     const broken = waitlistFunction(ENV, { db: { addWaitlist: async () => { throw new Error("down"); } } });
     assert.equal((await broken.fetch(post({ email: "ada@example.com" }))).status, 503);
     assert.equal((await waitlistFunction(ENV).fetch(post({ email: "ada@example.com" }))).status, 503, "no DATABASE_URL");
+  } finally {
+    console.error = quiet;
+  }
+});
+
+test("the operator is told when the list grows: once per new address, without the address, and never in the way", async () => {
+  const OPERATOR = "owner@example.com";
+  const FROM = "Imitor Cloud <hello@example.com>";
+  const withMail = (env = { ...ENV, WAITLIST_NOTIFY_TO: OPERATOR }, limiter) => {
+    const db = memoryDb();
+    const transport = recordingMail();
+    return { db, transport, fn: waitlistFunction(env, { db, mail: { transport, from: FROM, replyTo: null }, ...(limiter ? { limiter } : {}) }) };
+  };
+
+  const { db, transport, fn } = withMail();
+  assert.equal((await fn.fetch(post({ email: "Ada@Example.com" }))).status, 200);
+  assert.equal(transport.sent.length, 1);
+  const [message] = transport.sent;
+  assert.equal(message.to, OPERATOR);
+  assert.equal(message.from, FROM);
+  for (const part of [message.subject, message.text, message.html]) assert.doesNotMatch(part, /ada|example\.com/i, "the address that joined is not in the message");
+  assert.equal(message.idempotencyKey, undefined, "nothing derived from the address goes to the provider either");
+  assert.deepEqual((await db.listAudit()).map((e) => [e.action, e.detail.kind, e.detail.to]), [["mail.send", "waitlist", OPERATOR]]);
+  // A repeat join, a refused address and the trap send nothing.
+  await fn.fetch(post({ email: "ada@example.com" }));
+  await fn.fetch(post({ email: "nope" }));
+  await fn.fetch(post({ email: "bot@example.com", website: "x" }));
+  assert.equal(transport.sent.length, 1);
+
+  // Off without WAITLIST_NOTIFY_TO, or with one that is not an address.
+  for (const WAITLIST_NOTIFY_TO of [undefined, "", "not an address"]) {
+    const off = withMail({ ...ENV, WAITLIST_NOTIFY_TO });
+    assert.equal((await off.fn.fetch(post({ email: "ada@example.com" }))).status, 200);
+    assert.equal(off.transport.sent.length, 0, String(WAITLIST_NOTIFY_TO));
+  }
+
+  // The cap: a flood of new addresses stops telling the operator, and every join still succeeds.
+  const open = { blocked: () => 0, fail() {} };
+  const flood = withMail(undefined, open);
+  for (let i = 0; i < CAPS.waitlist.perAddress + 3; i++) assert.equal((await flood.fn.fetch(post({ email: `p${i}@example.com` }))).status, 200);
+  assert.equal(flood.transport.sent.length, CAPS.waitlist.perAddress);
+  assert.equal((await flood.db.listWaitlist()).length, CAPS.waitlist.perAddress + 3);
+
+  // Mail that fails, or a mail setting that is wrong, never fails the join.
+  const quiet = console.error;
+  console.error = () => {};
+  try {
+    const failing = withMail();
+    failing.transport.fail = "down";
+    assert.equal((await failing.fn.fetch(post({ email: "ada@example.com" }))).status, 200);
+    assert.deepEqual((await failing.db.listWaitlist()).map((e) => e.email), ["ada@example.com"]);
+    const db2 = memoryDb();
+    const half = waitlistFunction({ ...ENV, WAITLIST_NOTIFY_TO: OPERATOR, RESEND_API_KEY: "re_only_the_key" }, { db: db2 });
+    assert.equal((await half.fetch(post({ email: "ada@example.com" }))).status, 200, "RESEND_API_KEY without MAIL_FROM");
+    assert.equal((await db2.listWaitlist()).length, 1);
   } finally {
     console.error = quiet;
   }

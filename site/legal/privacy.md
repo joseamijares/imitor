@@ -14,7 +14,7 @@ imitor.dev is a static site, apart from the waitlist form on its pricing page. I
 
 ### The waitlist
 
-If you join the waitlist on the pricing page, the email address you type and the time you joined are stored in the Imitor Cloud database (Neon, PostgreSQL). Nothing else is kept with it. The address is used once, to tell you that the hosted service is open, and it is not shared, sold or added to a newsletter. Joining creates no account and sends no email. The address stays on the list until that one email has been sent or you ask for it to be removed, whichever comes first: write to {{contact}}.
+If you join the waitlist on the pricing page, the email address you type and the time you joined are stored in the Imitor Cloud database (Neon, PostgreSQL). Nothing else is kept with it. The address is used once, to tell you that the hosted service is open, and it is not shared, sold or added to a newsletter. Joining creates no account and sends you no email. The address stays on the list until that one email has been sent or you ask for it to be removed, whichever comes first: write to {{contact}}.
 
 ## Imitor Cloud
 

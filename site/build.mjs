@@ -139,6 +139,38 @@ function connectBlock() {
 }
 
 export const REPO = "https://github.com/joseamijares/imitor";
+/** The site's public address: canonical links, share tags and the sitemap are absolute, as their readers require. */
+export const SITE = "https://imitor.dev";
+/** The share image (design/og/og.png, drawn by design/og/og.html), served at /assets/og.png. */
+export const SHARE_IMAGE = { path: "/assets/og.png", width: 1200, height: 630, alt: "Imitor: your app, imitated. Every stand-in named." };
+/** Every page a search engine should know, in the sitemap's order. The 404 page is not one. */
+export const SITEMAP = ["/", "/how-to-use/", "/agents/", "/demo/", "/pricing/", "/privacy/", "/terms/"];
+
+/**
+ * A page with its canonical address and what a link to it shows when shared (Open Graph, and the large card on X),
+ * put before the theme-color line every page's head has. Each page keeps its own og:title and og:description.
+ */
+export function withShareTags(html, pathname) {
+  const url = SITE + pathname;
+  const tags = [
+    `<link rel="canonical" href="${url}">`,
+    `<meta property="og:type" content="website">`,
+    `<meta property="og:site_name" content="Imitor">`,
+    `<meta property="og:url" content="${url}">`,
+    `<meta property="og:image" content="${SITE}${SHARE_IMAGE.path}">`,
+    `<meta property="og:image:width" content="${SHARE_IMAGE.width}">`,
+    `<meta property="og:image:height" content="${SHARE_IMAGE.height}">`,
+    `<meta property="og:image:alt" content="${esc(SHARE_IMAGE.alt)}">`,
+    `<meta name="twitter:card" content="summary_large_image">`,
+  ].join("\n");
+  const anchor = '<meta name="theme-color"';
+  if (!html.includes(anchor)) throw new Error(`the page for ${pathname} has no theme-color line to put its share tags before`);
+  return html.replace(anchor, `${tags}\n${anchor}`);
+}
+
+export function sitemap() {
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${SITEMAP.map((p) => `  <url><loc>${SITE}${p}</loc></url>`).join("\n")}\n</urlset>\n`;
+}
 
 /** The heading ids each documentation page ends up with, so a README link to a section on the other page can follow it. */
 function pageIds(sections) {
@@ -212,7 +244,10 @@ export function buildSite({ out = path.join(HERE, "dist") } = {}) {
   fs.rmSync(out, { recursive: true, force: true });
   fs.mkdirSync(path.join(out, "assets", "shots"), { recursive: true });
   fs.mkdirSync(path.join(out, "assets", "agents"), { recursive: true });
-  for (const f of ["index.html", "404.html", "site.css", "site.js", "robots.txt"]) fs.copyFileSync(path.join(HERE, f), path.join(out, f));
+  for (const f of ["404.html", "site.css", "site.js", "robots.txt"]) fs.copyFileSync(path.join(HERE, f), path.join(out, f));
+  fs.writeFileSync(path.join(out, "index.html"), withShareTags(fs.readFileSync(path.join(HERE, "index.html"), "utf8"), "/"));
+  fs.writeFileSync(path.join(out, "sitemap.xml"), sitemap());
+  fs.copyFileSync(path.join(ROOT, "design", "og", "og.png"), path.join(out, "assets", "og.png"));
   fs.copyFileSync(path.join(ROOT, "design", "tokens.css"), path.join(out, "tokens.css"));
   for (const f of ["imitor-icon-120.svg", "imitor-icon-32.svg", "imitor-icon-16.svg"]) fs.copyFileSync(path.join(ROOT, "design", "logo", f), path.join(out, "assets", f));
   for (const f of fs.readdirSync(path.join(ROOT, "assets", "agents")).filter((f) => f.endsWith(".svg"))) fs.copyFileSync(path.join(ROOT, "assets", "agents", f), path.join(out, "assets", "agents", f));
@@ -221,15 +256,15 @@ export function buildSite({ out = path.join(HERE, "dist") } = {}) {
   const template = fs.readFileSync(path.join(HERE, "docs.html"), "utf8");
   for (const key of Object.keys(PAGES)) {
     fs.mkdirSync(path.join(out, key), { recursive: true });
-    fs.writeFileSync(path.join(out, key, "index.html"), docPage(key, sections, template));
+    fs.writeFileSync(path.join(out, key, "index.html"), withShareTags(docPage(key, sections, template), `/${key}/`));
   }
   for (const key of Object.keys(LEGAL_PAGES)) {
     fs.mkdirSync(path.join(out, key), { recursive: true });
-    fs.writeFileSync(path.join(out, key, "index.html"), legalPage(key, template));
+    fs.writeFileSync(path.join(out, key, "index.html"), withShareTags(legalPage(key, template), `/${key}/`));
   }
   // Pricing: hand-written like the landing page; only the contact address is filled in.
   fs.mkdirSync(path.join(out, "pricing"), { recursive: true });
-  fs.writeFileSync(path.join(out, "pricing", "index.html"), fs.readFileSync(path.join(HERE, "pricing.html"), "utf8").replaceAll("{{contact}}", LEGAL.contact));
+  fs.writeFileSync(path.join(out, "pricing", "index.html"), withShareTags(fs.readFileSync(path.join(HERE, "pricing.html"), "utf8").replaceAll("{{contact}}", LEGAL.contact), "/pricing/"));
   // The demo: a read-only export with invented data, served under /demo/. The site's own vercel.json and 404.html
   // cover it, so the export's per-folder fallbacks are dropped.
   buildDemo({ out: path.join(out, "demo"), base: "/demo" });
