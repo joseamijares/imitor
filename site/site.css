@@ -290,6 +290,8 @@ section.band { padding-top: 136px; }
 .table.cmp tbody th { width: 28%; background: none; color: var(--color-t-1); border-bottom: 1px solid var(--color-line); }
 .table.cmp tr:last-child th { border-bottom: 0; }
 .table.cmp td:first-child { width: auto; }
+.table.cmp.cmp-3 tbody th { width: 22%; }
+.table.cmp.cmp-3 td { width: 26%; }
 .cmp-note { margin: 16px 0 0; font-size: 13px; line-height: 20px; color: var(--color-t-3, var(--color-t-2)); max-width: 72ch; }
 .cmp-note a { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
 @media (max-width: 720px) {
@@ -297,6 +299,8 @@ section.band { padding-top: 136px; }
   .table.cmp table { min-width: 0; font-size: 13px; line-height: 19px; }
   .table.cmp th, .table.cmp td { padding: 10px; }
   .table.cmp tbody th { width: 30%; }
+  .table.cmp.cmp-3 table { min-width: 600px; }
+  .table.cmp.cmp-3 tbody th { width: 22%; }
 }
 @media (max-width: 720px) { .table table { min-width: 620px; } .table { margin-right: calc(-1 * var(--gutter)); border-radius: 8px 0 0 8px; } }
 .connect { display: grid; gap: 0; border: 1px solid var(--color-line); border-radius: 10px; overflow: hidden; margin: 16px 0 8px; }

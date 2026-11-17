@@ -27,6 +27,7 @@ Usage (run in the app's folder):
   imitor                    build the web preview, run every flow, write the report
   imitor build              only build the web preview into <out>/app
   imitor shoot              only run the flows from an existing build
+                            [--target ios] runs them in the iOS Simulator instead (macOS, Xcode and Maestro; see the README)
   imitor serve              serve an existing build for manual clicking
   imitor gate               build, run every flow, and exit non-zero if the run should block a native build:
                             [--fail-on flows|errors|stand-ins] [--no-build] [--json]
@@ -133,20 +134,9 @@ export async function main(args) {
     const { FAIL_ON } = await import("./gate.mjs");
     if (opts.failOn !== undefined && !FAIL_ON.includes(opts.failOn)) throw new Error(`--fail-on must be one of ${FAIL_ON.join(", ")}`);
   }
-  if (command === "build" || command === "all" || (gate && !opts.noBuild)) build(root, config, { quiet: gate && opts.json === true });
-  if (command === "build") return;
-  if (!fs.existsSync(path.join(appDir, "index.html"))) throw new Error(`no build at ${appDir}. Run: imitor build`);
-
-  const server = await serve(appDir);
-  if (command === "serve") return console.log(`Serving ${appDir} at ${server.url} (Ctrl+C to stop)`);
-  if (command !== "shoot" && command !== "all" && !gate) {
-    server.close();
-    throw new Error(`unknown command "${command}"\n\n${HELP}`);
-  }
-  try {
-    const result = await shoot(root, config, server.url);
-    const manifest = writeReport(root, config, result);
-    recordRun(path.resolve(root, config.out), { root, config, manifest, startedAt, by: resolveBy({ root }) });
+  async function finish(result, ran = config) {
+    const manifest = writeReport(root, ran, result);
+    recordRun(path.resolve(root, config.out), { root, config: ran, manifest, startedAt, by: resolveBy({ root }) });
     const report = path.join(config.out, "index.html");
     if (gate) {
       const { evaluate, formatText, reportToGitHub } = await import("./gate.mjs");
@@ -158,6 +148,28 @@ export async function main(args) {
     }
     console.log(`imitor: ${result.shots.length} shots, ${result.problems.length} problems -> ${report}`);
     if (result.problems.some((p) => p.kind === "flow-failed" || p.kind === "seed-failed")) process.exitCode = 1;
+  }
+  if (opts.target !== undefined && opts.target !== "web") {
+    // A real simulator instead of the web build: no build and no server, the app is the native one.
+    if (opts.target !== "ios") throw new Error(`--target must be web or ios, got "${opts.target}"`);
+    if (command !== "shoot" && command !== "all" && !gate) throw new Error(`--target ios works with: imitor shoot, imitor gate`);
+    const { shootIos } = await import("./simulator.mjs");
+    const result = await shootIos(root, config);
+    // The run is recorded against the simulators it used, not the web devices of the config.
+    return finish(result, { ...config, devices: result.devices });
+  }
+  if (command === "build" || command === "all" || (gate && !opts.noBuild)) build(root, config, { quiet: gate && opts.json === true });
+  if (command === "build") return;
+  if (!fs.existsSync(path.join(appDir, "index.html"))) throw new Error(`no build at ${appDir}. Run: imitor build`);
+
+  const server = await serve(appDir);
+  if (command === "serve") return console.log(`Serving ${appDir} at ${server.url} (Ctrl+C to stop)`);
+  if (command !== "shoot" && command !== "all" && !gate) {
+    server.close();
+    throw new Error(`unknown command "${command}"\n\n${HELP}`);
+  }
+  try {
+    await finish(await shoot(root, config, server.url));
   } finally {
     server.close();
   }
