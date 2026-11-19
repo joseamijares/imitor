@@ -450,11 +450,11 @@ This follows the EAS Workflows syntax but has not been run on EAS. Check how you
 
 ## Run the flows in the iOS Simulator (early)
 
-`imitor shoot --target ios` runs the same flows on the real app in Apple's iOS Simulator instead of the web imitation, and writes the shots, videos and failures into the same run, so `imitor app` shows them like any other.
+`imitor shoot --target ios` runs the same flows on the real app in Apple's iOS Simulator instead of the web imitation, and writes the shots and failures into the same run, so `imitor app` shows them like any other. Videos are saved in the run's `screens/` folder; `imitor app` does not play them yet.
 
 This is a first version. It has been run against Apple's Settings app only, not yet against an Expo app. Treat it as something to try, not something to gate on.
 
-It needs a Mac with Xcode, [Maestro](https://maestro.dev) and Java (`brew install openjdk@17 maestro`), and a build of your app for the simulator. Add this to `imitor.config.json`:
+It needs a Mac with Xcode, [Maestro](https://maestro.dev) and Java (`brew install openjdk@17 mobile-dev-inc/tap/maestro`), and a build of your app for the simulator. Add this to `imitor.config.json`:
 
 ```json
 {
@@ -493,6 +493,7 @@ What it does not do yet:
 - **Secrets.** A flow that fills from a secret is refused, because screenshots and video from the simulator are not masked.
 - **State, seed and clock.** These belong to the web imitation and are not applied.
 - **`css` targets.** They only exist on the web. Use `testId`, `label`, `placeholder` or `text`.
+- **Long fields.** A `fill` clears up to 200 characters before it types. A field holding more keeps the rest.
 - **Crashes and logs.** Only a failed step is reported.
 - **Videos in `imitor push`.** The `.mp4` files are left out of an upload.
 - **Agent tools.** The MCP tools, `imitor screenshot`, `imitor flow` and `imitor record` still use the web imitation.

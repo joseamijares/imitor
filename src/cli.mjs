@@ -153,10 +153,10 @@ export async function main(args) {
     // A real simulator instead of the web build: no build and no server, the app is the native one.
     if (opts.target !== "ios") throw new Error(`--target must be web or ios, got "${opts.target}"`);
     if (command !== "shoot" && command !== "all" && !gate) throw new Error(`--target ios works with: imitor shoot, imitor gate`);
-    const { shootIos } = await import("./simulator.mjs");
+    const { ranConfig, shootIos } = await import("./simulator.mjs");
     const result = await shootIos(root, config);
-    // The run is recorded against the simulators it used, not the web devices of the config.
-    return finish(result, { ...config, devices: result.devices });
+    // The run is recorded against the simulators it used, without the web-only settings it did not apply.
+    return finish(result, ranConfig(config, result.devices));
   }
   if (command === "build" || command === "all" || (gate && !opts.noBuild)) build(root, config, { quiet: gate && opts.json === true });
   if (command === "build") return;

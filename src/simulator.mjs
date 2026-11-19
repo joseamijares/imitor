@@ -23,14 +23,18 @@ export const IOS_NOT_COVERED = [
 const slug = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 const yaml = (value) => JSON.stringify(value); // JSON strings and flow maps are valid YAML
 
+/** Maestro reads every selector as a regular expression: escape a value so it matches as written. */
+const literal = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 /** A flow target (the `tap`, `fill` and `waitFor` forms) as a Maestro selector. */
 export function selector(target) {
-  if (typeof target === "string") return target;
-  if (target.testId) return { id: target.testId };
+  if (typeof target === "string") return literal(target);
+  if (target.testId) return { id: literal(target.testId) };
   // React Native's accessibilityLabel and placeholder both reach iOS as the element's accessibility text.
-  if (target.label) return { text: target.label };
-  if (target.placeholder) return { text: target.placeholder };
-  if (target.text) return { text: target.text };
+  if (target.label) return { text: literal(target.label) };
+  if (target.placeholder) return { text: literal(target.placeholder) };
+  // "exact": false matches any element that contains the text, as on the web.
+  if (target.text) return { text: target.exact === false ? `.*${literal(target.text)}.*` : literal(target.text) };
   if (target.css) throw new Error(`a "css" target only exists on the web; use testId, label, placeholder or text on a simulator: ${JSON.stringify(target)}`);
   throw new Error(`cannot locate ${JSON.stringify(target)}`);
 }
@@ -178,13 +182,18 @@ function checkMaestro(env) {
   }
 }
 
+/**
+ * The config a simulator run is recorded against: the simulators it used instead of the web devices, and no state, seed
+ * or clock on its flows, because none of them was applied. "after" stays: those steps did run.
+ */
+export function ranConfig(config, devices) {
+  return { ...config, devices, flows: config.flows.map(({ state, seed, clock, ...flow }) => flow) };
+}
+
 export async function shootIos(root, config, settings = iosSettings(root)) {
   if (process.platform !== "darwin") throw new Error("--target ios needs macOS: the iOS Simulator runs only on a Mac. In CI, use a macOS runner.");
   const outDir = path.resolve(root, config.out);
   const shotDir = path.join(outDir, "screens");
-  fs.rmSync(shotDir, { recursive: true, force: true });
-  fs.mkdirSync(shotDir, { recursive: true });
-  const work = fs.mkdtempSync(path.join(os.tmpdir(), "imitor-ios-"));
   for (const flow of config.flows) {
     const names = secretsUsed([...flowChain(config, flow).before.map((b) => b.step), ...(flow.steps || [])]);
     if (names.length) throw new Error(`flow "${flow.name}" fills from a secret (${names.join(", ")}). That cannot run on a simulator yet: its screenshots and video are not masked.`);
@@ -192,6 +201,10 @@ export async function shootIos(root, config, settings = iosSettings(root)) {
 
   const env = maestroEnv();
   checkMaestro(env);
+  // Only now replace the previous run's screens: a run refused above leaves the last report's files in place.
+  fs.rmSync(shotDir, { recursive: true, force: true });
+  fs.mkdirSync(shotDir, { recursive: true });
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), "imitor-ios-"));
   const shots = [];
   const problems = [];
   const videos = [];
@@ -210,10 +223,15 @@ export async function shootIos(root, config, settings = iosSettings(root)) {
       }
       for (const flow of config.flows) {
         for (const scheme of config.schemes) {
-          run("xcrun", ["simctl", "ui", device.udid, "appearance", scheme]);
           const where = `${flow.name} / ${name} / ${scheme}`;
           const at = { flow: flow.name, device: name, scheme };
           const steps = flow.steps || [];
+          // Shots taken in the wrong appearance would be filed under this one: report it and skip the variant.
+          const appearance = run("xcrun", ["simctl", "ui", device.udid, "appearance", scheme]);
+          if (!appearance.ok) {
+            problems.push({ where, kind: "flow-failed", message: `could not switch the simulator to ${scheme}: ${failureLine(appearance.out)}`, file: null, ...at, step: 0, stepConfig: null, lastGoodShot: null, notReached: steps.filter((s) => s.shot).map((s) => s.shot) });
+            continue;
+          }
           const rel = (shot) => `screens/${flow.name}-${shot}-${name}-${scheme}`;
           const { text, owners } = maestroFlow(config, flow, { bundleId: settings.bundleId, scheme: settings.scheme, clearState: settings.clearState, launchWaitMs: settings.launchWaitMs, shotPath: (step) => rel(step.shot) });
           const id = `${flow.name}-${name}-${scheme}`;

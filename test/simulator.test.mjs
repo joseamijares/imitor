@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { loadConfig } from "../src/config.mjs";
 import { writeReport } from "../src/report.mjs";
-import { deepLink, failureLine, findDevice, firstFailed, IOS_NOT_COVERED, IOS_RENDERER, iosSettings, maestroEnv, maestroFlow, pause, pngSize, selector, shootIos, stepCommands } from "../src/simulator.mjs";
+import { deepLink, failureLine, findDevice, firstFailed, IOS_NOT_COVERED, IOS_RENDERER, iosSettings, maestroEnv, maestroFlow, pause, pngSize, ranConfig, selector, shootIos, stepCommands } from "../src/simulator.mjs";
 
 function project(config, files = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "imitor-sim-"));
@@ -23,6 +23,20 @@ test("selector: flow targets become Maestro selectors; css is refused with what 
   assert.deepEqual(selector({ text: "Done" }), { text: "Done" });
   assert.throws(() => selector({ css: ".row" }), /only exists on the web.*testId, label, placeholder or text/);
   assert.throws(() => selector({}), /cannot locate/);
+});
+
+test("selector: values match as written, and exact: false matches text that contains it", () => {
+  assert.deepEqual(selector({ testId: "row[0]" }), { id: "row\\[0\\]" });
+  assert.equal(selector("Price (USD)"), "Price \\(USD\\)");
+  assert.deepEqual(selector({ text: "Continue", exact: false }), { text: ".*Continue.*" });
+  assert.deepEqual(selector({ text: "Total: $5.00", exact: false }), { text: ".*Total: \\$5\\.00.*" });
+  assert.ok(new RegExp(`^${selector({ testId: "row[0]" }).id}$`).test("row[0]"));
+});
+
+test("ranConfig: the simulators used, and no state, seed or clock that was never applied", () => {
+  const ran = ranConfig({ out: "preview", devices: [{ name: "iphone-16" }], flows: [{ name: "a", after: "b", state: "empty", seed: "seed.mjs", clock: "2026-01-01", steps: [] }] }, [{ name: "iphone-17", platform: "ios" }]);
+  assert.deepEqual(ran.devices, [{ name: "iphone-17", platform: "ios" }]);
+  assert.deepEqual(ran.flows, [{ name: "a", after: "b", steps: [] }]);
 });
 
 test("deepLink: a route becomes a link under the app's scheme, and says what to set without one", () => {
@@ -130,7 +144,12 @@ test("pngSize: reads the width and height from the header", () => {
 
 test("shootIos: a flow that fills from a secret stops the run before any simulator starts", { skip: process.platform === "darwin" ? false : "needs macOS" }, async () => {
   const root = project({ secrets: ["TEST_PASSWORD"], simulator: { ios: { bundleId: "a.b" } }, flows: [{ name: "sign-in", steps: [{ fill: { placeholder: "Password", value: { env: "TEST_PASSWORD" } } }] }] });
-  await assert.rejects(shootIos(root, loadConfig(root)), /flow "sign-in" fills from a secret \(TEST_PASSWORD\).*not masked/);
+  const config = loadConfig(root);
+  const kept = path.join(root, config.out, "screens", "last-run.png");
+  fs.mkdirSync(path.dirname(kept), { recursive: true });
+  fs.writeFileSync(kept, "");
+  await assert.rejects(shootIos(root, config), /flow "sign-in" fills from a secret \(TEST_PASSWORD\).*not masked/);
+  assert.ok(fs.existsSync(kept), "a refused run leaves the previous run's screens");
 });
 
 test("shootIos: off a Mac it says the simulator needs macOS", { skip: process.platform === "darwin" ? "this is a Mac" : false }, async () => {
