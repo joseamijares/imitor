@@ -515,6 +515,8 @@ Two tools give agents a real simulator. Expo Simulators (launched 12 Nov 2026) r
 
 Expo's figures are from [expo.dev/pricing](https://expo.dev/pricing) on 13 Nov 2026 and may change. We have not run Expo Simulators ourselves; its column is from Expo's own pages. The Claude Code column is from [Anthropic's documentation](https://code.claude.com/docs/en/desktop-ios-simulator) on 15 Nov 2026.
 
+The Imitor column describes its web imitation. An early option, [`--target ios`](#run-the-flows-in-the-ios-simulator-early), runs the same flows on the real app in the iOS Simulator on your own Mac; it needs a native build.
+
 Use a simulator (or a phone) for everything under [What it does not show](#what-it-does-not-show). Use Imitor when you want a look at layout, copy, colours and states on every push, without a build or a meter running.
 
 ## Roadmap

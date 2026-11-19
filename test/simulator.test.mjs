@@ -117,6 +117,10 @@ test("firstFailed: the failed command among ours, skipping Maestro's own two; -1
   assert.deepEqual(firstFailed(dir), { at: 1, error: "Element not found: Text matching regex: Save" });
   fs.writeFileSync(file, JSON.stringify([entry("defineVariablesCommand", "COMPLETED"), entry("launchAppCommand", "COMPLETED")]));
   assert.equal(firstFailed(dir).at, -1);
+  // Out of order in the file: the position is the one in the order the commands ran.
+  const timed = (name, status, timestamp) => ({ command: { [name]: {} }, metadata: { status, timestamp } });
+  fs.writeFileSync(file, JSON.stringify([timed("tapOnElement", "FAILED", 300), timed("launchAppCommand", "COMPLETED", 100), timed("takeScreenshotCommand", "COMPLETED", 200)]));
+  assert.equal(firstFailed(dir).at, 2);
 });
 
 test("failureLine: the line that says why, not a stack frame", () => {

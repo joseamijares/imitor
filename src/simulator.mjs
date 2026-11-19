@@ -150,7 +150,12 @@ export function findDevice(name, list = null) {
 export function firstFailed(debugDir) {
   const file = fs.existsSync(debugDir) ? fs.readdirSync(debugDir, { recursive: true }).map(String).find((f) => /(^|[\\/])commands[^\\/]*\.json$/.test(f)) : null;
   if (!file) return { at: null, error: null };
-  const entries = JSON.parse(fs.readFileSync(path.join(debugDir, file), "utf8")).filter((e) => !e.command?.defineVariablesCommand && !e.command?.applyConfigurationCommand);
+  // Maestro does not promise the file is in the order the commands ran: put it in that order by each command's start time.
+  const entries = JSON.parse(fs.readFileSync(path.join(debugDir, file), "utf8"))
+    .filter((e) => !e.command?.defineVariablesCommand && !e.command?.applyConfigurationCommand)
+    .map((e, i) => ({ e, i }))
+    .sort((x, y) => (x.e.metadata?.timestamp ?? 0) - (y.e.metadata?.timestamp ?? 0) || x.i - y.i)
+    .map((x) => x.e);
   const at = entries.findIndex((e) => e.metadata?.status === "FAILED");
   return { at, error: at >= 0 ? entries[at].metadata?.error?.message || null : null };
 }
