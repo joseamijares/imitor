@@ -448,21 +448,74 @@ This follows the EAS Workflows syntax but has not been run on EAS. Check how you
 - Platform-specific code paths: the build runs as `Platform.OS === "web"`
 - Widgets, notifications, Live Activities, watch apps
 
-## Imitor and cloud simulators
+## Run the flows in the iOS Simulator (early)
 
-Expo Simulators (launched 12 Nov 2026) gives agents real iOS simulators and Android emulators in Expo's cloud. It and Imitor both put screenshots of a change on the pull request, in different ways. They fit together: Imitor on every commit, a simulator for the final check.
+`imitor shoot --target ios` runs the same flows on the real app in Apple's iOS Simulator instead of the web imitation, and writes the shots and failures into the same run, so `imitor app` shows them like any other. Videos are saved in the run's `screens/` folder; `imitor app` does not play them yet.
 
-| | Imitor | Expo Simulators |
-|---|---|---|
-| What you see | A web imitation of the app, with stand-ins marked | The real native app |
-| Needs a native build | No | Yes |
-| Runs on | Any Linux box, CI runner or agent session | Expo's cloud |
-| Cost | Free (MIT); you pay only for your own CI minutes | $0.10 a minute on a paid Expo plan (from $19 a month), 60 minutes a month included until 2027 |
-| Native chrome, keyboard, exact fonts, platform code paths | Not shown | Shown |
-| Apps | Expo | Any mobile app linked to Expo Services |
-| Open source, self-hosted | Yes | No |
+This is a first version. It has been run against Apple's Settings app only, not yet against an Expo app. Treat it as something to try, not something to gate on.
 
-Expo's figures are from [expo.dev/pricing](https://expo.dev/pricing) on 13 Nov 2026 and may change. We have not run Expo Simulators ourselves; its column is from Expo's own pages.
+It needs a Mac with Xcode, [Maestro](https://maestro.dev) and Java (`brew install openjdk@17 mobile-dev-inc/tap/maestro`), and a build of your app for the simulator. Add this to `imitor.config.json`:
+
+```json
+{
+  "simulator": {
+    "ios": {
+      "bundleId": "com.fernwood.app",
+      "app": "build/Fernwood.app",
+      "scheme": "fernwood",
+      "devices": ["iPhone 17"],
+      "video": true
+    }
+  }
+}
+```
+
+| Key | What it does |
+|---|---|
+| `bundleId` | The app to launch. Required. |
+| `app` | A built `.app` to install first. Leave it out when the app is already on the simulator. |
+| `scheme` | The app's URL scheme. Needed for `goto` steps and for a flow's `start` other than `/`. |
+| `devices` | Simulator names, as `xcrun simctl list devices` shows them. Default `["iPhone 17"]`. |
+| `clearState` | Clear the app's data before each flow. Default `true`. |
+| `video` | Record an `.mp4` of each flow. Default `false`. |
+| `launchWaitMs` | How long to wait after launch before the first step. Default `2500`. |
+
+Then:
+
+```sh
+npx imitor shoot --target ios
+```
+
+`imitor gate --target ios` works the same way. Each flow takes about 50 seconds per colour scheme.
+
+What it does not do yet:
+
+- **Secrets.** A flow that fills from a secret is refused, because screenshots and video from the simulator are not masked.
+- **State, seed and clock.** These belong to the web imitation and are not applied.
+- **`css` targets.** They only exist on the web. Use `testId`, `label`, `placeholder` or `text`.
+- **Long fields.** A `fill` clears up to 200 characters before it types. A field holding more keeps the rest.
+- **Crashes and logs.** Only a failed step is reported.
+- **Videos in `imitor push`.** The `.mp4` files are left out of an upload.
+- **Agent tools.** The MCP tools, `imitor screenshot`, `imitor flow` and `imitor record` still use the web imitation.
+- **Android.** Not covered.
+
+## Imitor and simulators
+
+Two tools give agents a real simulator. Expo Simulators (launched 12 Nov 2026) runs real iOS simulators and Android emulators in Expo's cloud. Claude Code on desktop (public beta since 21 Jul 2026) opens Apple's iOS Simulator in a pane beside the conversation on your Mac. Both run the real app; Imitor shows an imitation of it. They fit together: Imitor on every commit, a simulator for the final check.
+
+| | Imitor | Expo Simulators | Claude Code's iOS Simulator pane |
+|---|---|---|---|
+| What you see | A web imitation of the app, with stand-ins marked | The real native app | The real native app, iOS only |
+| Needs a native build | No | Yes | Yes |
+| Runs on | Any Linux box, CI runner or agent session | Expo's cloud | Your own Mac with Xcode, in a local Claude Desktop session; not in cloud or SSH sessions |
+| Cost | Free (MIT); you pay only for your own CI minutes | $0.10 a minute on a paid Expo plan (from $19 a month), 60 minutes a month included until 2027 | Part of Claude Desktop on Claude's Pro, Max and Team plans |
+| Native chrome, keyboard, exact fonts, platform code paths | Not shown | Shown | Shown, for iOS |
+| Apps | Expo | Any mobile app linked to Expo Services | Any iOS app you can build with Xcode |
+| Open source, self-hosted | Yes | No | No |
+
+Expo's figures are from [expo.dev/pricing](https://expo.dev/pricing) on 13 Nov 2026 and may change. We have not run Expo Simulators ourselves; its column is from Expo's own pages. The Claude Code column is from [Anthropic's documentation](https://code.claude.com/docs/en/desktop-ios-simulator) on 15 Nov 2026.
+
+The Imitor column describes its web imitation. An early option, [`--target ios`](#run-the-flows-in-the-ios-simulator-early), runs the same flows on the real app in the iOS Simulator on your own Mac; it needs a native build.
 
 Use a simulator (or a phone) for everything under [What it does not show](#what-it-does-not-show). Use Imitor when you want a look at layout, copy, colours and states on every push, without a build or a meter running.
 

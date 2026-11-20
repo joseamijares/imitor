@@ -249,23 +249,23 @@
   <section class="band" aria-labelledby="sim-h">
     <div class="band-head">
       <h2 id="sim-h">Imitor first. A simulator last.</h2>
-      <p>Expo Simulators gives agents real iOS simulators and Android emulators in Expo’s cloud. Imitor is not that, and does not try to be. Run Imitor on every commit, and keep a simulator or a phone for the final check.</p>
+      <p>Expo Simulators gives agents real iOS simulators and Android emulators in Expo’s cloud. Claude Code on desktop opens Apple’s iOS Simulator beside the conversation on your Mac. Imitor is neither, and does not try to be. Run Imitor on every commit, and keep a simulator or a phone for the final check.</p>
     </div>
-    <div class="table cmp">
+    <div class="table cmp cmp-3" tabindex="0" role="region" aria-labelledby="sim-h">
       <table>
-        <thead><tr><th scope="col"></th><th scope="col">Imitor</th><th scope="col">Expo Simulators</th></tr></thead>
+        <thead><tr><th scope="col"></th><th scope="col">Imitor</th><th scope="col">Expo Simulators</th><th scope="col">Claude Code’s iOS Simulator pane</th></tr></thead>
         <tbody>
-          <tr><th scope="row">What you see</th><td>A web imitation of the app, with stand-ins marked</td><td>The real native app</td></tr>
-          <tr><th scope="row">Needs a native build</th><td>No</td><td>Yes</td></tr>
-          <tr><th scope="row">Runs on</th><td>Any Linux box, CI runner or agent session</td><td>Expo’s cloud</td></tr>
-          <tr><th scope="row">Cost</th><td>Free under the MIT licence; you pay only for your own CI minutes</td><td>$0.10 a minute on a paid Expo plan (from $19 a month), 60 minutes a month included until 2027</td></tr>
-          <tr><th scope="row">Native chrome, keyboard, exact fonts, platform code paths</th><td>Not shown</td><td>Shown</td></tr>
-          <tr><th scope="row">Apps</th><td>Expo</td><td>Any mobile app linked to Expo Services</td></tr>
-          <tr><th scope="row">Open source, self-hosted</th><td>Yes</td><td>No</td></tr>
+          <tr><th scope="row">What you see</th><td>A web imitation of the app, with stand-ins marked</td><td>The real native app</td><td>The real native app, iOS only</td></tr>
+          <tr><th scope="row">Needs a native build</th><td>No</td><td>Yes</td><td>Yes</td></tr>
+          <tr><th scope="row">Runs on</th><td>Any Linux box, CI runner or agent session</td><td>Expo’s cloud</td><td>Your own Mac with Xcode, in a local Claude Desktop session; not in cloud or SSH sessions</td></tr>
+          <tr><th scope="row">Cost</th><td>Free under the MIT licence; you pay only for your own CI minutes</td><td>$0.10 a minute on a paid Expo plan (from $19 a month), 60 minutes a month included until 2027</td><td>Part of Claude Desktop on Claude’s Pro, Max and Team plans</td></tr>
+          <tr><th scope="row">Native chrome, keyboard, exact fonts, platform code paths</th><td>Not shown</td><td>Shown</td><td>Shown, for iOS</td></tr>
+          <tr><th scope="row">Apps</th><td>Expo</td><td>Any mobile app linked to Expo Services</td><td>Any iOS app you can build with Xcode</td></tr>
+          <tr><th scope="row">Open source, self-hosted</th><td>Yes</td><td>No</td><td>No</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="cmp-note">Expo’s figures are from <a href="https://expo.dev/pricing">expo.dev/pricing</a> on 13 Nov 2026 and may change. We have not run Expo Simulators ourselves; its column is from Expo’s own pages.</p>
+    <p class="cmp-note">Expo’s figures are from <a href="https://expo.dev/pricing">expo.dev/pricing</a> on 13 Nov 2026 and may change. We have not run Expo Simulators ourselves; its column is from Expo’s own pages. The Claude Code column is from <a href="https://code.claude.com/docs/en/desktop-ios-simulator">Anthropic’s documentation</a> on 15 Nov 2026.</p>
   </section>
 
   <section class="band" aria-labelledby="oss-h">

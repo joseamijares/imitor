@@ -22,13 +22,14 @@ export function writeReport(root, config, result) {
     app,
     commit: commit(root),
     generatedAt: new Date().toISOString(),
-    renderer: "react-native-web in headless Chromium",
+    renderer: result.renderer || "react-native-web in headless Chromium",
     shims: config.shims,
     // What each flow started from: the flow it runs after, the state label its stand-ins read, whether it was seeded, the clock.
     flows: config.flows.map((f) => ({ name: f.name, ...stateInfo(f) })),
     shots: result.shots,
     problems: result.problems,
-    notCovered: NOT_COVERED,
+    notCovered: result.notCovered || NOT_COVERED,
+    ...(result.videos?.length ? { videos: result.videos } : {}),
   };
   fs.writeFileSync(path.join(outDir, "manifest.json"), JSON.stringify(manifest, null, 2));
 
@@ -58,8 +59,8 @@ figcaption{margin-top:6px;max-width:240px}.warn{color:var(--warn)}.made{color:va
 details{margin-top:12px;font-size:13px;color:var(--mut)}
 </style><main>
 <h1>${esc(app)} preview</h1>
-<div class="meta">${manifest.commit ? `commit ${esc(manifest.commit)} · ` : ""}${esc(manifest.generatedAt)} · ${result.shots.length} shots · rendered on web, not on a phone</div>
-<details><summary>What this does not show</summary><ul>${NOT_COVERED.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></details>
+<div class="meta">${manifest.commit ? `commit ${esc(manifest.commit)} · ` : ""}${esc(manifest.generatedAt)} · ${result.shots.length} shots · ${result.renderer ? `run in ${esc(result.renderer)}, not on a phone` : "rendered on web, not on a phone"}</div>
+<details><summary>What this does not show</summary><ul>${manifest.notCovered.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></details>
 ${problems}${sections}
 </main></html>`;
   fs.writeFileSync(path.join(outDir, "index.html"), html);
